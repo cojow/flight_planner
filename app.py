@@ -37,9 +37,6 @@ def get_bearing(p1, p2):
     x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(d_lon)
     return (math.degrees(math.atan2(y, x)) + 360) % 360
 
-# ==========================================
-# DATA EXTRACTION (FOR EDITOR)
-# ==========================================
 def parse_kmz_for_editing(full_path):
     ns = {'kml': 'http://www.opengis.net/kml/2.2', 'wpml': 'http://www.dji.com/wpmz/1.0.6'}
     meta = {
@@ -52,22 +49,19 @@ def parse_kmz_for_editing(full_path):
         
         safe_node = root.find('.//wpml:takeOffSecurityHeight', ns)
         if safe_node is not None: meta['safe_takeoff_ft'] = float(safe_node.text) * M_TO_FT
-        
         trans_node = root.find('.//wpml:globalTransitionalSpeed', ns)
         if trans_node is not None: meta['trans_speed_fps'] = float(trans_node.text) * M_TO_FT
-
         speed_node = root.find('.//wpml:autoFlightSpeed', ns)
         if speed_node is not None: meta['speed_m'] = float(speed_node.text)
 
         pms = root.findall('.//kml:Placemark', ns)
         for i, pm in enumerate(pms):
             c_raw = pm.find('.//kml:coordinates', ns).text.strip().split(',')
-            meta['coords'].append((float(c_raw[1]), float(c_raw[0]))) # Save lat, lon
+            meta['coords'].append((float(c_raw[1]), float(c_raw[0]))) 
             
             if i == 0:
                 alt_node = pm.find('.//wpml:executeHeight', ns)
                 if alt_node is not None: meta['alt_ft'] = float(alt_node.text) * M_TO_FT
-                
                 pitch_node = pm.find('.//wpml:waypointGimbalHeadingParam/wpml:waypointGimbalPitchAngle', ns)
                 if pitch_node is not None: meta['pitch'] = float(pitch_node.text)
 
@@ -82,42 +76,106 @@ def parse_kmz_for_editing(full_path):
                     start_idx = ag.find('.//wpml:actionGroupStartIndex', ns)
                     if start_idx is not None:
                         meta['photo_start_wp'] = int(start_idx.text)
-
     return meta
 
 # ==========================================
-# CORE MISSION GENERATOR
+# CORE MISSION GENERATOR (SNAP & HOLD YAW)
 # ==========================================
 def generate_native_kmz_contents(coords, cfg):
     ms_ts = int(datetime.now().timestamp() * 1000)
-    
     alt_m = cfg["alt_ft"] * FT_TO_M
     safe_m = cfg["safe_takeoff_ft"] * FT_TO_M
     trans_m = cfg["trans_speed_fps"] * FT_TO_M
-    
     speed_m = cfg.get("speed_m")
     if speed_m is None:
         speed_m = min(max((cfg["target_gap_ft"] * FT_TO_M) / cfg["interval_sec"], 1.0), 10.0) if (cfg["auto_calc_speed"] and cfg["trigger_type"] == "time") else (cfg["manual_fps"] * FT_TO_M)
-
     total_dist_m = sum(get_haversine_dist(coords[i], coords[i+1]) for i in range(len(coords)-1))
     total_duration = total_dist_m / speed_m if speed_m > 0 else 0
     pitch_val = cfg['pitch'] if 'pitch' in cfg else cfg.get('gimbal_pitch', -60)
 
-    # 1. BUILD TEMPLATE.KML
-    template_placemarks = ""
-    for i, p in enumerate(coords):
-        ref_bearing = get_bearing(coords[i], coords[i+1]) if i < len(coords)-1 else get_bearing(coords[i-1], coords[i])
+    # 1. CALCULATE ALL PERPENDICULAR YAW ANGLES (-180 to 180 format)
+    yaws = []
+    for i in range(len(coords) - 1):
+        ref_bearing = get_bearing(coords[i], coords[i+1])
         yaw = (ref_bearing + 90) % 360 if cfg['side'] == "right" else (ref_bearing - 90) % 360
         if yaw > 180: yaw -= 360
+        yaws.append(int(yaw))
 
-        template_photo_action = ""
+    template_placemarks = ""
+    waylines_placemarks = ""
+    g_id_template = 0  
+    g_id_waylines = 0  
+
+    for i, p in enumerate(coords):
+        # Determine the current heading angle string for the waypoint
+        current_yaw = yaws[0] if i == 0 else yaws[i-1]
+
+        template_action_group = ""
+        waylines_action_group = ""
+
+        # ACTION: WAYPOINT 0 GIMBAL INITIALIZATION
+        if i == 0:
+            waylines_action_group += f"""
+        <wpml:actionGroup>
+          <wpml:actionGroupId>{g_id_waylines}</wpml:actionGroupId>
+          <wpml:actionGroupStartIndex>0</wpml:actionGroupStartIndex>
+          <wpml:actionGroupEndIndex>0</wpml:actionGroupEndIndex>
+          <wpml:actionGroupMode>sequence</wpml:actionGroupMode>
+          <wpml:actionTrigger><wpml:actionTriggerType>reachPoint</wpml:actionTriggerType></wpml:actionTrigger>
+          <wpml:action>
+            <wpml:actionId>0</wpml:actionId>
+            <wpml:actionActuatorFunc>gimbalRotate</wpml:actionActuatorFunc>
+            <wpml:actionActuatorFuncParam>
+              <wpml:gimbalHeadingYawBase>aircraft</wpml:gimbalHeadingYawBase>
+              <wpml:gimbalRotateMode>absoluteAngle</wpml:gimbalRotateMode>
+              <wpml:gimbalPitchRotateEnable>1</wpml:gimbalPitchRotateEnable>
+              <wpml:gimbalPitchRotateAngle>{pitch_val}</wpml:gimbalPitchRotateAngle>
+              <wpml:gimbalRollRotateEnable>0</wpml:gimbalRollRotateEnable>
+              <wpml:gimbalRollRotateAngle>0</wpml:gimbalRollRotateAngle>
+              <wpml:gimbalYawRotateEnable>0</wpml:gimbalYawRotateEnable>
+              <wpml:gimbalYawRotateAngle>0</wpml:gimbalYawRotateAngle>
+              <wpml:gimbalRotateTimeEnable>0</wpml:gimbalRotateTimeEnable>
+              <wpml:gimbalRotateTime>10</wpml:gimbalRotateTime>
+              <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
+            </wpml:actionActuatorFuncParam>
+          </wpml:action>
+        </wpml:actionGroup>"""
+            g_id_waylines += 1
+
+        # ACTION: YAW SNAP ROTATION (For inner waypoints changing segments)
+        if 0 < i < len(coords) - 1:
+            next_yaw = yaws[i]
+            # Calculate shortest rotation path
+            diff = (next_yaw - current_yaw + 180) % 360 - 180
+            path_mode = "clockwise" if diff >= 0 else "counterClockwise"
+            
+            yaw_action_block = f"""
+          <wpml:actionGroupStartIndex>{i}</wpml:actionGroupStartIndex>
+          <wpml:actionGroupEndIndex>{i}</wpml:actionGroupEndIndex>
+          <wpml:actionGroupMode>sequence</wpml:actionGroupMode>
+          <wpml:actionTrigger><wpml:actionTriggerType>reachPoint</wpml:actionTriggerType></wpml:actionTrigger>
+          <wpml:action>
+            <wpml:actionId>0</wpml:actionId>
+            <wpml:actionActuatorFunc>rotateYaw</wpml:actionActuatorFunc>
+            <wpml:actionActuatorFuncParam>
+              <wpml:aircraftHeading>{next_yaw}</wpml:aircraftHeading>
+              <wpml:aircraftPathMode>{path_mode}</wpml:aircraftPathMode>
+            </wpml:actionActuatorFuncParam>
+          </wpml:action>
+        </wpml:actionGroup>"""
+
+            template_action_group += f"\n        <wpml:actionGroup>\n          <wpml:actionGroupId>{g_id_template}</wpml:actionGroupId>{yaw_action_block}"
+            waylines_action_group += f"\n        <wpml:actionGroup>\n          <wpml:actionGroupId>{g_id_waylines}</wpml:actionGroupId>{yaw_action_block}"
+            g_id_template += 1
+            g_id_waylines += 1
+
+        # ACTION: PHOTO TRIGGER
         start_wp = cfg.get("photo_start_wp", 0)
         if i == start_wp:
             trigger_tag = "multipleDistance" if cfg["trigger_type"] == "distance" else "multipleTiming"
             interval_val = round(cfg['interval_ft'] * FT_TO_M) if cfg["trigger_type"] == "distance" else cfg['interval_sec']
-            template_photo_action = f"""
-        <wpml:actionGroup>
-          <wpml:actionGroupId>0</wpml:actionGroupId>
+            
+            photo_action_block = f"""
           <wpml:actionGroupStartIndex>{start_wp}</wpml:actionGroupStartIndex>
           <wpml:actionGroupEndIndex>{len(coords)-1}</wpml:actionGroupEndIndex>
           <wpml:actionGroupMode>sequence</wpml:actionGroupMode>
@@ -132,6 +190,33 @@ def generate_native_kmz_contents(coords, cfg):
           </wpml:action>
         </wpml:actionGroup>"""
 
+            template_action_group += f"\n        <wpml:actionGroup>\n          <wpml:actionGroupId>{g_id_template}</wpml:actionGroupId>{photo_action_block}"
+            waylines_action_group += f"\n        <wpml:actionGroup>\n          <wpml:actionGroupId>{g_id_waylines}</wpml:actionGroupId>{photo_action_block}"
+            g_id_template += 1
+            g_id_waylines += 1
+
+        # ACTION: GIMBAL HOLD
+        if i < len(coords) - 1:
+            waylines_action_group += f"""
+        <wpml:actionGroup>
+          <wpml:actionGroupId>{g_id_waylines}</wpml:actionGroupId>
+          <wpml:actionGroupStartIndex>{i}</wpml:actionGroupStartIndex>
+          <wpml:actionGroupEndIndex>{i+1}</wpml:actionGroupEndIndex>
+          <wpml:actionGroupMode>sequence</wpml:actionGroupMode>
+          <wpml:actionTrigger><wpml:actionTriggerType>betweenAdjacentPoints</wpml:actionTriggerType></wpml:actionTrigger>
+          <wpml:action>
+            <wpml:actionId>0</wpml:actionId>
+            <wpml:actionActuatorFunc>gimbalEvenlyRotate</wpml:actionActuatorFunc>
+            <wpml:actionActuatorFuncParam>
+              <wpml:gimbalPitchRotateAngle>{pitch_val}</wpml:gimbalPitchRotateAngle>
+              <wpml:gimbalRollRotateAngle>0</wpml:gimbalRollRotateAngle>
+              <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
+            </wpml:actionActuatorFuncParam>
+          </wpml:action>
+        </wpml:actionGroup>"""
+            g_id_waylines += 1
+
+        # PLACEMARK INJECTION (Using Native smoothTransition & Enable Flags)
         template_placemarks += f"""
       <Placemark>
         <Point><coordinates>{p[1]:.8f},{p[0]:.8f}</coordinates></Point>
@@ -143,14 +228,40 @@ def generate_native_kmz_contents(coords, cfg):
         <wpml:useGlobalTurnParam>1</wpml:useGlobalTurnParam>
         <wpml:waypointHeadingParam>
           <wpml:waypointHeadingMode>smoothTransition</wpml:waypointHeadingMode>
-          <wpml:waypointHeadingAngle>{int(yaw)}</wpml:waypointHeadingAngle>
+          <wpml:waypointHeadingAngle>{current_yaw}</wpml:waypointHeadingAngle>
           <wpml:waypointPoiPoint>0.000000,0.000000,0.000000</wpml:waypointPoiPoint>
           <wpml:waypointHeadingPathMode>followBadArc</wpml:waypointHeadingPathMode>
           <wpml:waypointHeadingPoiIndex>0</wpml:waypointHeadingPoiIndex>
         </wpml:waypointHeadingParam>
         <wpml:gimbalPitchAngle>{pitch_val}</wpml:gimbalPitchAngle>
+        <wpml:isRisky>0</wpml:isRisky>{template_action_group}
+      </Placemark>"""
+
+        waylines_placemarks += f"""
+      <Placemark>
+        <Point><coordinates>{p[1]:.8f},{p[0]:.8f}</coordinates></Point>
+        <wpml:index>{i}</wpml:index>
+        <wpml:executeHeight>{alt_m:.1f}</wpml:executeHeight>
+        <wpml:waypointSpeed>{speed_m:.2f}</wpml:waypointSpeed>
+        <wpml:waypointHeadingParam>
+          <wpml:waypointHeadingMode>smoothTransition</wpml:waypointHeadingMode>
+          <wpml:waypointHeadingAngle>{current_yaw}</wpml:waypointHeadingAngle>
+          <wpml:waypointPoiPoint>0.000000,0.000000,0.000000</wpml:waypointPoiPoint>
+          <wpml:waypointHeadingAngleEnable>1</wpml:waypointHeadingAngleEnable>
+          <wpml:waypointHeadingPathMode>followBadArc</wpml:waypointHeadingPathMode>
+          <wpml:waypointHeadingPoiIndex>0</wpml:waypointHeadingPoiIndex>
+        </wpml:waypointHeadingParam>
+        <wpml:waypointTurnParam>
+          <wpml:waypointTurnMode>toPointAndStopWithDiscontinuityCurvature</wpml:waypointTurnMode>
+          <wpml:waypointTurnDampingDist>0</wpml:waypointTurnDampingDist>
+        </wpml:waypointTurnParam>
+        <wpml:useStraightLine>1</wpml:useStraightLine>
+        <wpml:waypointGimbalHeadingParam>
+          <wpml:waypointGimbalPitchAngle>{pitch_val}</wpml:waypointGimbalPitchAngle>
+          <wpml:waypointGimbalYawAngle>0</wpml:waypointGimbalYawAngle>
+        </wpml:waypointGimbalHeadingParam>
         <wpml:isRisky>0</wpml:isRisky>
-        {template_photo_action}
+        <wpml:waypointWorkType>0</wpml:waypointWorkType>{waylines_action_group}
       </Placemark>"""
 
     template_kml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -193,115 +304,6 @@ def generate_native_kmz_contents(coords, cfg):
   </Document>
 </kml>"""
 
-    # 2. BUILD WAYLINES.WPML
-    waylines_placemarks = ""
-    global_action_id = 0  
-
-    for i, p in enumerate(coords):
-        ref_bearing = get_bearing(coords[i], coords[i+1]) if i < len(coords)-1 else get_bearing(coords[i-1], coords[i])
-        yaw = (ref_bearing + 90) % 360 if cfg['side'] == "right" else (ref_bearing - 90) % 360
-        if yaw > 180: yaw -= 360
-
-        action_group = ""
-        
-        if i == 0:
-            action_group += f"""
-        <wpml:actionGroup>
-          <wpml:actionGroupId>{global_action_id}</wpml:actionGroupId>
-          <wpml:actionGroupStartIndex>0</wpml:actionGroupStartIndex>
-          <wpml:actionGroupEndIndex>0</wpml:actionGroupEndIndex>
-          <wpml:actionGroupMode>sequence</wpml:actionGroupMode>
-          <wpml:actionTrigger><wpml:actionTriggerType>reachPoint</wpml:actionTriggerType></wpml:actionTrigger>
-          <wpml:action>
-            <wpml:actionId>0</wpml:actionId>
-            <wpml:actionActuatorFunc>gimbalRotate</wpml:actionActuatorFunc>
-            <wpml:actionActuatorFuncParam>
-              <wpml:gimbalHeadingYawBase>aircraft</wpml:gimbalHeadingYawBase>
-              <wpml:gimbalRotateMode>absoluteAngle</wpml:gimbalRotateMode>
-              <wpml:gimbalPitchRotateEnable>1</wpml:gimbalPitchRotateEnable>
-              <wpml:gimbalPitchRotateAngle>{pitch_val}</wpml:gimbalPitchRotateAngle>
-              <wpml:gimbalRollRotateEnable>0</wpml:gimbalRollRotateEnable>
-              <wpml:gimbalRollRotateAngle>0</wpml:gimbalRollRotateAngle>
-              <wpml:gimbalYawRotateEnable>0</wpml:gimbalYawRotateEnable>
-              <wpml:gimbalYawRotateAngle>0</wpml:gimbalYawRotateAngle>
-              <wpml:gimbalRotateTimeEnable>0</wpml:gimbalRotateTimeEnable>
-              <wpml:gimbalRotateTime>10</wpml:gimbalRotateTime>
-              <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
-            </wpml:actionActuatorFuncParam>
-          </wpml:action>
-        </wpml:actionGroup>"""
-            global_action_id += 1
-
-        start_wp = cfg.get("photo_start_wp", 0)
-        if i == start_wp:
-            trigger_tag = "multipleDistance" if cfg["trigger_type"] == "distance" else "multipleTiming"
-            interval_val = round(cfg['interval_ft'] * FT_TO_M) if cfg["trigger_type"] == "distance" else cfg['interval_sec']
-            action_group += f"""
-        <wpml:actionGroup>
-          <wpml:actionGroupId>{global_action_id}</wpml:actionGroupId>
-          <wpml:actionGroupStartIndex>{start_wp}</wpml:actionGroupStartIndex>
-          <wpml:actionGroupEndIndex>{len(coords)-1}</wpml:actionGroupEndIndex>
-          <wpml:actionGroupMode>sequence</wpml:actionGroupMode>
-          <wpml:actionTrigger><wpml:actionTriggerType>{trigger_tag}</wpml:actionTriggerType><wpml:actionTriggerParam>{interval_val:.2f}</wpml:actionTriggerParam></wpml:actionTrigger>
-          <wpml:action>
-            <wpml:actionId>0</wpml:actionId>
-            <wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>
-            <wpml:actionActuatorFuncParam>
-              <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
-              <wpml:useGlobalPayloadLensIndex>1</wpml:useGlobalPayloadLensIndex>
-            </wpml:actionActuatorFuncParam>
-          </wpml:action>
-        </wpml:actionGroup>"""
-            global_action_id += 1
-
-        if i < len(coords) - 1:
-            action_group += f"""
-        <wpml:actionGroup>
-          <wpml:actionGroupId>{global_action_id}</wpml:actionGroupId>
-          <wpml:actionGroupStartIndex>{i}</wpml:actionGroupStartIndex>
-          <wpml:actionGroupEndIndex>{i+1}</wpml:actionGroupEndIndex>
-          <wpml:actionGroupMode>sequence</wpml:actionGroupMode>
-          <wpml:actionTrigger><wpml:actionTriggerType>betweenAdjacentPoints</wpml:actionTriggerType></wpml:actionTrigger>
-          <wpml:action>
-            <wpml:actionId>0</wpml:actionId>
-            <wpml:actionActuatorFunc>gimbalEvenlyRotate</wpml:actionActuatorFunc>
-            <wpml:actionActuatorFuncParam>
-              <wpml:gimbalPitchRotateAngle>{pitch_val}</wpml:gimbalPitchAngle>
-              <wpml:gimbalRollRotateAngle>0</wpml:gimbalRollRotateAngle>
-              <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
-            </wpml:actionActuatorFuncParam>
-          </wpml:action>
-        </wpml:actionGroup>"""
-            global_action_id += 1
-
-        waylines_placemarks += f"""
-      <Placemark>
-        <Point><coordinates>{p[1]:.8f},{p[0]:.8f}</coordinates></Point>
-        <wpml:index>{i}</wpml:index>
-        <wpml:executeHeight>{alt_m:.1f}</wpml:executeHeight>
-        <wpml:waypointSpeed>{speed_m:.2f}</wpml:waypointSpeed>
-        <wpml:waypointHeadingParam>
-          <wpml:waypointHeadingMode>smoothTransition</wpml:waypointHeadingMode>
-          <wpml:waypointHeadingAngle>{int(yaw)}</wpml:waypointHeadingAngle>
-          <wpml:waypointPoiPoint>0.000000,0.000000,0.000000</wpml:waypointPoiPoint>
-          <wpml:waypointHeadingAngleEnable>1</wpml:waypointHeadingAngleEnable>
-          <wpml:waypointHeadingPathMode>followBadArc</wpml:waypointHeadingPathMode>
-          <wpml:waypointHeadingPoiIndex>0</wpml:waypointHeadingPoiIndex>
-        </wpml:waypointHeadingParam>
-        <wpml:waypointTurnParam>
-          <wpml:waypointTurnMode>toPointAndStopWithDiscontinuityCurvature</wpml:waypointTurnMode>
-          <wpml:waypointTurnDampingDist>0</wpml:waypointTurnDampingDist>
-        </wpml:waypointTurnParam>
-        <wpml:useStraightLine>1</wpml:useStraightLine>
-        {action_group}
-        <wpml:waypointGimbalHeadingParam>
-          <wpml:waypointGimbalPitchAngle>{pitch_val}</wpml:waypointGimbalPitchAngle>
-          <wpml:waypointGimbalYawAngle>0</wpml:waypointGimbalYawAngle>
-        </wpml:waypointGimbalHeadingParam>
-        <wpml:isRisky>0</wpml:isRisky>
-        <wpml:waypointWorkType>0</wpml:waypointWorkType>
-      </Placemark>"""
-
     waylines_wpml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.6">
   <Document>
@@ -337,14 +339,14 @@ def generate_native_kmz_contents(coords, cfg):
 # ==========================================
 st.set_page_config(layout="wide", page_title="ISLERS Control")
 
-st.title("🛰️ ISLERS Flight Planner")
+st.title("🛰️ ISLERS Mission Control")
 page = st.radio("Navigation", ["Creator", "Editor", "Viewer"], horizontal=True, label_visibility="collapsed")
 
 # --- CREATOR MODE ---
 if page == 'Creator':
     with st.sidebar:
         st.header("1. Global Config")
-        mission_name = st.text_input("Filename", "New_flight")
+        mission_name = st.text_input("Filename", "ISLERS_Flight")
         safe_takeoff_ft = st.number_input("Safe Takeoff Alt (ft)", value=60.0)
         trans_speed_fps = st.number_input("Takeoff Speed (fps)", value=32.0)
         
@@ -359,23 +361,20 @@ if page == 'Creator':
         st.header("3. Trigger & Speed")
         photo_start_wp = st.number_input("Start Photos at Waypoint Index", min_value=0, value=0, step=1)
         trigger = st.radio("Type", ["distance", "time"])
-        t_val = st.number_input("Interval (ft or sec)", 1.0)
+        t_val = st.number_input("Interval (ft or sec)", 9.0)
         auto_speed = st.checkbox("Auto-Calc Speed", True)
-        target_gap_ft = st.number_input("Target Gap (ft)", 5)
-        manual_fps = st.number_input("Manual Speed (fps)", 5)
+        target_gap_ft = st.number_input("Target Gap (ft)", 26.2)
+        manual_fps = st.number_input("Manual Speed (fps)", 13.5)
 
     speed_m = min(max((target_gap_ft * FT_TO_M) / t_val, 1.0), 10.0) if (auto_speed and trigger == "time") else (manual_fps * FT_TO_M)
 
-    # 1. Create an empty container for the HUD to render ABOVE the map
     top_hud = st.container()
 
-    # 2. Render Map
     m = folium.Map(location=[40.253, -111.640], zoom_start=17, tiles=None)
     folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m)
     Draw(export=False, draw_options={'polyline':{'shapeOptions':{'color':'#00ffff','weight':5}}}).add_to(m)
     map_data = st_folium(m, width=1200, height=600)
 
-    # 3. Inject data and buttons back into the top container
     if map_data.get("all_drawings"):
         coords = [(c[1], c[0]) for c in map_data["all_drawings"][-1]['geometry']['coordinates']]
         total_dist_ft = sum(get_haversine_dist(coords[i], coords[i+1]) for i in range(len(coords)-1)) * M_TO_FT
@@ -440,7 +439,6 @@ elif page == 'Editor':
             e_tval = st.number_input("Interval (ft or sec)", value=meta['t_val'])
             e_speed = st.number_input("Flight Speed (fps)", value=meta['speed_m'] * M_TO_FT)
 
-        # Place Update Button ABOVE Map
         if st.button("💾 Save & Update Mission"):
             new_cfg = {
                 "safe_takeoff_ft": e_safe, "trans_speed_fps": e_trans, "alt_ft": e_alt,
