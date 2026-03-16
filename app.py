@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 import json
 import os
 import math
@@ -6,7 +7,8 @@ import zipfile
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import folium
-from folium.plugins import Draw
+from folium.plugins import Draw, PolyLineTextPath
+from folium.features import DivIcon
 from streamlit_folium import st_folium
 from branca.element import Element
 
@@ -15,6 +17,9 @@ from branca.element import Element
 # ==========================================
 FT_TO_M = 0.3048
 M_TO_FT = 3.28084
+MPH_TO_MS = 0.44704
+MS_TO_MPH = 2.23694
+
 MISSION_DIR = "missions"
 os.makedirs(MISSION_DIR, exist_ok=True)
 
@@ -37,10 +42,13 @@ def get_bearing(p1, p2):
     x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(d_lon)
     return (math.degrees(math.atan2(y, x)) + 360) % 360
 
+# ==========================================
+# DATA EXTRACTION (FOR EDITOR)
+# ==========================================
 def parse_kmz_for_editing(full_path):
     ns = {'kml': 'http://www.opengis.net/kml/2.2', 'wpml': 'http://www.dji.com/wpmz/1.0.6'}
     meta = {
-        "safe_takeoff_ft": 60.0, "trans_speed_fps": 32.0, "speed_m": 4.11,
+        "safe_takeoff_ft": 60.0, "trans_speed_mph": 22.0, "speed_m": 4.11, "speed_mph": 6,
         "alt_ft": 50.0, "pitch": -60.0, "trigger_type": "distance", 
         "t_val": 9.0, "photo_start_wp": 0, "coords": []
     }
@@ -50,9 +58,11 @@ def parse_kmz_for_editing(full_path):
         safe_node = root.find('.//wpml:takeOffSecurityHeight', ns)
         if safe_node is not None: meta['safe_takeoff_ft'] = float(safe_node.text) * M_TO_FT
         trans_node = root.find('.//wpml:globalTransitionalSpeed', ns)
-        if trans_node is not None: meta['trans_speed_fps'] = float(trans_node.text) * M_TO_FT
+        if trans_node is not None: meta['trans_speed_mph'] = float(trans_node.text) * MS_TO_MPH
         speed_node = root.find('.//wpml:autoFlightSpeed', ns)
-        if speed_node is not None: meta['speed_m'] = float(speed_node.text)
+        if speed_node is not None: 
+            meta['speed_m'] = float(speed_node.text)
+            meta['speed_mph'] = float(speed_node.text) * MS_TO_MPH
 
         pms = root.findall('.//kml:Placemark', ns)
         for i, pm in enumerate(pms):
@@ -79,21 +89,19 @@ def parse_kmz_for_editing(full_path):
     return meta
 
 # ==========================================
-# CORE MISSION GENERATOR (SNAP & HOLD YAW)
+# CORE MISSION GENERATOR
 # ==========================================
 def generate_native_kmz_contents(coords, cfg):
     ms_ts = int(datetime.now().timestamp() * 1000)
     alt_m = cfg["alt_ft"] * FT_TO_M
     safe_m = cfg["safe_takeoff_ft"] * FT_TO_M
-    trans_m = cfg["trans_speed_fps"] * FT_TO_M
-    speed_m = cfg.get("speed_m")
-    if speed_m is None:
-        speed_m = min(max((cfg["target_gap_ft"] * FT_TO_M) / cfg["interval_sec"], 1.0), 10.0) if (cfg["auto_calc_speed"] and cfg["trigger_type"] == "time") else (cfg["manual_fps"] * FT_TO_M)
+    trans_m = cfg["trans_speed_mph"] * MPH_TO_MS
+    speed_m = cfg["speed_m"]
+    
     total_dist_m = sum(get_haversine_dist(coords[i], coords[i+1]) for i in range(len(coords)-1))
     total_duration = total_dist_m / speed_m if speed_m > 0 else 0
     pitch_val = cfg['pitch'] if 'pitch' in cfg else cfg.get('gimbal_pitch', -60)
 
-    # 1. CALCULATE ALL PERPENDICULAR YAW ANGLES (-180 to 180 format)
     yaws = []
     for i in range(len(coords) - 1):
         ref_bearing = get_bearing(coords[i], coords[i+1])
@@ -107,13 +115,10 @@ def generate_native_kmz_contents(coords, cfg):
     g_id_waylines = 0  
 
     for i, p in enumerate(coords):
-        # Determine the current heading angle string for the waypoint
         current_yaw = yaws[0] if i == 0 else yaws[i-1]
-
         template_action_group = ""
         waylines_action_group = ""
 
-        # ACTION: WAYPOINT 0 GIMBAL INITIALIZATION
         if i == 0:
             waylines_action_group += f"""
         <wpml:actionGroup>
@@ -142,10 +147,8 @@ def generate_native_kmz_contents(coords, cfg):
         </wpml:actionGroup>"""
             g_id_waylines += 1
 
-        # ACTION: YAW SNAP ROTATION (For inner waypoints changing segments)
         if 0 < i < len(coords) - 1:
             next_yaw = yaws[i]
-            # Calculate shortest rotation path
             diff = (next_yaw - current_yaw + 180) % 360 - 180
             path_mode = "clockwise" if diff >= 0 else "counterClockwise"
             
@@ -169,7 +172,6 @@ def generate_native_kmz_contents(coords, cfg):
             g_id_template += 1
             g_id_waylines += 1
 
-        # ACTION: PHOTO TRIGGER
         start_wp = cfg.get("photo_start_wp", 0)
         if i == start_wp:
             trigger_tag = "multipleDistance" if cfg["trigger_type"] == "distance" else "multipleTiming"
@@ -195,7 +197,6 @@ def generate_native_kmz_contents(coords, cfg):
             g_id_template += 1
             g_id_waylines += 1
 
-        # ACTION: GIMBAL HOLD
         if i < len(coords) - 1:
             waylines_action_group += f"""
         <wpml:actionGroup>
@@ -216,7 +217,6 @@ def generate_native_kmz_contents(coords, cfg):
         </wpml:actionGroup>"""
             g_id_waylines += 1
 
-        # PLACEMARK INJECTION (Using Native smoothTransition & Enable Flags)
         template_placemarks += f"""
       <Placemark>
         <Point><coordinates>{p[1]:.8f},{p[0]:.8f}</coordinates></Point>
@@ -339,7 +339,7 @@ def generate_native_kmz_contents(coords, cfg):
 # ==========================================
 st.set_page_config(layout="wide", page_title="ISLERS Control")
 
-st.title("🛰️ ISLERS Mission Control")
+st.title("🛰️ Flight Planner")
 page = st.radio("Navigation", ["Creator", "Editor", "Viewer"], horizontal=True, label_visibility="collapsed")
 
 # --- CREATOR MODE ---
@@ -347,8 +347,8 @@ if page == 'Creator':
     with st.sidebar:
         st.header("1. Global Config")
         mission_name = st.text_input("Filename", "ISLERS_Flight")
+        trans_speed_mph = st.number_input("Takeoff Speed (mph)", value=22.0)
         safe_takeoff_ft = st.number_input("Safe Takeoff Alt (ft)", value=60.0)
-        trans_speed_fps = st.number_input("Takeoff Speed (fps)", value=32.0)
         
         st.header("2. Waypoint Settings")
         alt_ft = st.number_input("Relative Altitude (ft)", value=50.0)
@@ -362,11 +362,20 @@ if page == 'Creator':
         photo_start_wp = st.number_input("Start Photos at Waypoint Index", min_value=0, value=0, step=1)
         trigger = st.radio("Type", ["distance", "time"])
         t_val = st.number_input("Interval (ft or sec)", 9.0)
-        auto_speed = st.checkbox("Auto-Calc Speed", True)
-        target_gap_ft = st.number_input("Target Gap (ft)", 26.2)
-        manual_fps = st.number_input("Manual Speed (fps)", 13.5)
-
-    speed_m = min(max((target_gap_ft * FT_TO_M) / t_val, 1.0), 10.0) if (auto_speed and trigger == "time") else (manual_fps * FT_TO_M)
+        
+        if trigger == "time":
+            auto_speed = st.checkbox("Auto-Calc Speed", True)
+            if auto_speed:
+                target_gap_ft = st.number_input("Target Gap (ft)", 26.2)
+                speed_m = min(max((target_gap_ft * FT_TO_M) / t_val, 1.0), 10.0)
+                st.info(f"🤖 Auto-Calculated Speed: {speed_m * MS_TO_MPH:.1f} mph")
+            else:
+                manual_mph = st.number_input("Manual Speed (mph)", 6)
+                speed_m = manual_mph * MPH_TO_MS
+        else:
+            auto_speed = False
+            manual_mph = st.number_input("Flight Speed (mph)", 6)
+            speed_m = manual_mph * MPH_TO_MS
 
     top_hud = st.container()
 
@@ -391,11 +400,11 @@ if page == 'Creator':
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft")
             c2.metric("Estimated Photos", f"{est_photos}")
-            c3.metric("Flight Speed", f"{speed_m * M_TO_FT:.1f} fps")
+            c3.metric("Flight Speed", f"{speed_m * MS_TO_MPH:.1f} mph")
 
             if st.button("🚀 Save & Generate KMZ"):
                 cfg = {
-                    "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_fps": trans_speed_fps, 
+                    "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_mph": trans_speed_mph, 
                     "alt_ft": alt_ft, "pitch": gimbal_pitch, "side": side, 
                     "trigger_type": trigger, "interval_ft": t_val, "interval_sec": t_val, 
                     "speed_m": speed_m, "photo_start_wp": int(photo_start_wp)
@@ -405,7 +414,6 @@ if page == 'Creator':
                     kmz.writestr("wpmz/waylines.wpml", waylines_wpml)
                     kmz.writestr("wpmz/template.kml", template_kml)
                 st.success(f"Saved {mission_name}.kmz to missions/")
-            st.divider()
 
 # --- EDITOR MODE ---
 elif page == 'Editor':
@@ -413,21 +421,26 @@ elif page == 'Editor':
     if not kmz_files:
         st.warning("No missions found in missions/ directory.")
     else:
-        st.info("💡 Editor modifies flight parameters for an existing route. To draw a new route, use Creator.")
-        
         col1, col2 = st.columns([1, 2])
         with col1:
             selected_kmz = st.selectbox("Select Mission to Edit", kmz_files)
         
         full_path = os.path.join(MISSION_DIR, selected_kmz)
-        meta = parse_kmz_for_editing(full_path)
+        
+        # Store state to prevent overwriting active edits
+        if 'editor_kmz' not in st.session_state or st.session_state.editor_kmz != selected_kmz:
+            st.session_state.editor_kmz = selected_kmz
+            st.session_state.meta = parse_kmz_for_editing(full_path)
+            st.session_state.editor_key = str(datetime.now().timestamp())
+            
+        meta = st.session_state.meta
         
         with st.sidebar:
             st.header("Modify Parameters")
             edit_name = st.text_input("Save As", value=selected_kmz.replace('.kmz', '_edited'))
             
             e_safe = st.number_input("Safe Takeoff Alt (ft)", value=meta['safe_takeoff_ft'])
-            e_trans = st.number_input("Takeoff Speed (fps)", value=meta['trans_speed_fps'])
+            e_trans = st.number_input("Takeoff Speed (mph)", value=meta['trans_speed_mph'])
             e_alt = st.number_input("Relative Altitude (ft)", value=meta['alt_ft'])
             e_pitch = st.slider("Gimbal Pitch (°)", -90, 0, int(meta['pitch']))
             e_side = st.selectbox("Yaw Side", ["right", "left"])
@@ -437,30 +450,96 @@ elif page == 'Editor':
             t_idx = 0 if meta['trigger_type'] == 'distance' else 1
             e_trigger = st.radio("Type", ["distance", "time"], index=t_idx)
             e_tval = st.number_input("Interval (ft or sec)", value=meta['t_val'])
-            e_speed = st.number_input("Flight Speed (fps)", value=meta['speed_m'] * M_TO_FT)
+            
+            if e_trigger == "time":
+                e_auto_speed = st.checkbox("Auto-Calc Speed", True)
+                if e_auto_speed:
+                    e_target_gap = st.number_input("Target Gap (ft)", 26.2)
+                    e_speed_m = min(max((e_target_gap * FT_TO_M) / e_tval, 1.0), 10.0)
+                    st.info(f"🤖 Auto-Calculated Speed: {e_speed_m * MS_TO_MPH:.1f} mph")
+                else:
+                    e_manual_mph = st.number_input("Manual Speed (mph)", value=meta['speed_mph'])
+                    e_speed_m = e_manual_mph * MPH_TO_MS
+            else:
+                e_manual_mph = st.number_input("Flight Speed (mph)", value=meta['speed_mph'])
+                e_speed_m = e_manual_mph * MPH_TO_MS
 
-        if st.button("💾 Save & Update Mission"):
-            new_cfg = {
-                "safe_takeoff_ft": e_safe, "trans_speed_fps": e_trans, "alt_ft": e_alt,
-                "pitch": e_pitch, "side": e_side, "trigger_type": e_trigger,
-                "interval_ft": e_tval, "interval_sec": e_tval, 
-                "speed_m": e_speed * FT_TO_M, "photo_start_wp": int(e_start_wp)
-            }
-            template_kml, waylines_wpml = generate_native_kmz_contents(meta['coords'], new_cfg)
-            with zipfile.ZipFile(f"missions/{edit_name}.kmz", 'w') as kmz:
-                kmz.writestr("wpmz/waylines.wpml", waylines_wpml)
-                kmz.writestr("wpmz/template.kml", template_kml)
-            st.success(f"Successfully updated and saved as {edit_name}.kmz!")
+        top_hud = st.container()
+
+        st.write("### 📍 Fine-Tune Flight Path Coordinates")
+        st.caption("Edit the table below to slightly nudge waypoints, or draw a completely new line on the map to replace it.")
         
-        st.divider()
+        df = pd.DataFrame(meta['coords'], columns=['Latitude', 'Longitude'])
+        edited_df = st.data_editor(df, num_rows="dynamic", key=st.session_state.editor_key, use_container_width=True)
+        current_coords = [(row['Latitude'], row['Longitude']) for _, row in edited_df.iterrows()]
 
-        if meta['coords']:
-            m_edit = folium.Map(location=[meta['coords'][0][0], meta['coords'][0][1]], zoom_start=18, tiles=None)
-            folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_edit)
-            folium.PolyLine(meta['coords'], color="#00ffff", weight=5).add_to(m_edit)
-            for i, c in enumerate(meta['coords']):
-                folium.CircleMarker(c, radius=4, color="red", popup=f"WP {i}").add_to(m_edit)
-            st_folium(m_edit, width=1200, height=600)
+        m_edit = folium.Map(location=[current_coords[0][0], current_coords[0][1]], zoom_start=18, tiles=None)
+        folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_edit)
+        Draw(export=False, draw_options={'polyline':{'shapeOptions':{'color':'#00ffff','weight':5}}}).add_to(m_edit)
+        
+        line = folium.PolyLine(current_coords, color="#00ffff", weight=5).add_to(m_edit)
+        PolyLineTextPath(line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '24', 'fill-opacity': '0.3'}).add_to(m_edit)
+        
+        for i in range(len(current_coords) - 1):
+            p1 = current_coords[i]
+            p2 = current_coords[i+1]
+            dist = get_haversine_dist(p1, p2) * M_TO_FT
+            mid_lat = (p1[0] + p2[0]) / 2
+            mid_lon = (p1[1] + p2[1]) / 2
+            folium.Marker(
+                location=[mid_lat, mid_lon],
+                icon=DivIcon(
+                    icon_size=(100, 20), icon_anchor=(50, 10),
+                    html=f'<div style="font-size: 12pt; color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-weight: bold; text-align: center;">{dist:.1f} ft</div>'
+                )
+            ).add_to(m_edit)
+
+        for i, c in enumerate(current_coords):
+            folium.Marker(
+                location=c,
+                icon=DivIcon(
+                    icon_size=(24,24), icon_anchor=(12,12),
+                    html=f'<div style="font-size: 11pt; color: black; background: white; border-radius: 50%; text-align: center; border: 2px solid black; font-weight: bold; width: 24px; height: 24px; line-height: 20px;">{i}</div>'
+                )
+            ).add_to(m_edit)
+            
+        map_data_edit = st_folium(m_edit, width=1200, height=600)
+
+        # Check if the user drew a new line overriding the table
+        if map_data_edit.get("all_drawings") and len(map_data_edit["all_drawings"]) > 0:
+            final_coords = [(c[1], c[0]) for c in map_data_edit["all_drawings"][-1]['geometry']['coordinates']]
+            st.info("✏️ Using newly drawn line from the map.")
+        else:
+            final_coords = current_coords
+
+        with top_hud:
+            total_dist_ft = sum(get_haversine_dist(final_coords[i], final_coords[i+1]) for i in range(len(final_coords)-1)) * M_TO_FT
+            gap_ft = round(e_tval * FT_TO_M) * M_TO_FT if e_trigger == "distance" else (e_speed_m * e_tval * M_TO_FT)
+            if len(final_coords) > e_start_wp:
+                dist_to_start = sum(get_haversine_dist(final_coords[i], final_coords[i+1]) for i in range(e_start_wp)) * M_TO_FT
+                active_path_ft = max(0, total_dist_ft - dist_to_start)
+                est_photos = int(active_path_ft / gap_ft) + 1 if gap_ft > 0 else 0
+            else:
+                est_photos = 0
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft")
+            c2.metric("Estimated Photos", f"{est_photos}")
+            c3.metric("Flight Speed", f"{e_speed_m * MS_TO_MPH:.1f} mph")
+
+            if st.button("💾 Save & Update Mission"):
+                new_cfg = {
+                    "safe_takeoff_ft": e_safe, "trans_speed_mph": e_trans, "alt_ft": e_alt,
+                    "pitch": e_pitch, "side": e_side, "trigger_type": e_trigger,
+                    "interval_ft": e_tval, "interval_sec": e_tval, 
+                    "speed_m": e_speed_m, "photo_start_wp": int(e_start_wp)
+                }
+                template_kml, waylines_wpml = generate_native_kmz_contents(final_coords, new_cfg)
+                with zipfile.ZipFile(f"missions/{edit_name}.kmz", 'w') as kmz:
+                    kmz.writestr("wpmz/waylines.wpml", waylines_wpml)
+                    kmz.writestr("wpmz/template.kml", template_kml)
+                st.success(f"Successfully updated and saved as {edit_name}.kmz!")
+            st.divider()
 
 # --- VIEWER MODE ---
 elif page == 'Viewer':
@@ -509,26 +588,48 @@ elif page == 'Viewer':
         if wp_data:
             m_view = folium.Map(location=[wp_data[0]['lat'], wp_data[0]['lon']], zoom_start=19, tiles=None)
             folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_view)
-            folium.PolyLine([[w['lat'], w['lon']] for w in wp_data], color="#00ffff", weight=5).add_to(m_view)
+            
+            line_coords = [[w['lat'], w['lon']] for w in wp_data]
+            
+            line = folium.PolyLine(line_coords, color="#00ffff", weight=5).add_to(m_view)
+            PolyLineTextPath(line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '24', 'fill-opacity': '0.3'}).add_to(m_view)
             
             cum_dist = [0.0]
             total_dist_m = 0.0
+            
             for i in range(len(wp_data) - 1):
                 p1 = (wp_data[i]['lat'], wp_data[i]['lon'])
                 p2 = (wp_data[i+1]['lat'], wp_data[i+1]['lon'])
                 d = get_haversine_dist(p1, p2)
                 total_dist_m += d
                 cum_dist.append(total_dist_m)
+                
+                mid_lat = (p1[0] + p2[0]) / 2
+                mid_lon = (p1[1] + p2[1]) / 2
+                folium.Marker(
+                    location=[mid_lat, mid_lon],
+                    icon=DivIcon(
+                        icon_size=(100, 20), icon_anchor=(50, 10),
+                        html=f'<div style="font-size: 12pt; color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-weight: bold; text-align: center;">{d * M_TO_FT:.1f} ft</div>'
+                    )
+                ).add_to(m_view)
             
             gap = int(meta['t_val']) if meta['mode'] == "Distance" else (meta['speed'] * meta['t_val'])
             
-            for i in range(len(wp_data)):
-                wp = wp_data[i]
+            for w in wp_data:
+                i = w['index']
                 length = 0.00012
-                end_lat = wp['lat'] + length * math.cos(math.radians(wp['yaw']))
-                end_lon = wp['lon'] + length * math.sin(math.radians(wp['yaw']))
-                folium.PolyLine([[wp['lat'], wp['lon']], [end_lat, end_lon]], color="#ff0000", weight=4).add_to(m_view)
-                folium.CircleMarker([wp['lat'], wp['lon']], radius=3, color="white", fill=True).add_to(m_view)
+                end_lat = w['lat'] + length * math.cos(math.radians(w['yaw']))
+                end_lon = w['lon'] + length * math.sin(math.radians(w['yaw']))
+                folium.PolyLine([[w['lat'], w['lon']], [end_lat, end_lon]], color="#ff0000", weight=4).add_to(m_view)
+                
+                folium.Marker(
+                    location=[w['lat'], w['lon']],
+                    icon=DivIcon(
+                        icon_size=(24,24), icon_anchor=(12,12),
+                        html=f'<div style="font-size: 11pt; color: black; background: white; border-radius: 50%; text-align: center; border: 2px solid black; font-weight: bold; width: 24px; height: 24px; line-height: 20px;">{i}</div>'
+                    )
+                ).add_to(m_view)
             
             photo_count = 0
             if gap > 0 and meta['start_idx'] < len(wp_data):
