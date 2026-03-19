@@ -1,0 +1,12 @@
+*.pyc
+*.so
+*.prof
+xcode
+.DS_Store
+launch.json
+.vscode
+.idea
+.claude
+
+#Ignore generated missions
+missions/
