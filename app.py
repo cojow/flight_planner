@@ -37,7 +37,6 @@ CAM_VAL_MAP = {v: k for k, v in CAM_DISPLAY_MAP.items()}
 
 # Scalable Hardware Dictionary
 HARDWARE_MAP = {
-    "Mavic 3 Enterprise (Drone: 2, Payload: 0)": {"drone_sub": "2", "payload_sub": "0"},
     "Mavic 3 Multispectral (Drone: 0, Payload: 3)": {"drone_sub": "0", "payload_sub": "3"}
 }
 
@@ -131,10 +130,10 @@ def e_sync_geometry():
 def parse_kmz_for_editing(full_path):
     ns = {'kml': 'http://www.opengis.net/kml/2.2', 'wpml': 'http://www.dji.com/wpmz/1.0.6'}
     meta = {
-        "safe_takeoff_ft": 60.0, "trans_speed_mph": 22.0, "speed_m": 4.11, "speed_mph":1,
+        "safe_takeoff_ft": 60.0, "trans_speed_mph": 22.0, "speed_m": 4.11, "speed_mph": 1.0,
         "alt_ft": 50.0, "pitch": -60.0, "trigger_type": "distance", 
         "t_val": 9.0, "photo_start_wp": 0, "coords": [], "camera_type": "visable",
-        "drone_sub": "2", "payload_sub": "0"
+        "drone_sub": "0", "payload_sub": "3"
     }
     with zipfile.ZipFile(full_path, 'r') as kmz:
         root_w = ET.fromstring(kmz.read('wpmz/waylines.wpml'))
@@ -149,7 +148,6 @@ def parse_kmz_for_editing(full_path):
             meta['speed_m'] = float(speed_node.text)
             meta['speed_mph'] = float(speed_node.text) * MS_TO_MPH
 
-        # FIX: Parse Hardware IDs from template.kml to avoid overwrite bug
         drone_info = root_t.find('.//wpml:droneInfo', ns)
         if drone_info is not None:
             d_sub = drone_info.find('.//wpml:droneSubEnumValue', ns)
@@ -160,7 +158,7 @@ def parse_kmz_for_editing(full_path):
             p_sub = payload_info.find('.//wpml:payloadSubEnumValue', ns)
             if p_sub is not None and p_sub.text: meta['payload_sub'] = p_sub.text
 
-        hw_key = "Mavic 3 Enterprise (Drone: 2, Payload: 0)"
+        hw_key = "Mavic 3 Multispectral (Drone: 0, Payload: 3)"
         for k, v in HARDWARE_MAP.items():
             if v["drone_sub"] == meta['drone_sub'] and v["payload_sub"] == meta['payload_sub']:
                 hw_key = k
@@ -209,8 +207,8 @@ def generate_native_kmz_contents(coords, cfg):
     trans_m = cfg["trans_speed_mph"] * MPH_TO_MS
     speed_m = cfg["speed_m"]
     lens_str = cfg.get("camera_type", "visable")
-    drone_sub_enum = cfg.get("drone_sub", "2")
-    payload_sub_enum = cfg.get("payload_sub", "0")
+    drone_sub_enum = cfg.get("drone_sub", "0")
+    payload_sub_enum = cfg.get("payload_sub", "3")
     
     total_dist_m = sum(get_haversine_dist(coords[i], coords[i+1]) for i in range(len(coords)-1))
     total_duration = total_dist_m / speed_m if speed_m > 0 else 0
@@ -289,7 +287,7 @@ def generate_native_kmz_contents(coords, cfg):
         start_wp = cfg.get("photo_start_wp", 0)
         if i == start_wp:
             trigger_tag = "multipleDistance" if cfg["trigger_type"] == "distance" else "multipleTiming"
-            interval_val = max(1, round(cfg['interval_ft'] * FT_TO_M)) if cfg["trigger_type"] == "distance" else cfg['interval_sec']
+            interval_val = max(1.0, cfg['interval_ft'] * FT_TO_M) if cfg["trigger_type"] == "distance" else cfg['interval_sec']
             
             photo_action_block = f"""
           <wpml:actionGroupStartIndex>{start_wp}</wpml:actionGroupStartIndex>
@@ -379,7 +377,6 @@ def generate_native_kmz_contents(coords, cfg):
         <wpml:waypointWorkType>0</wpml:waypointWorkType>{waylines_action_group}
       </Placemark>"""
 
-    # FIX: Added global payloadParam with imageFormat to force the DJI app into the right sensor mode
     template_kml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.6">
   <Document>
@@ -463,7 +460,7 @@ def generate_native_kmz_contents(coords, cfg):
 # ==========================================
 st.set_page_config(layout="wide", page_title="ISLERS Control")
 
-st.title("🛰️ ISLERS Mission Control")
+st.title("🛰️ Flight Planner")
 page = st.radio("Navigation", ["Creator", "Editor", "Viewer"], horizontal=True, label_visibility="collapsed")
 
 # --- CREATOR MODE ---
@@ -493,7 +490,6 @@ if page == 'Creator':
         cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"])
         camera_type = CAM_VAL_MAP[cam_choice]
         
-        # M3M Safety Limit: 2.0s for MS, 0.7s for RGB
         min_photo_interval_sec = 2.0 if "narrow_band" in camera_type else 0.7
 
         st.header("4. Trigger & Speed")
@@ -503,11 +499,10 @@ if page == 'Creator':
         if st.session_state.trigger_type == "distance":
             st.number_input("Interval (ft)", key="t_dist_val", min_value=1.0, on_change=sync_dist_to_overlap)
             st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=sync_overlap_to_dist)
-            manual_mph = st.number_input("Flight Speed (mph)", 1)
+            manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, value=6.0)
             speed_m = manual_mph * MPH_TO_MS
             
-            # HARDWARE LIMIT WARNING
-            gap_m = max(1, round(st.session_state.t_dist_val * FT_TO_M))
+            gap_m = max(1.0, st.session_state.t_dist_val * FT_TO_M)
             max_speed_m = gap_m / min_photo_interval_sec
             if speed_m > max_speed_m:
                 st.error(f"⚠️ Speed Too High! At {speed_m * MS_TO_MPH:.1f} mph, the camera must fire every {gap_m / speed_m:.2f}s. Your sensor requires {min_photo_interval_sec}s. The drone will drop photos. Lower your speed to {max_speed_m * MS_TO_MPH:.1f} mph.")
@@ -520,7 +515,7 @@ if page == 'Creator':
                 speed_m = min(max((st.session_state.target_gap_ft * FT_TO_M) / t_val_sec, 1.0), 10.0)
                 st.info(f"🤖 Auto-Calculated Speed: {speed_m * MS_TO_MPH:.1f} mph")
             else:
-                manual_mph = st.number_input("Manual Speed (mph)", 1)
+                manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, value=6.0)
                 speed_m = manual_mph * MPH_TO_MS
                 current_gap = speed_m * M_TO_FT * t_val_sec
                 fw = get_footprint(st.session_state.pitch, st.session_state.alt_ft)
@@ -539,7 +534,7 @@ if page == 'Creator':
         total_dist_ft = sum(get_haversine_dist(coords[i], coords[i+1]) for i in range(len(coords)-1)) * M_TO_FT
         
         if st.session_state.trigger_type == "distance":
-            gap_m = max(1, round(st.session_state.t_dist_val * FT_TO_M))
+            gap_m = max(1.0, st.session_state.t_dist_val * FT_TO_M)
             gap_ft = gap_m * M_TO_FT
         else:
             gap_ft = speed_m * t_val_sec * M_TO_FT
@@ -582,9 +577,15 @@ elif page == 'Editor':
     if not kmz_files:
         st.warning("No missions found in missions/ directory.")
     else:
-        col1, col2 = st.columns([1, 2])
+        col1, col2 = st.columns([3, 1])
         with col1:
             selected_kmz = st.selectbox("Select Mission to Edit", kmz_files)
+        with col2:
+            st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+            make_new_file = st.checkbox("Make new file?", value=False)
+            
+        base_name = selected_kmz.replace('.kmz', '')
+        edit_name = f"{base_name}-edited" if make_new_file else base_name
         
         full_path = os.path.join(MISSION_DIR, selected_kmz)
         
@@ -608,8 +609,8 @@ elif page == 'Editor':
         meta = st.session_state.meta
         
         with st.sidebar:
+            st.info(f"💾 Will save as: {edit_name}.kmz")
             st.header("Modify Parameters")
-            edit_name = st.text_input("Save As", value=selected_kmz.replace('.kmz', '_edited'))
             e_safe = st.number_input("Safe Takeoff Alt (ft)", value=meta['safe_takeoff_ft'])
             e_trans = st.number_input("Takeoff Speed (mph)", value=meta['trans_speed_mph'])
             
@@ -624,7 +625,7 @@ elif page == 'Editor':
             e_side = st.selectbox("Yaw Side", ["right", "left"])
             
             st.header("Hardware & Payload")
-            e_hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()), index=list(HARDWARE_MAP.keys()).index(meta.get('hardware_key', "Mavic 3 Enterprise (Drone: 2, Payload: 0)")))
+            e_hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()), index=list(HARDWARE_MAP.keys()).index(meta.get('hardware_key', "Mavic 3 Multispectral (Drone: 0, Payload: 3)")))
             e_drone_sub_enum = HARDWARE_MAP[e_hw_choice]["drone_sub"]
             e_payload_sub_enum = HARDWARE_MAP[e_hw_choice]["payload_sub"]
             
@@ -639,13 +640,15 @@ elif page == 'Editor':
             t_idx = 0 if meta['trigger_type'] == 'distance' else 1
             e_trigger = st.radio("Type", ["distance", "time"], key="e_trigger_type", on_change=e_sync_geometry)
             
+            safe_e_speed = max(2.3, float(meta.get('speed_mph', 6.0)))
+            
             if st.session_state.e_trigger_type == "distance":
                 st.number_input("Interval (ft)", key="e_t_dist_val", min_value=1.0, on_change=e_sync_dist_to_overlap)
                 st.number_input("Forward Overlap (%)", key="e_overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=e_sync_overlap_to_dist)
-                e_manual_mph = st.number_input("Flight Speed (mph)", value=meta['speed_mph'])
+                e_manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, value=safe_e_speed)
                 e_speed_m = e_manual_mph * MPH_TO_MS
                 
-                gap_m = max(1, round(st.session_state.e_t_dist_val * FT_TO_M))
+                gap_m = max(1.0, st.session_state.e_t_dist_val * FT_TO_M)
                 max_speed_m = gap_m / min_photo_interval_sec
                 if e_speed_m > max_speed_m:
                     st.error(f"⚠️ Speed Too High! At {e_speed_m * MS_TO_MPH:.1f} mph, the camera must fire every {gap_m / e_speed_m:.2f}s. Your sensor requires {min_photo_interval_sec}s. The drone will drop photos. Lower your speed to {max_speed_m * MS_TO_MPH:.1f} mph.")
@@ -659,7 +662,7 @@ elif page == 'Editor':
                     e_speed_m = min(max((st.session_state.e_target_gap_ft * FT_TO_M) / e_tval_sec, 1.0), 10.0)
                     st.info(f"🤖 Auto-Calculated Speed: {e_speed_m * MS_TO_MPH:.1f} mph")
                 else:
-                    e_manual_mph = st.number_input("Manual Speed (mph)", value=meta['speed_mph'])
+                    e_manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, value=safe_e_speed)
                     e_speed_m = e_manual_mph * MPH_TO_MS
                     current_gap = e_speed_m * M_TO_FT * e_tval_sec
                     fw = get_footprint(st.session_state.e_pitch, st.session_state.e_alt_ft)
@@ -715,7 +718,7 @@ elif page == 'Editor':
             total_dist_ft = sum(get_haversine_dist(final_coords[i], final_coords[i+1]) for i in range(len(final_coords)-1)) * M_TO_FT
             
             if st.session_state.e_trigger_type == "distance":
-                gap_m = max(1, round(st.session_state.e_t_dist_val * FT_TO_M))
+                gap_m = max(1.0, st.session_state.e_t_dist_val * FT_TO_M)
                 gap_ft = gap_m * M_TO_FT
             else:
                 gap_ft = e_speed_m * st.session_state.e_t_time_val * M_TO_FT
@@ -844,7 +847,7 @@ elif page == 'Viewer':
                     )
                 ).add_to(m_view)
             
-            gap = max(1, int(meta['t_val'])) if meta['mode'] == "Distance" else (meta['speed'] * meta['t_val'])
+            gap = max(1.0, float(meta['t_val'])) if meta['mode'] == "Distance" else (meta['speed'] * meta['t_val'])
             
             for w in wp_data:
                 i = w['index']

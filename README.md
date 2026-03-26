@@ -5,10 +5,14 @@ An open-source flight planning software for DJI drones. Specifically Mavic 3M mo
 Download the repository
 
 Install the dependencies
-'pip install -r requirements.txt'
+```
+pip install -r requirements.txt
+```
 
 Run the following in the terminal 
-'streamlit run app.py'
+```
+streamlit run app.py
+```
 
 The app will open in your web browser. Draw your mission path, set paramaters, then click "save and generate KMZ"
 
