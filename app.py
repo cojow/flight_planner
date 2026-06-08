@@ -23,6 +23,7 @@ MS_TO_MPH = 2.23694
 MISSION_DIR = "missions"
 os.makedirs(MISSION_DIR, exist_ok=True)
 
+# Mavic 3 Multispectral Sensor Specs
 SENSOR_W = 17.3  
 SENSOR_H = 13.0
 FOCAL_L = 12.3   
@@ -53,46 +54,67 @@ def get_bearing(p1, p2):
     x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(d_lon)
     return (math.degrees(math.atan2(y, x)) + 360) % 360
 
+# ==========================================
+# 3D ROTATION MATRIX FOOTPRINT CALCULATOR
+# ==========================================
 def get_photo_footprint(lat, lon, alt_ft, pitch, yaw):
-    pitch_down = abs(pitch)
-    if pitch_down == 0: 
-        pitch_down = 1 # Prevent division by zero
-    fov_v_deg = math.degrees(2 * math.atan((SENSOR_H / 2) / FOCAL_L))
-    fov_h_deg = math.degrees(2 * math.atan((SENSOR_W / 2) / FOCAL_L))
+    # Sensor dimensions
+    w, h = SENSOR_W, SENSOR_H
+    f = FOCAL_L
     
-    angle_near = pitch_down + fov_v_deg / 2
-    angle_far = pitch_down - fov_v_deg / 2
-    if angle_near >= 90: 
-        angle_near = 89.99
+    # 1. Corners on sensor plane (z = -focal_length)
+    corners = [(-w/2, h/2, -f), (w/2, h/2, -f), (w/2, -h/2, -f), (-w/2, -h/2, -f)]
     
-    y_near = alt_ft / math.tan(math.radians(angle_near))
-    if angle_far <= 0: 
-        y_far = alt_ft * 10
-    else: 
-        y_far = alt_ft / math.tan(math.radians(angle_far))
-        
-    slant_near = math.sqrt(y_near**2 + alt_ft**2)
-    slant_far = math.sqrt(y_far**2 + alt_ft**2)
-    
-    w_near = 2 * slant_near * math.tan(math.radians(fov_h_deg / 2))
-    w_far = 2 * slant_far * math.tan(math.radians(fov_h_deg / 2))
-    
-    corners_local = [(-w_far / 2, y_far), (w_far / 2, y_far), (w_near / 2, y_near), (-w_near / 2, y_near)]
-    
-    corners_global = []
-    R_earth_ft = 20925646.3
+    # 2. Convert angles
     yaw_rad = math.radians(yaw)
-    cos_y = math.cos(yaw_rad)
-    sin_y = math.sin(yaw_rad)
-    cos_lat = math.cos(math.radians(lat))
+    pitch_rad = math.radians(pitch + 90) # Offset so 0 is straight down
     
-    for x, y in corners_local:
-        east_ft = x * cos_y + y * sin_y
-        north_ft = -x * sin_y + y * cos_y
-        dlat = math.degrees(north_ft / R_earth_ft)
-        dlon = math.degrees(east_ft / (R_earth_ft * cos_lat))
-        corners_global.append([lat + dlat, lon + dlon])
-    return corners_global
+    # 3. Create Rotation Matrices
+    # Corrected Rz: Clockwise Rotation Matrix (Azimuthal)
+    Rz = [[math.cos(yaw_rad), math.sin(yaw_rad), 0],
+          [-math.sin(yaw_rad), math.cos(yaw_rad), 0],
+          [0, 0, 1]]
+    
+    # Rx: Pitch Rotation Matrix
+    Rx = [[1, 0, 0],
+          [0, math.cos(pitch_rad), -math.sin(pitch_rad)],
+          [0, math.sin(pitch_rad), math.cos(pitch_rad)]]
+    
+    # 4. Combined Rotation: R = Rz * Rx
+    # This aligns the footprint correctly with the flight path heading
+    R = [[Rz[0][0]*Rx[0][0] + Rz[0][1]*Rx[1][0] + Rz[0][2]*Rx[2][0], 
+          Rz[0][0]*Rx[0][1] + Rz[0][1]*Rx[1][1] + Rz[0][2]*Rx[2][1],
+          Rz[0][0]*Rx[0][2] + Rz[0][1]*Rx[1][2] + Rz[0][2]*Rx[2][2]],
+         [Rz[1][0]*Rx[0][0] + Rz[1][1]*Rx[1][0] + Rz[1][2]*Rx[2][0], 
+          Rz[1][0]*Rx[0][1] + Rz[1][1]*Rx[1][1] + Rz[1][2]*Rx[2][1],
+          Rz[1][0]*Rx[0][2] + Rz[1][1]*Rx[1][2] + Rz[1][2]*Rx[2][2]],
+         [Rz[2][0]*Rx[0][0] + Rz[2][1]*Rx[1][0] + Rz[2][2]*Rx[2][0], 
+          Rz[2][0]*Rx[0][1] + Rz[2][1]*Rx[1][1] + Rz[2][2]*Rx[2][1],
+          Rz[2][0]*Rx[0][2] + Rz[2][1]*Rx[1][2] + Rz[2][2]*Rx[2][2]]]
+
+    # 5. Project onto ground plane
+    R_earth_ft = 20925646.3
+    final_corners = []
+    
+    for corner in corners:
+        ray = [R[0][0]*corner[0] + R[0][1]*corner[1] + R[0][2]*corner[2],
+               R[1][0]*corner[0] + R[1][1]*corner[1] + R[1][2]*corner[2],
+               R[2][0]*corner[0] + R[2][1]*corner[1] + R[2][2]*corner[2]]
+        
+        # Intersect with Z = -alt_ft
+        if ray[2] == 0: continue
+        t = -alt_ft / ray[2]
+        
+        # Calculate ground offset
+        dx_ft = ray[0] * t
+        dy_ft = ray[1] * t
+        
+        # Convert to GPS
+        dlat = math.degrees(dy_ft / R_earth_ft)
+        dlon = math.degrees(dx_ft / (R_earth_ft * math.cos(math.radians(lat))))
+        final_corners.append([lat + dlat, lon + dlon])
+        
+    return final_corners
 
 # ==========================================
 # SESSION STATE INITIALIZATION & CALLBACKS
