@@ -23,19 +23,18 @@ MS_TO_MPH = 2.23694
 MISSION_DIR = "missions"
 os.makedirs(MISSION_DIR, exist_ok=True)
 
-# Mavic 3 Hasselblad Sensor Specs
 SENSOR_W = 17.3  
+SENSOR_H = 13.0
 FOCAL_L = 12.3   
 IMAGE_W = 5280   
 
 CAM_DISPLAY_MAP = {
-    "visable": "RGB Only",
+    "visible": "RGB Only",
     "narrow_band": "Multispectral Only",
-    "visable,narrow_band": "RGB + Multispectral"
+    "visible,narrow_band": "RGB + Multispectral"
 }
 CAM_VAL_MAP = {v: k for k, v in CAM_DISPLAY_MAP.items()}
 
-# Scalable Hardware Dictionary
 HARDWARE_MAP = {
     "Mavic 3 Multispectral (Drone: 0, Payload: 3)": {"drone_sub": "0", "payload_sub": "3"}
 }
@@ -54,75 +53,133 @@ def get_bearing(p1, p2):
     x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(d_lon)
     return (math.degrees(math.atan2(y, x)) + 360) % 360
 
+def get_photo_footprint(lat, lon, alt_ft, pitch, yaw):
+    pitch_down = abs(pitch)
+    if pitch_down == 0: 
+        pitch_down = 1 # Prevent division by zero
+    fov_v_deg = math.degrees(2 * math.atan((SENSOR_H / 2) / FOCAL_L))
+    fov_h_deg = math.degrees(2 * math.atan((SENSOR_W / 2) / FOCAL_L))
+    
+    angle_near = pitch_down + fov_v_deg / 2
+    angle_far = pitch_down - fov_v_deg / 2
+    if angle_near >= 90: 
+        angle_near = 89.99
+    
+    y_near = alt_ft / math.tan(math.radians(angle_near))
+    if angle_far <= 0: 
+        y_far = alt_ft * 10
+    else: 
+        y_far = alt_ft / math.tan(math.radians(angle_far))
+        
+    slant_near = math.sqrt(y_near**2 + alt_ft**2)
+    slant_far = math.sqrt(y_far**2 + alt_ft**2)
+    
+    w_near = 2 * slant_near * math.tan(math.radians(fov_h_deg / 2))
+    w_far = 2 * slant_far * math.tan(math.radians(fov_h_deg / 2))
+    
+    corners_local = [(-w_far / 2, y_far), (w_far / 2, y_far), (w_near / 2, y_near), (-w_near / 2, y_near)]
+    
+    corners_global = []
+    R_earth_ft = 20925646.3
+    yaw_rad = math.radians(yaw)
+    cos_y = math.cos(yaw_rad)
+    sin_y = math.sin(yaw_rad)
+    cos_lat = math.cos(math.radians(lat))
+    
+    for x, y in corners_local:
+        east_ft = x * cos_y + y * sin_y
+        north_ft = -x * sin_y + y * cos_y
+        dlat = math.degrees(north_ft / R_earth_ft)
+        dlon = math.degrees(east_ft / (R_earth_ft * cos_lat))
+        corners_global.append([lat + dlat, lon + dlon])
+    return corners_global
+
 # ==========================================
 # SESSION STATE INITIALIZATION & CALLBACKS
 # ==========================================
-if "alt_ft" not in st.session_state: st.session_state.alt_ft = 50.0
-if "pitch" not in st.session_state: st.session_state.pitch = -60
-if "trigger_type" not in st.session_state: st.session_state.trigger_type = "distance"
-if "t_dist_val" not in st.session_state: st.session_state.t_dist_val = 9.0
-if "target_gap_ft" not in st.session_state: st.session_state.target_gap_ft = 26.2
-if "overlap_pct" not in st.session_state: st.session_state.overlap_pct = 70.0
+if "alt_ft" not in st.session_state: 
+    st.session_state.alt_ft = 50.0
+if "pitch" not in st.session_state: 
+    st.session_state.pitch = -60
+if "trigger_type" not in st.session_state: 
+    st.session_state.trigger_type = "distance"
+if "t_dist_val" not in st.session_state: 
+    st.session_state.t_dist_val = 9.0
+if "target_gap_ft" not in st.session_state: 
+    st.session_state.target_gap_ft = 26.2
+if "overlap_pct" not in st.session_state: 
+    st.session_state.overlap_pct = 70.0
 
-if "e_alt_ft" not in st.session_state: st.session_state.e_alt_ft = 50.0
-if "e_pitch" not in st.session_state: st.session_state.e_pitch = -60
-if "e_trigger_type" not in st.session_state: st.session_state.e_trigger_type = "distance"
-if "e_t_dist_val" not in st.session_state: st.session_state.e_t_dist_val = 9.0
-if "e_target_gap_ft" not in st.session_state: st.session_state.e_target_gap_ft = 26.2
-if "e_overlap_pct" not in st.session_state: st.session_state.e_overlap_pct = 70.0
+if "e_alt_ft" not in st.session_state: 
+    st.session_state.e_alt_ft = 50.0
+if "e_pitch" not in st.session_state: 
+    st.session_state.e_pitch = -60
+if "e_trigger_type" not in st.session_state: 
+    st.session_state.e_trigger_type = "distance"
+if "e_t_dist_val" not in st.session_state: 
+    st.session_state.e_t_dist_val = 9.0
+if "e_target_gap_ft" not in st.session_state: 
+    st.session_state.e_target_gap_ft = 26.2
+if "e_overlap_pct" not in st.session_state: 
+    st.session_state.e_overlap_pct = 70.0
 
-def get_footprint(pitch, alt):
-    if pitch == 0: return 999999.0  
+def get_center_footprint(pitch, alt):
+    if pitch == 0: 
+        return 999999.0  
     slant_dist = alt / math.sin(math.radians(abs(pitch)))
     return slant_dist * (SENSOR_W / FOCAL_L)
 
 def sync_dist_to_overlap():
-    fw = get_footprint(st.session_state.get('pitch', -60.0), st.session_state.get('alt_ft', 50.0))
+    fw = get_center_footprint(st.session_state.get('pitch', -60.0), st.session_state.get('alt_ft', 50.0))
     if fw > 0: 
         val = st.session_state.get('t_dist_val', 9.0)
         st.session_state.overlap_pct = max(0.0, min(((fw - val) / fw) * 100, 99.9))
 
 def sync_overlap_to_dist():
-    fw = get_footprint(st.session_state.get('pitch', -60.0), st.session_state.get('alt_ft', 50.0))
+    fw = get_center_footprint(st.session_state.get('pitch', -60.0), st.session_state.get('alt_ft', 50.0))
     st.session_state.t_dist_val = fw * (1 - (st.session_state.get('overlap_pct', 70.0) / 100))
 
 def sync_gap_to_overlap():
-    fw = get_footprint(st.session_state.get('pitch', -60.0), st.session_state.get('alt_ft', 50.0))
+    fw = get_center_footprint(st.session_state.get('pitch', -60.0), st.session_state.get('alt_ft', 50.0))
     if fw > 0: 
         val = st.session_state.get('target_gap_ft', 26.2)
         st.session_state.overlap_pct = max(0.0, min(((fw - val) / fw) * 100, 99.9))
 
 def sync_overlap_to_gap():
-    fw = get_footprint(st.session_state.get('pitch', -60.0), st.session_state.get('alt_ft', 50.0))
+    fw = get_center_footprint(st.session_state.get('pitch', -60.0), st.session_state.get('alt_ft', 50.0))
     st.session_state.target_gap_ft = fw * (1 - (st.session_state.get('overlap_pct', 70.0) / 100))
 
 def sync_geometry():
-    if st.session_state.get('trigger_type', 'distance') == 'distance': sync_dist_to_overlap()
-    else: sync_gap_to_overlap()
+    if st.session_state.get('trigger_type', 'distance') == 'distance': 
+        sync_dist_to_overlap()
+    else: 
+        sync_gap_to_overlap()
 
 def e_sync_dist_to_overlap():
-    fw = get_footprint(st.session_state.get('e_pitch', -60.0), st.session_state.get('e_alt_ft', 50.0))
+    fw = get_center_footprint(st.session_state.get('e_pitch', -60.0), st.session_state.get('e_alt_ft', 50.0))
     if fw > 0: 
         val = st.session_state.get('e_t_dist_val', 9.0)
         st.session_state.e_overlap_pct = max(0.0, min(((fw - val) / fw) * 100, 99.9))
 
 def e_sync_overlap_to_dist():
-    fw = get_footprint(st.session_state.get('e_pitch', -60.0), st.session_state.get('e_alt_ft', 50.0))
+    fw = get_center_footprint(st.session_state.get('e_pitch', -60.0), st.session_state.get('e_alt_ft', 50.0))
     st.session_state.e_t_dist_val = fw * (1 - (st.session_state.get('e_overlap_pct', 70.0) / 100))
 
 def e_sync_gap_to_overlap():
-    fw = get_footprint(st.session_state.get('e_pitch', -60.0), st.session_state.get('e_alt_ft', 50.0))
+    fw = get_center_footprint(st.session_state.get('e_pitch', -60.0), st.session_state.get('e_alt_ft', 50.0))
     if fw > 0: 
         val = st.session_state.get('e_target_gap_ft', 26.2)
         st.session_state.e_overlap_pct = max(0.0, min(((fw - val) / fw) * 100, 99.9))
 
 def e_sync_overlap_to_gap():
-    fw = get_footprint(st.session_state.get('e_pitch', -60.0), st.session_state.get('e_alt_ft', 50.0))
+    fw = get_center_footprint(st.session_state.get('e_pitch', -60.0), st.session_state.get('e_alt_ft', 50.0))
     st.session_state.e_target_gap_ft = fw * (1 - (st.session_state.get('e_overlap_pct', 70.0) / 100))
 
 def e_sync_geometry():
-    if st.session_state.get('e_trigger_type', 'distance') == 'distance': e_sync_dist_to_overlap()
-    else: e_sync_gap_to_overlap()
+    if st.session_state.get('e_trigger_type', 'distance') == 'distance': 
+        e_sync_dist_to_overlap()
+    else: 
+        e_sync_gap_to_overlap()
 
 # ==========================================
 # DATA EXTRACTION (FOR EDITOR)
@@ -130,9 +187,9 @@ def e_sync_geometry():
 def parse_kmz_for_editing(full_path):
     ns = {'kml': 'http://www.opengis.net/kml/2.2', 'wpml': 'http://www.dji.com/wpmz/1.0.6'}
     meta = {
-        "safe_takeoff_ft": 60.0, "trans_speed_mph": 22.0, "speed_m": 4.11, "speed_mph": 1.0,
+        "safe_takeoff_ft": 60.0, "trans_speed_mph": 22.0, "speed_m": 4.11, "speed_mph": 6.0,
         "alt_ft": 50.0, "pitch": -60.0, "trigger_type": "distance", 
-        "t_val": 9.0, "photo_start_wp": 0, "coords": [], "camera_type": "visable",
+        "t_val": 9.0, "photo_start_wp": 0, "coords": [], "camera_type": "visible",
         "drone_sub": "0", "payload_sub": "3"
     }
     with zipfile.ZipFile(full_path, 'r') as kmz:
@@ -140,9 +197,11 @@ def parse_kmz_for_editing(full_path):
         root_t = ET.fromstring(kmz.read('wpmz/template.kml'))
         
         safe_node = root_w.find('.//wpml:takeOffSecurityHeight', ns)
-        if safe_node is not None: meta['safe_takeoff_ft'] = float(safe_node.text) * M_TO_FT
+        if safe_node is not None: 
+            meta['safe_takeoff_ft'] = float(safe_node.text) * M_TO_FT
         trans_node = root_w.find('.//wpml:globalTransitionalSpeed', ns)
-        if trans_node is not None: meta['trans_speed_mph'] = float(trans_node.text) * MS_TO_MPH
+        if trans_node is not None: 
+            meta['trans_speed_mph'] = float(trans_node.text) * MS_TO_MPH
         speed_node = root_w.find('.//wpml:autoFlightSpeed', ns)
         if speed_node is not None: 
             meta['speed_m'] = float(speed_node.text)
@@ -151,12 +210,14 @@ def parse_kmz_for_editing(full_path):
         drone_info = root_t.find('.//wpml:droneInfo', ns)
         if drone_info is not None:
             d_sub = drone_info.find('.//wpml:droneSubEnumValue', ns)
-            if d_sub is not None and d_sub.text: meta['drone_sub'] = d_sub.text
+            if d_sub is not None and d_sub.text: 
+                meta['drone_sub'] = d_sub.text
             
         payload_info = root_t.find('.//wpml:payloadInfo', ns)
         if payload_info is not None:
             p_sub = payload_info.find('.//wpml:payloadSubEnumValue', ns)
-            if p_sub is not None and p_sub.text: meta['payload_sub'] = p_sub.text
+            if p_sub is not None and p_sub.text: 
+                meta['payload_sub'] = p_sub.text
 
         hw_key = "Mavic 3 Multispectral (Drone: 0, Payload: 3)"
         for k, v in HARDWARE_MAP.items():
@@ -171,9 +232,11 @@ def parse_kmz_for_editing(full_path):
             
             if i == 0:
                 alt_node = pm.find('.//wpml:executeHeight', ns)
-                if alt_node is not None: meta['alt_ft'] = float(alt_node.text) * M_TO_FT
+                if alt_node is not None: 
+                    meta['alt_ft'] = float(alt_node.text) * M_TO_FT
                 pitch_node = pm.find('.//wpml:waypointGimbalHeadingParam/wpml:waypointGimbalPitchAngle', ns)
-                if pitch_node is not None: meta['pitch'] = float(pitch_node.text)
+                if pitch_node is not None: 
+                    meta['pitch'] = float(pitch_node.text)
 
             for ag in pm.findall('.//wpml:actionGroup', ns):
                 t_type = ag.find('.//wpml:actionTriggerType', ns)
@@ -206,7 +269,7 @@ def generate_native_kmz_contents(coords, cfg):
     safe_m = cfg["safe_takeoff_ft"] * FT_TO_M
     trans_m = cfg["trans_speed_mph"] * MPH_TO_MS
     speed_m = cfg["speed_m"]
-    lens_str = cfg.get("camera_type", "visable")
+    lens_str = cfg.get("camera_type", "visible")
     drone_sub_enum = cfg.get("drone_sub", "0")
     payload_sub_enum = cfg.get("payload_sub", "3")
     
@@ -218,7 +281,8 @@ def generate_native_kmz_contents(coords, cfg):
     for i in range(len(coords) - 1):
         ref_bearing = get_bearing(coords[i], coords[i+1])
         yaw = (ref_bearing + 90) % 360 if cfg['side'] == "right" else (ref_bearing - 90) % 360
-        if yaw > 180: yaw -= 360
+        if yaw > 180: 
+            yaw -= 360
         yaws.append(int(yaw))
 
     template_placemarks = ""
@@ -518,7 +582,7 @@ if page == 'Creator':
                 manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, value=6.0)
                 speed_m = manual_mph * MPH_TO_MS
                 current_gap = speed_m * M_TO_FT * t_val_sec
-                fw = get_footprint(st.session_state.pitch, st.session_state.alt_ft)
+                fw = get_center_footprint(st.session_state.pitch, st.session_state.alt_ft)
                 current_overlap = ((fw - current_gap) / fw) * 100 if fw > 0 else 0
                 st.info(f"📊 Current Overlap: {max(0, min(current_overlap, 99.9)):.1f}%")
 
@@ -629,7 +693,7 @@ elif page == 'Editor':
             e_drone_sub_enum = HARDWARE_MAP[e_hw_choice]["drone_sub"]
             e_payload_sub_enum = HARDWARE_MAP[e_hw_choice]["payload_sub"]
             
-            current_cam_display = CAM_DISPLAY_MAP.get(meta.get('camera_type', 'visable'), "RGB Only")
+            current_cam_display = CAM_DISPLAY_MAP.get(meta.get('camera_type', 'visible'), "RGB Only")
             e_cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"], index=["RGB Only", "Multispectral Only", "RGB + Multispectral"].index(current_cam_display))
             e_camera_type = CAM_VAL_MAP[e_cam_choice]
             
@@ -653,7 +717,8 @@ elif page == 'Editor':
                 if e_speed_m > max_speed_m:
                     st.error(f"⚠️ Speed Too High! At {e_speed_m * MS_TO_MPH:.1f} mph, the camera must fire every {gap_m / e_speed_m:.2f}s. Your sensor requires {min_photo_interval_sec}s. The drone will drop photos. Lower your speed to {max_speed_m * MS_TO_MPH:.1f} mph.")
             else:
-                if 'e_t_time_val' not in st.session_state: st.session_state.e_t_time_val = meta['t_val'] if meta['trigger_type'] == 'time' else max(2.0, min_photo_interval_sec)
+                if 'e_t_time_val' not in st.session_state: 
+                    st.session_state.e_t_time_val = meta['t_val'] if meta['trigger_type'] == 'time' else max(2.0, min_photo_interval_sec)
                 e_tval_sec = st.number_input("Interval (sec)", key="e_t_time_val", min_value=min_photo_interval_sec)
                 e_auto_speed = st.checkbox("Auto-Calc Speed", True)
                 if e_auto_speed:
@@ -669,6 +734,9 @@ elif page == 'Editor':
                     current_overlap = ((fw - current_gap) / fw) * 100 if fw > 0 else 0
                     st.info(f"📊 Current Overlap: {max(0, min(current_overlap, 99.9)):.1f}%")
 
+            st.header("Visuals")
+            show_footprints = st.checkbox("Show Image Footprints", value=True)
+
         top_hud = st.container()
         st.write("### 📍 Fine-Tune Flight Path Coordinates")
         
@@ -683,10 +751,29 @@ elif page == 'Editor':
         line = folium.PolyLine(current_coords, color="#00ffff", weight=5).add_to(m_edit)
         PolyLineTextPath(line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '24', 'fill-opacity': '0.3'}).add_to(m_edit)
         
+        # Calculate gap_ft for Editor preview footprints
+        if st.session_state.e_trigger_type == "distance":
+            gap_m = max(1.0, st.session_state.e_t_dist_val * FT_TO_M)
+            gap_ft_preview = gap_m * M_TO_FT
+        else:
+            gap_ft_preview = e_speed_m * st.session_state.e_t_time_val * M_TO_FT
+
+        yaws = []
+        for i in range(len(current_coords) - 1):
+            ref_bearing = get_bearing(current_coords[i], current_coords[i+1])
+            yaw = (ref_bearing + 90) % 360 if e_side == "right" else (ref_bearing - 90) % 360
+            yaws.append(yaw)
+
+        cum_dist = [0.0]
+        total_dist_ft = 0.0
+        
         for i in range(len(current_coords) - 1):
             p1 = current_coords[i]
             p2 = current_coords[i+1]
             dist = get_haversine_dist(p1, p2) * M_TO_FT
+            total_dist_ft += dist
+            cum_dist.append(total_dist_ft)
+            
             mid_lat = (p1[0] + p2[0]) / 2
             mid_lon = (p1[1] + p2[1]) / 2
             folium.Marker(
@@ -706,6 +793,27 @@ elif page == 'Editor':
                 )
             ).add_to(m_edit)
             
+        # Draw dynamic footprints in the Editor
+        if show_footprints and gap_ft_preview > 0 and e_start_wp < len(current_coords):
+            current_dist = cum_dist[int(e_start_wp)]
+            while current_dist <= total_dist_ft + 0.01:
+                for i in range(len(cum_dist) - 1):
+                    if cum_dist[i] <= current_dist <= cum_dist[i+1] + 0.001:
+                        seg_len = cum_dist[i+1] - cum_dist[i]
+                        if seg_len > 0:
+                            frac = (current_dist - cum_dist[i]) / seg_len
+                            lat = current_coords[i][0] + (current_coords[i+1][0] - current_coords[i][0]) * frac
+                            lon = current_coords[i][1] + (current_coords[i+1][1] - current_coords[i][1]) * frac
+                        else:
+                            lat, lon = current_coords[i][0], current_coords[i][1]
+                        
+                        yaw = yaws[i]
+                        footprint = get_photo_footprint(lat, lon, st.session_state.e_alt_ft, st.session_state.e_pitch, yaw)
+                        folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_edit)
+                        folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_edit)
+                        break
+                current_dist += gap_ft_preview
+
         map_data_edit = st_folium(m_edit, width=1200, height=600)
 
         if map_data_edit.get("all_drawings") and len(map_data_edit["all_drawings"]) > 0:
@@ -753,162 +861,194 @@ elif page == 'Editor':
                 st.success(f"Successfully updated and saved as {edit_name}.kmz!")
             st.divider()
 
-# --- VIEWER MODE ---
+# ==========================================
+# VIEWER MODE
+# ==========================================
 elif page == 'Viewer':
     kmz_files = [f for f in os.listdir(MISSION_DIR) if f.endswith(".kmz")]
     if not kmz_files:
         st.warning("No missions found in missions/ directory.")
     else:
-        selected_kmz = st.selectbox("Select Mission to Inspect", kmz_files)
-        full_path = os.path.join(MISSION_DIR, selected_kmz)
-        ns = {'kml': 'http://www.opengis.net/kml/2.2', 'wpml': 'http://www.dji.com/wpmz/1.0.6'}
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            view_multiple = st.checkbox("View multiple flight plans?", value=False)
+            if view_multiple:
+                selected_kmzs = st.multiselect("Select Missions", kmz_files, default=[kmz_files[0]] if kmz_files else [])
+            else:
+                sel = st.selectbox("Select Mission", kmz_files)
+                selected_kmzs = [sel] if sel else []
         
-        with zipfile.ZipFile(full_path, 'r') as kmz:
-            root = ET.fromstring(kmz.read('wpmz/waylines.wpml'))
-            root_t = ET.fromstring(kmz.read('wpmz/template.kml'))
-        
-        meta = {"speed": 0, "pitch": 0, "mode": "None", "t_val": 0, "alt": 0, "safe_alt": 0, "trans_speed": 0, "start_idx": 0, "camera_type": "visable"}
-        
-        safe_node = root.find('.//wpml:takeOffSecurityHeight', ns)
-        if safe_node is not None: meta['safe_alt'] = float(safe_node.text)
-        
-        speed_node = root.find('.//wpml:autoFlightSpeed', ns)
-        if speed_node is not None: meta['speed'] = float(speed_node.text)
-        
-        # Read from template to ensure accuracy
-        drone_info = root_t.find('.//wpml:droneInfo', ns)
-        if drone_info is not None:
-            d_sub = drone_info.find('.//wpml:droneSubEnumValue', ns)
-            if d_sub is not None: meta['drone_sub'] = d_sub.text
-            
-        payload_info = root_t.find('.//wpml:payloadInfo', ns)
-        if payload_info is not None:
-            p_sub = payload_info.find('.//wpml:payloadSubEnumValue', ns)
-            if p_sub is not None: meta['payload_sub'] = p_sub.text
+        with st.sidebar:
+            show_footprints = st.checkbox("Show Image Footprints", value=True)
 
-        wp0 = root.find('.//kml:Placemark', ns)
-        if wp0 is not None:
-            pitch_node = wp0.find('.//wpml:waypointGimbalHeadingParam/wpml:waypointGimbalPitchAngle', ns)
-            if pitch_node is not None: meta['pitch'] = float(pitch_node.text)
-
-        wp_data = []
-        for pm in root.findall('.//kml:Placemark', ns):
-            idx = int(pm.find('.//wpml:index', ns).text)
-            c_raw = pm.find('.//kml:coordinates', ns).text.strip().split(',')
-            yaw = float(pm.find('.//wpml:waypointHeadingAngle', ns).text)
-            alt = float(pm.find('.//wpml:executeHeight', ns).text)
-            wp_data.append({'lat': float(c_raw[1]), 'lon': float(c_raw[0]), 'yaw': yaw, 'alt': alt, 'index': idx})
-            meta['alt'] = alt
+        if selected_kmzs:
+            m_view = None
+            grand_total_dist_ft = 0.0
+            grand_total_photos = 0
+            colors = ["#00ffff", "#ff00ff", "#00ff00", "#ffff00", "#ff8800"]
             
-            for action_group in pm.findall('.//wpml:actionGroup', ns):
-                t_type = action_group.find('.//wpml:actionTriggerType', ns)
-                if t_type is not None and ('multiple' in t_type.text):
-                    meta['mode'] = "Distance" if "Distance" in t_type.text else "Time"
-                    t_param = action_group.find('.//wpml:actionTriggerParam', ns)
-                    if t_param is not None: meta['t_val'] = float(t_param.text)
-                    start_idx = action_group.find('.//wpml:actionGroupStartIndex', ns)
-                    if start_idx is not None: meta['start_idx'] = int(start_idx.text)
+            for kmz_idx, current_kmz in enumerate(selected_kmzs):
+                line_color = colors[kmz_idx % len(colors)]
+                full_path = os.path.join(MISSION_DIR, current_kmz)
+                ns = {'kml': 'http://www.opengis.net/kml/2.2', 'wpml': 'http://www.dji.com/wpmz/1.0.6'}
                 
-                for a in action_group.findall('.//wpml:action', ns):
-                    func = a.find('.//wpml:actionActuatorFunc', ns)
-                    if func is not None and func.text == 'takePhoto':
-                        params = a.find('.//wpml:actionActuatorFuncParam', ns)
-                        if params is not None:
-                            lens = params.find('.//wpml:payloadLensIndex', ns)
-                            if lens is not None:
-                                meta['camera_type'] = lens.text
-
-        if wp_data:
-            m_view = folium.Map(location=[wp_data[0]['lat'], wp_data[0]['lon']], zoom_start=19, tiles=None)
-            folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_view)
-            
-            line_coords = [[w['lat'], w['lon']] for w in wp_data]
-            
-            line = folium.PolyLine(line_coords, color="#00ffff", weight=5).add_to(m_view)
-            PolyLineTextPath(line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '24', 'fill-opacity': '0.3'}).add_to(m_view)
-            
-            cum_dist = [0.0]
-            total_dist_m = 0.0
-            
-            for i in range(len(wp_data) - 1):
-                p1 = (wp_data[i]['lat'], wp_data[i]['lon'])
-                p2 = (wp_data[i+1]['lat'], wp_data[i+1]['lon'])
-                d = get_haversine_dist(p1, p2)
-                total_dist_m += d
-                cum_dist.append(total_dist_m)
+                with zipfile.ZipFile(full_path, 'r') as kmz:
+                    root = ET.fromstring(kmz.read('wpmz/waylines.wpml'))
+                    root_t = ET.fromstring(kmz.read('wpmz/template.kml'))
                 
-                mid_lat = (p1[0] + p2[0]) / 2
-                mid_lon = (p1[1] + p2[1]) / 2
-                folium.Marker(
-                    location=[mid_lat, mid_lon],
-                    icon=DivIcon(
-                        icon_size=(100, 20), icon_anchor=(50, 10),
-                        html=f'<div style="font-size: 12pt; color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-weight: bold; text-align: center;">{d * M_TO_FT:.1f} ft</div>'
-                    )
-                ).add_to(m_view)
-            
-            gap = max(1.0, float(meta['t_val'])) if meta['mode'] == "Distance" else (meta['speed'] * meta['t_val'])
-            
-            for w in wp_data:
-                i = w['index']
-                length = 0.00012
-                end_lat = w['lat'] + length * math.cos(math.radians(w['yaw']))
-                end_lon = w['lon'] + length * math.sin(math.radians(w['yaw']))
-                folium.PolyLine([[w['lat'], w['lon']], [end_lat, end_lon]], color="#ff0000", weight=4).add_to(m_view)
+                meta = {"speed": 0, "pitch": -60, "mode": "None", "t_val": 0, "alt": 50.0, "safe_alt": 0, "start_idx": 0, "camera_type": "visible"}
                 
-                folium.Marker(
-                    location=[w['lat'], w['lon']],
-                    icon=DivIcon(
-                        icon_size=(24,24), icon_anchor=(12,12),
-                        html=f'<div style="font-size: 11pt; color: black; background: white; border-radius: 50%; text-align: center; border: 2px solid black; font-weight: bold; width: 24px; height: 24px; line-height: 20px;">{i}</div>'
-                    )
-                ).add_to(m_view)
-            
-            photo_count = 0
-            if gap > 0 and meta['start_idx'] < len(wp_data):
-                current_dist = cum_dist[meta['start_idx']]
-                while current_dist <= total_dist_m + 0.01:
-                    for i in range(len(cum_dist) - 1):
-                        if cum_dist[i] <= current_dist <= cum_dist[i+1] + 0.001:
-                            seg_len = cum_dist[i+1] - cum_dist[i]
-                            if seg_len > 0:
-                                frac = (current_dist - cum_dist[i]) / seg_len
-                                lat = wp_data[i]['lat'] + (wp_data[i+1]['lat'] - wp_data[i]['lat']) * frac
-                                lon = wp_data[i]['lon'] + (wp_data[i+1]['lon'] - wp_data[i]['lon']) * frac
-                            else:
-                                lat, lon = wp_data[i]['lat'], wp_data[i]['lon']
-                            folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_view)
-                            photo_count += 1
-                            break
-                    current_dist += gap
+                # Robust extraction
+                p_node = root.find('.//wpml:waypointGimbalHeadingParam/wpml:waypointGimbalPitchAngle', ns)
+                if p_node is not None: 
+                    meta['pitch'] = float(p_node.text)
 
-            cam_type = meta.get('camera_type', 'visable')
-            cam_display = CAM_DISPLAY_MAP.get(cam_type, "RGB Only")
-            hw_key = "Unknown Configuration"
-            for k, v in HARDWARE_MAP.items():
-                if v["drone_sub"] == meta.get('drone_sub', '') and v["payload_sub"] == meta.get('payload_sub', ''):
-                    hw_key = k
+                wp_data = []
+                for pm in root.findall('.//kml:Placemark', ns):
+                    idx = int(pm.find('.//wpml:index', ns).text)
+                    c_raw = pm.find('.//kml:coordinates', ns).text.strip().split(',')
+                    yaw = float(pm.find('.//wpml:waypointHeadingAngle', ns).text)
+                    alt = float(pm.find('.//wpml:executeHeight', ns).text)
+                    
+                    target_yaw = yaw
+                    for action_group in pm.findall('.//wpml:actionGroup', ns):
+                        t_type = action_group.find('.//wpml:actionTriggerType', ns)
+                        if t_type is not None and ('multiple' in t_type.text):
+                            meta['mode'] = "Distance" if "Distance" in t_type.text else "Time"
+                            t_param = action_group.find('.//wpml:actionTriggerParam', ns)
+                            if t_param is not None: 
+                                meta['t_val'] = float(t_param.text)
+                            start_idx = action_group.find('.//wpml:actionGroupStartIndex', ns)
+                            if start_idx is not None: 
+                                meta['start_idx'] = int(start_idx.text)
+                        
+                        for a in action_group.findall('.//wpml:action', ns):
+                            func = a.find('.//wpml:actionActuatorFunc', ns)
+                            if func is not None:
+                                if func.text == 'takePhoto':
+                                    params = a.find('.//wpml:actionActuatorFuncParam', ns)
+                                    if params is not None:
+                                        lens = params.find('.//wpml:payloadLensIndex', ns)
+                                        if lens is not None:
+                                            meta['camera_type'] = lens.text
+                                elif func.text == 'rotateYaw':
+                                    params = a.find('.//wpml:actionActuatorFuncParam', ns)
+                                    if params is not None:
+                                        heading = params.find('.//wpml:aircraftHeading', ns)
+                                        if heading is not None:
+                                            target_yaw = float(heading.text)
 
-            st.sidebar.header("Mission Metadata")
-            st.sidebar.write(f"**Hardware Platform:** {hw_key}")
-            st.sidebar.write(f"**Camera Sensor:** {cam_display}")
-            st.sidebar.write(f"**Gimbal Pitch:** {meta['pitch']}°")
-            st.sidebar.write(f"**Safe Takeoff:** {meta['safe_alt']*M_TO_FT:.1f} ft")
-            st.sidebar.write(f"**Waypoint Alt:** {meta['alt']*M_TO_FT:.1f} ft")
-            st.sidebar.write(f"**Trigger:** {meta['mode']} ({meta['t_val']*M_TO_FT if meta['mode']=='Distance' else meta['t_val']:.1f})")
-            st.sidebar.write(f"**Calculated Photos:** {photo_count}")
+                    wp_data.append({'lat': float(c_raw[1]), 'lon': float(c_raw[0]), 'yaw': yaw, 'target_yaw': target_yaw, 'alt': alt, 'index': idx})
 
-            hud_html = f'''
-                <div style="position: fixed; bottom: 40px; left: 40px; width: 240px; background-color: rgba(255,255,255,0.9); 
-                            border:2px solid #333; z-index:9999; padding: 15px; border-radius: 8px; font-family: sans-serif;">
-                    <h4 style="margin:0 0 10px 0;">Mission Stats</h4>
-                    <b>Distance:</b> {total_dist_m*M_TO_FT:.1f} ft<br>
-                    <p style="font-size: 11px; margin: 10px 0 0 0;">
-                        <span style="color: #00ffff;">■</span> Path 
-                        <span style="color: #ff0000;">■</span> Camera Yaw 
-                        <span style="color: #ffff00;">●</span> Photo Spot
-                    </p>
-                </div>
-            '''
-            m_view.get_root().html.add_child(Element(hud_html))
-            st_folium(m_view, width=1200, height=600)
+                if wp_data:
+                    if m_view is None:
+                        m_view = folium.Map(location=[wp_data[0]['lat'], wp_data[0]['lon']], zoom_start=19, tiles=None)
+                        folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_view)
+                    
+                    line_coords = [[w['lat'], w['lon']] for w in wp_data]
+                    
+                    line = folium.PolyLine(line_coords, color=line_color, weight=5).add_to(m_view)
+                    PolyLineTextPath(line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '24', 'fill-opacity': '0.3'}).add_to(m_view)
+                    
+                    cum_dist = [0.0]
+                    total_dist_m = 0.0
+                    
+                    for i in range(len(wp_data) - 1):
+                        p1 = (wp_data[i]['lat'], wp_data[i]['lon'])
+                        p2 = (wp_data[i+1]['lat'], wp_data[i+1]['lon'])
+                        d = get_haversine_dist(p1, p2)
+                        total_dist_m += d
+                        cum_dist.append(total_dist_m)
+                        
+                        mid_lat = (p1[0] + p2[0]) / 2
+                        mid_lon = (p1[1] + p2[1]) / 2
+                        folium.Marker(
+                            location=[mid_lat, mid_lon],
+                            icon=DivIcon(
+                                icon_size=(100, 20), icon_anchor=(50, 10),
+                                html=f'<div style="font-size: 12pt; color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-weight: bold; text-align: center;">{d * M_TO_FT:.1f} ft</div>'
+                            )
+                        ).add_to(m_view)
+                    
+                    grand_total_dist_ft += (total_dist_m * M_TO_FT)
+                    gap = max(1.0, float(meta['t_val'])) if meta['mode'] == "Distance" else (meta['speed'] * meta['t_val'])
+                    
+                    for w in wp_data:
+                        i = w['index']
+                        length = 0.00012
+                        end_lat = w['lat'] + length * math.cos(math.radians(w['target_yaw']))
+                        end_lon = w['lon'] + length * math.sin(math.radians(w['target_yaw']))
+                        folium.PolyLine([[w['lat'], w['lon']], [end_lat, end_lon]], color="#ff0000", weight=4).add_to(m_view)
+                        
+                        folium.Marker(
+                            location=[w['lat'], w['lon']],
+                            icon=DivIcon(
+                                icon_size=(24,24), icon_anchor=(12,12),
+                                html=f'<div style="font-size: 11pt; color: black; background: white; border-radius: 50%; text-align: center; border: 2px solid black; font-weight: bold; width: 24px; height: 24px; line-height: 20px;">{i}</div>'
+                            )
+                        ).add_to(m_view)
+                    
+                    photo_count = 0
+                    if gap > 0 and meta['start_idx'] < len(wp_data):
+                        current_dist = cum_dist[meta['start_idx']]
+                        while current_dist <= total_dist_m + 0.01:
+                            for i in range(len(cum_dist) - 1):
+                                if cum_dist[i] <= current_dist <= cum_dist[i+1] + 0.001:
+                                    seg_len = cum_dist[i+1] - cum_dist[i]
+                                    if seg_len > 0:
+                                        frac = (current_dist - cum_dist[i]) / seg_len
+                                        lat = wp_data[i]['lat'] + (wp_data[i+1]['lat'] - wp_data[i]['lat']) * frac
+                                        lon = wp_data[i]['lon'] + (wp_data[i+1]['lon'] - wp_data[i]['lon']) * frac
+                                    else:
+                                        lat, lon = wp_data[i]['lat'], wp_data[i]['lon']
+                                    
+                                    if show_footprints:
+                                        yaw = wp_data[i]['target_yaw']
+                                        footprint = get_photo_footprint(lat, lon, meta['alt']*M_TO_FT, meta['pitch'], yaw)
+                                        folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_view)
+                                        
+                                    folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_view)
+                                    photo_count += 1
+                                    break
+                            current_dist += gap
+                    
+                    grand_total_photos += photo_count
+
+            if m_view is not None:
+                st.sidebar.header("Mission Metadata")
+                if len(selected_kmzs) == 1:
+                    cam_type = meta.get('camera_type', 'visible')
+                    cam_display = CAM_DISPLAY_MAP.get(cam_type, "RGB Only")
+                    hw_key = "Unknown Configuration"
+                    for k, v in HARDWARE_MAP.items():
+                        if v["drone_sub"] == meta.get('drone_sub', '') and v["payload_sub"] == meta.get('payload_sub', ''):
+                            hw_key = k
+
+                    st.sidebar.write(f"**Hardware Platform:** {hw_key}")
+                    st.sidebar.write(f"**Camera Sensor:** {cam_display}")
+                    st.sidebar.write(f"**Gimbal Pitch:** {meta['pitch']}°")
+                    st.sidebar.write(f"**Safe Takeoff:** {meta['safe_alt']*M_TO_FT:.1f} ft")
+                    st.sidebar.write(f"**Waypoint Alt:** {meta['alt']*M_TO_FT:.1f} ft")
+                    st.sidebar.write(f"**Trigger:** {meta['mode']} ({meta['t_val']*M_TO_FT if meta['mode']=='Distance' else meta['t_val']:.1f})")
+                    st.sidebar.write(f"**Calculated Photos:** {grand_total_photos}")
+                else:
+                    st.sidebar.success(f"Viewing {len(selected_kmzs)} combined missions.")
+                    st.sidebar.write(f"**Total Aggregated Distance:** {grand_total_dist_ft:.1f} ft")
+                    st.sidebar.write(f"**Total Aggregated Photos:** {grand_total_photos}")
+
+                hud_html = f'''
+                    <div style="position: fixed; bottom: 40px; left: 40px; width: 240px; background-color: rgba(255,255,255,0.9); 
+                                border:2px solid #333; z-index:9999; padding: 15px; border-radius: 8px; font-family: sans-serif;">
+                        <h4 style="margin:0 0 10px 0;">Mission Stats</h4>
+                        <b>Total Distance:</b> {grand_total_dist_ft:.1f} ft<br>
+                        <b>Total Photos:</b> {grand_total_photos}<br>
+                        <p style="font-size: 11px; margin: 10px 0 0 0;">
+                            <span style="color: #00ffff;">■</span> Path 
+                            <span style="color: #ff0000;">■</span> Camera Yaw <br>
+                            <span style="color: #ffff00;">●</span> Photo Spot
+                            <span style="color: darkorange;">■</span> Photo Footprint
+                        </p>
+                    </div>
+                '''
+                m_view.get_root().html.add_child(Element(hud_html))
+                st_folium(m_view, width=1200, height=600)
