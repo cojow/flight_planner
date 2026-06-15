@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
-import json
 import os
+import json
+import urllib.request
+import urllib.parse
 import math
 import zipfile
 import xml.etree.ElementTree as ET
@@ -11,6 +13,7 @@ from folium.plugins import Draw, PolyLineTextPath
 from folium.features import DivIcon
 from streamlit_folium import st_folium
 from branca.element import Element
+
 
 # ==========================================
 # CONSTANTS & SETUP
@@ -22,6 +25,12 @@ MS_TO_MPH = 2.23694
 
 MISSION_DIR = "missions"
 os.makedirs(MISSION_DIR, exist_ok=True)
+if "locked_creator_center" not in st.session_state:
+    st.session_state.locked_creator_center = [40.253, -111.640]
+if "locked_editor_center" not in st.session_state:
+    st.session_state.locked_editor_center = [40.253, -111.640]
+if "locked_viewer_center" not in st.session_state:
+    st.session_state.locked_viewer_center = [40.253, -111.640]
 
 # Mavic 3 Multispectral Sensor Specs
 SENSOR_W = 17.3  
@@ -40,8 +49,43 @@ HARDWARE_MAP = {
     "Mavic 3 Multispectral (Drone: 0, Payload: 3)": {"drone_sub": "0", "payload_sub": "3"}
 }
 
+@st.cache_data(ttl=3600)
+def fetch_uasfm_data(center_lat, center_lon, radius_deg=0.05):
+    """Fetches live FAA LAANC grid data (GeoJSON) around a specific coordinate."""
+    xmin = center_lon - radius_deg
+    ymin = center_lat - radius_deg
+    xmax = center_lon + radius_deg
+    ymax = center_lat + radius_deg
+    
+    params = {
+        "where": "1=1",
+        "geometry": f"{xmin},{ymin},{xmax},{ymax}",
+        "geometryType": "esriGeometryEnvelope",
+        "inSR": "4326",
+        "spatialRel": "esriSpatialRelIntersects",
+        "outFields": "*",
+        "outSR": "4326",
+        "f": "geojson"
+    }
+    
+    base_url = "https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/FAA_UAS_FacilityMap_Data/FeatureServer/0/query"
+    url = f"{base_url}?{urllib.parse.urlencode(params)}"
+    
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        response = urllib.request.urlopen(req)
+        data = json.loads(response.read().decode('utf-8'))
+        if "features" in data and len(data["features"]) == 0:
+            return {"type": "FeatureCollection", "features": []}
+            
+        if "error" in data:
+            return None
+        return data
+    except Exception:
+        return None
+
 def get_haversine_dist(p1, p2):
-    R = 6371000 
+    R = 6371000
     lat1, lon1, lat2, lon2 = map(math.radians, [p1[0], p1[1], p2[0], p2[1]])
     dlat, dlon = lat1 - lat2, lon1 - lon2
     a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
@@ -53,6 +97,26 @@ def get_bearing(p1, p2):
     y = math.sin(d_lon) * math.cos(lat2)
     x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(d_lon)
     return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_elevations_batch(coords):
+    """Fetches elevations in meters for a list of (lat, lon) tuples using a single batch request."""
+    url = "https://api.open-elevation.com/api/v1/lookup"
+    
+    # Format the coordinates into the JSON structure the API expects
+    locations = [{"latitude": lat, "longitude": lon} for lat, lon in coords]
+    data = json.dumps({"locations": locations}).encode('utf-8')
+    
+    try:
+        # Use a POST request to send all coordinates in one go
+        req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response:
+            res_json = json.loads(response.read().decode('utf-8'))
+            # Extract and return the elevation values in the exact order they were sent
+            return [result['elevation'] for result in res_json['results']]
+    except Exception as e:
+        st.warning(f"Elevation API error: {e}. Defaulting to 0m elevation difference.")
+        return [0] * len(coords)
 
 # ==========================================
 # 3D ROTATION MATRIX FOOTPRINT CALCULATOR
@@ -102,7 +166,8 @@ def get_photo_footprint(lat, lon, alt_ft, pitch, yaw):
                R[2][0]*corner[0] + R[2][1]*corner[1] + R[2][2]*corner[2]]
         
         # Intersect with Z = -alt_ft
-        if ray[2] == 0: continue
+        if ray[2] == 0: 
+            continue
         t = -alt_ft / ray[2]
         
         # Calculate ground offset
@@ -287,7 +352,9 @@ def parse_kmz_for_editing(full_path):
 # ==========================================
 def generate_native_kmz_contents(coords, cfg):
     ms_ts = int(datetime.now().timestamp() * 1000)
-    alt_m = cfg["alt_ft"] * FT_TO_M
+    elevations = get_elevations_batch(coords)
+    start_elev = elevations[0]
+    target_agl_m = cfg["alt_ft"] * FT_TO_M
     safe_m = cfg["safe_takeoff_ft"] * FT_TO_M
     trans_m = cfg["trans_speed_mph"] * MPH_TO_MS
     speed_m = cfg["speed_m"]
@@ -313,6 +380,9 @@ def generate_native_kmz_contents(coords, cfg):
     g_id_waylines = 0  
 
     for i, p in enumerate(coords):
+        current_elev = elevations[i]
+        terrain_diff = current_elev - start_elev
+        alt_m = target_agl_m + terrain_diff
         current_yaw = yaws[0] if i == 0 else yaws[i-1]
         template_action_group = ""
         waylines_action_group = ""
@@ -487,7 +557,7 @@ def generate_native_kmz_contents(coords, cfg):
         <wpml:positioningType>GPS</wpml:positioningType>
       </wpml:waylineCoordinateSysParam>
       <wpml:autoFlightSpeed>{speed_m:.1f}</wpml:autoFlightSpeed>
-      <wpml:globalHeight>{alt_m:.1f}</wpml:globalHeight>
+
       <wpml:caliFlightEnable>0</wpml:caliFlightEnable>
       <wpml:gimbalPitchMode>usePointSetting</wpml:gimbalPitchMode>
       <wpml:payloadParam>
@@ -544,7 +614,7 @@ def generate_native_kmz_contents(coords, cfg):
 # ==========================================
 # UI NAVIGATION & LOGIC
 # ==========================================
-st.set_page_config(layout="wide", page_title="ISLERS Control")
+st.set_page_config(layout="wide", page_title="Flight Planner")
 
 st.title("🛰️ Flight Planner")
 page = st.radio("Navigation", ["Creator", "Editor", "Viewer"], horizontal=True, label_visibility="collapsed")
@@ -553,7 +623,7 @@ page = st.radio("Navigation", ["Creator", "Editor", "Viewer"], horizontal=True, 
 if page == 'Creator':
     with st.sidebar:
         st.header("1. Global Config")
-        mission_name = st.text_input("Filename", "ISLERS_Flight")
+        mission_name = st.text_input("Filename", "Mission_Flight")
         trans_speed_mph = st.number_input("Takeoff Speed (mph)", value=22.0)
         safe_takeoff_ft = st.number_input("Safe Takeoff Alt (ft)", value=60.0)
         
@@ -608,12 +678,51 @@ if page == 'Creator':
                 current_overlap = ((fw - current_gap) / fw) * 100 if fw > 0 else 0
                 st.info(f"📊 Current Overlap: {max(0, min(current_overlap, 99.9)):.1f}%")
 
+        st.header("5. Visuals")
+        show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="creator_faa_toggle")
+        
+        if show_faa_airspace:
+            st.write("#### Update restrictions of map center")
+            if st.button("Update Map Center", key="btn_update_creator"):
+                st.session_state.locked_creator_center = st.session_state.creator_center
+                st.rerun()
+
     top_hud = st.container()
 
-    m = folium.Map(location=[40.253, -111.640], zoom_start=17, tiles=None)
+    default_c_center = [40.253, -111.640]
+    c_start_loc = st.session_state.get('creator_center', default_c_center)
+    c_start_zoom = st.session_state.get('creator_zoom', 17)
+    
+    m = folium.Map(location=st.session_state.locked_creator_center, zoom_start=17, tiles=None)
     folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m)
+    
+    if show_faa_airspace:
+        uasfm_data = fetch_uasfm_data(st.session_state.locked_creator_center[0], st.session_state.locked_creator_center[1])
+        if uasfm_data and uasfm_data.get("features"):
+            folium.GeoJson(
+                uasfm_data,
+                name="FAA UASFM Grids",
+                style_function=lambda x: {
+                    'fillColor': 'red' if x['properties'].get('CEILING', x['properties'].get('ceiling', -1)) == 0 else 'green',
+                    'color': 'black', 'weight': 1, 'fillOpacity': 0.15
+                },
+                tooltip=folium.GeoJsonTooltip(fields=['CEILING'], aliases=['Max LAANC Altitude (ft):'])
+            ).add_to(m)
+        elif uasfm_data: # This catches the case where the request worked, but there's just no data there
+            folium.Marker(
+                st.session_state.locked_creator_center,
+                icon=DivIcon(html='<div style="font-size: 12px; color: grey;">No FAA restrictions at this location</div>')
+            ).add_to(m)
+
     Draw(export=False, draw_options={'polyline':{'shapeOptions':{'color':'#00ffff','weight':5}}}).add_to(m)
-    map_data = st_folium(m, width=1200, height=600)
+
+    map_data = st_folium(m, width=1200, height=600, key=f"creator_map_{show_faa_airspace}")
+
+    if map_data and map_data.get("center"):
+        st.session_state.creator_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
+        st.session_state.creator_zoom = map_data["zoom"]
+        c_lat, c_lon = st.session_state.creator_center
+        st.info(f"📍 Current Screen Center: **{c_lat:.6f}, {c_lon:.6f}** (Click 'Update' in sidebar to fetch restrictions here)")
 
     if map_data.get("all_drawings"):
         coords = [(c[1], c[0]) for c in map_data["all_drawings"][-1]['geometry']['coordinates']]
@@ -639,21 +748,23 @@ if page == 'Creator':
             c3.metric("Flight Speed", f"{speed_m * MS_TO_MPH:.1f} mph")
 
             if st.button("🚀 Save & Generate KMZ"):
-                cfg = {
-                    "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_mph": trans_speed_mph, 
-                    "alt_ft": st.session_state.alt_ft, "pitch": st.session_state.pitch, "side": side, 
-                    "trigger_type": st.session_state.trigger_type, 
-                    "interval_ft": st.session_state.t_dist_val if st.session_state.trigger_type == "distance" else 0, 
-                    "interval_sec": t_val_sec if st.session_state.trigger_type == "time" else 0, 
-                    "speed_m": speed_m, "photo_start_wp": int(photo_start_wp),
-                    "camera_type": camera_type,
-                    "drone_sub": drone_sub_enum,
-                    "payload_sub": payload_sub_enum
+                with st.spinner("Calculating terrain elevations and generating KMZ..."):
+                    cfg = {
+                        "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_mph": trans_speed_mph,
+                        "alt_ft": st.session_state.alt_ft, "pitch": st.session_state.pitch, "side": side, 
+                        "trigger_type": st.session_state.trigger_type, 
+                        "interval_ft": st.session_state.t_dist_val if st.session_state.trigger_type == "distance" else 0, 
+                        "interval_sec": t_val_sec if st.session_state.trigger_type == "time" else 0, 
+                        "speed_m": speed_m, "photo_start_wp": int(photo_start_wp),
+                        "camera_type": camera_type,
+                        "drone_sub": drone_sub_enum,
+                        "payload_sub": payload_sub_enum
                 }
                 template_kml, waylines_wpml = generate_native_kmz_contents(coords, cfg)
                 with zipfile.ZipFile(f"missions/{mission_name}.kmz", 'w') as kmz:
                     kmz.writestr("wpmz/waylines.wpml", waylines_wpml)
                     kmz.writestr("wpmz/template.kml", template_kml)
+
                 st.success(f"Saved {mission_name}.kmz to missions/")
             st.divider()
 
@@ -752,12 +863,19 @@ elif page == 'Editor':
                     e_manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, value=safe_e_speed)
                     e_speed_m = e_manual_mph * MPH_TO_MS
                     current_gap = e_speed_m * M_TO_FT * e_tval_sec
-                    fw = get_footprint(st.session_state.e_pitch, st.session_state.e_alt_ft)
+                    fw = get_center_footprint(st.session_state.e_pitch, st.session_state.e_alt_ft)
                     current_overlap = ((fw - current_gap) / fw) * 100 if fw > 0 else 0
                     st.info(f"📊 Current Overlap: {max(0, min(current_overlap, 99.9)):.1f}%")
 
             st.header("Visuals")
             show_footprints = st.checkbox("Show Image Footprints", value=True)
+            show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="editor_faa_toggle")
+            
+            if show_faa_airspace:
+                st.write("#### Update restrictions of map center")
+                if st.button("Update Map Center", key="btn_update_editor"):
+                    st.session_state.locked_editor_center = st.session_state.editor_center
+                    st.rerun()
 
         top_hud = st.container()
         st.write("### 📍 Fine-Tune Flight Path Coordinates")
@@ -766,8 +884,31 @@ elif page == 'Editor':
         edited_df = st.data_editor(df, num_rows="dynamic", key=st.session_state.editor_key, use_container_width=True)
         current_coords = [(row['Latitude'], row['Longitude']) for _, row in edited_df.iterrows()]
 
-        m_edit = folium.Map(location=[current_coords[0][0], current_coords[0][1]], zoom_start=18, tiles=None)
+        default_e_center = [current_coords[0][0], current_coords[0][1]]
+        e_start_loc = st.session_state.get('editor_center', default_e_center)
+        e_start_zoom = st.session_state.get('editor_zoom', 18)
+        
+        m_edit = folium.Map(location=st.session_state.locked_editor_center, zoom_start=18, tiles=None)
         folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_edit)
+        
+        if show_faa_airspace:
+            uasfm_data = fetch_uasfm_data(st.session_state.locked_editor_center[0], st.session_state.locked_editor_center[1])
+            if uasfm_data and uasfm_data.get("features"):
+                folium.GeoJson(
+                    uasfm_data,
+                    name="FAA UASFM Grids",
+                    style_function=lambda x: {
+                        'fillColor': 'red' if x['properties'].get('CEILING', x['properties'].get('ceiling', -1)) == 0 else 'green',
+                        'color': 'black', 'weight': 1, 'fillOpacity': 0.15
+                    },
+                    tooltip=folium.GeoJsonTooltip(fields=['CEILING'], aliases=['Max LAANC Altitude (ft):'])
+                ).add_to(m_edit)
+            elif uasfm_data:
+                folium.Marker(
+                    st.session_state.locked_editor_center,
+                    icon=DivIcon(html='<div style="font-size: 10px; color: grey; width: 150px;">No FAA restrictions at this location</div>')
+                ).add_to(m_edit)
+
         Draw(export=False, draw_options={'polyline':{'shapeOptions':{'color':'#00ffff','weight':5}}}).add_to(m_edit)
         
         line = folium.PolyLine(current_coords, color="#00ffff", weight=5).add_to(m_edit)
@@ -836,7 +977,13 @@ elif page == 'Editor':
                         break
                 current_dist += gap_ft_preview
 
-        map_data_edit = st_folium(m_edit, width=1200, height=600)
+        map_data_edit = st_folium(m_edit, width=1200, height=600, key=f"editor_map_{show_faa_airspace}_{show_footprints}")
+
+        if map_data_edit and map_data_edit.get("center"):
+            st.session_state.editor_center = [map_data_edit["center"]["lat"], map_data_edit["center"]["lng"]]
+            st.session_state.editor_zoom = map_data_edit["zoom"]
+            c_lat, c_lon = st.session_state.editor_center
+            st.info(f"📍 Current Screen Center: **{c_lat:.6f}, {c_lon:.6f}** (Click 'Update' in sidebar to fetch restrictions here)")
 
         if map_data_edit.get("all_drawings") and len(map_data_edit["all_drawings"]) > 0:
             final_coords = [(c[1], c[0]) for c in map_data_edit["all_drawings"][-1]['geometry']['coordinates']]
@@ -866,15 +1013,16 @@ elif page == 'Editor':
             c3.metric("Flight Speed", f"{e_speed_m * MS_TO_MPH:.1f} mph")
 
             if st.button("💾 Save & Update Mission"):
-                new_cfg = {
-                    "safe_takeoff_ft": e_safe, "trans_speed_mph": e_trans, "alt_ft": st.session_state.e_alt_ft,
-                    "pitch": st.session_state.e_pitch, "side": e_side, "trigger_type": st.session_state.e_trigger_type,
-                    "interval_ft": st.session_state.e_t_dist_val if st.session_state.e_trigger_type == "distance" else 0, 
-                    "interval_sec": st.session_state.e_t_time_val if st.session_state.e_trigger_type == "time" else 0, 
-                    "speed_m": e_speed_m, "photo_start_wp": int(e_start_wp),
-                    "camera_type": e_camera_type,
-                    "drone_sub": e_drone_sub_enum,
-                    "payload_sub": e_payload_sub_enum
+                with st.spinner("Calculating terrain elevations and generating KMZ..."):
+                    cfg = {
+                        "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_mph": trans_speed_mph,
+                        "pitch": st.session_state.e_pitch, "side": e_side, "trigger_type": st.session_state.e_trigger_type,
+                        "interval_ft": st.session_state.e_t_dist_val if st.session_state.e_trigger_type == "distance" else 0, 
+                        "interval_sec": st.session_state.e_t_time_val if st.session_state.e_trigger_type == "time" else 0, 
+                        "speed_m": e_speed_m, "photo_start_wp": int(e_start_wp),
+                        "camera_type": e_camera_type,
+                        "drone_sub": e_drone_sub_enum,
+                        "payload_sub": e_payload_sub_enum
                 }
                 template_kml, waylines_wpml = generate_native_kmz_contents(final_coords, new_cfg)
                 with zipfile.ZipFile(f"missions/{edit_name}.kmz", 'w') as kmz:
@@ -902,6 +1050,13 @@ elif page == 'Viewer':
         
         with st.sidebar:
             show_footprints = st.checkbox("Show Image Footprints", value=True)
+            show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="viewer_faa_toggle")
+            
+            if show_faa_airspace:
+                st.write("#### Update restrictions of map center")
+                if st.button("Update Map Center", key="btn_update_viewer"):
+                    st.session_state.locked_viewer_center = st.session_state.viewer_center
+                    st.rerun()
 
         if selected_kmzs:
             m_view = None
@@ -930,7 +1085,7 @@ elif page == 'Viewer':
                     idx = int(pm.find('.//wpml:index', ns).text)
                     c_raw = pm.find('.//kml:coordinates', ns).text.strip().split(',')
                     yaw = float(pm.find('.//wpml:waypointHeadingAngle', ns).text)
-                    alt = float(pm.find('.//wpml:executeHeight', ns).text)
+                    alt = float(pm.find('.//wpml:executeHeight', ns).text) * M_TO_FT
                     
                     target_yaw = yaw
                     for action_group in pm.findall('.//wpml:actionGroup', ns):
@@ -964,8 +1119,26 @@ elif page == 'Viewer':
 
                 if wp_data:
                     if m_view is None:
-                        m_view = folium.Map(location=[wp_data[0]['lat'], wp_data[0]['lon']], zoom_start=19, tiles=None)
+                        m_view = folium.Map(location=st.session_state.locked_viewer_center, zoom_start=19, tiles=None)
                         folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_view)
+                        
+                        if show_faa_airspace:
+                            uasfm_data = fetch_uasfm_data(st.session_state.locked_viewer_center[0], st.session_state.locked_viewer_center[1])
+                            if uasfm_data and uasfm_data.get("features"):
+                                    folium.GeoJson(
+                                        uasfm_data,
+                                        name="FAA UASFM Grids",
+                                        style_function=lambda x: {
+                                            'fillColor': 'red' if x['properties'].get('CEILING', x['properties'].get('ceiling', -1)) == 0 else 'green',
+                                            'color': 'black', 'weight': 1, 'fillOpacity': 0.15
+                                        },
+                                        tooltip=folium.GeoJsonTooltip(fields=['CEILING'], aliases=['Max LAANC Altitude (ft):'])
+                                    ).add_to(m_view)
+                            elif uasfm_data:
+                                folium.Marker(
+                                    st.session_state.locked_viewer_center,
+                                    icon=DivIcon(html='<div style="font-size: 10px; color: grey; width: 150px;">No FAA restrictions at this location</div>')
+                                ).add_to(m_view)
                     
                     line_coords = [[w['lat'], w['lon']] for w in wp_data]
                     
@@ -982,13 +1155,16 @@ elif page == 'Viewer':
                         total_dist_m += d
                         cum_dist.append(total_dist_m)
                         
+                        # Calculate Elevation Difference directly from the KMZ altitude data
+                        elev_diff_ft = wp_data[i+1]['alt'] - wp_data[i]['alt']
+                        
                         mid_lat = (p1[0] + p2[0]) / 2
                         mid_lon = (p1[1] + p2[1]) / 2
                         folium.Marker(
                             location=[mid_lat, mid_lon],
                             icon=DivIcon(
-                                icon_size=(100, 20), icon_anchor=(50, 10),
-                                html=f'<div style="font-size: 12pt; color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-weight: bold; text-align: center;">{d * M_TO_FT:.1f} ft</div>'
+                                icon_size=(120, 40), icon_anchor=(60, 20),
+                                html=f'<div style="font-size: 12pt; color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-weight: bold; text-align: center; line-height: 1.2;">{d * M_TO_FT:.1f} ft<br><span style="font-size: 10pt; color: #00ffff;">Elev Dif: ~ {elev_diff_ft:+.1f} ft</span></div>'
                             )
                         ).add_to(m_view)
                     
@@ -1002,8 +1178,10 @@ elif page == 'Viewer':
                         end_lon = w['lon'] + length * math.sin(math.radians(w['target_yaw']))
                         folium.PolyLine([[w['lat'], w['lon']], [end_lat, end_lon]], color="#ff0000", weight=4).add_to(m_view)
                         
+                        # Added Tooltip here for the Viewer
                         folium.Marker(
                             location=[w['lat'], w['lon']],
+                            tooltip=f"<b>Waypoint {i}</b><br>Lat: {w['lat']:.6f}<br>Lon: {w['lon']:.6f}<br>Alt: {w['alt']:.1f} ft",
                             icon=DivIcon(
                                 icon_size=(24,24), icon_anchor=(12,12),
                                 html=f'<div style="font-size: 11pt; color: black; background: white; border-radius: 50%; text-align: center; border: 2px solid black; font-weight: bold; width: 24px; height: 24px; line-height: 20px;">{i}</div>'
@@ -1073,4 +1251,10 @@ elif page == 'Viewer':
                     </div>
                 '''
                 m_view.get_root().html.add_child(Element(hud_html))
-                st_folium(m_view, width=1200, height=600)
+                map_data_view = st_folium(m_view, width=1200, height=600, key=f"viewer_map_{show_faa_airspace}_{show_footprints}")
+            
+                if map_data_view and map_data_view.get("center"):
+                    st.session_state.viewer_center = [map_data_view["center"]["lat"], map_data_view["center"]["lng"]]
+                    st.session_state.viewer_zoom = map_data_view["zoom"]
+                    c_lat, c_lon = st.session_state.viewer_center
+                    st.sidebar.info(f"📍 **Current Screen Center:**\n\n`{c_lat:.6f}, {c_lon:.6f}`\n\n(Click 'Update' above to fetch restrictions here)")
