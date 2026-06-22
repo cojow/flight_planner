@@ -26,11 +26,11 @@ MS_TO_MPH = 2.23694
 MISSION_DIR = "missions"
 os.makedirs(MISSION_DIR, exist_ok=True)
 if "locked_creator_center" not in st.session_state:
-    st.session_state.locked_creator_center = [40.253, -111.640]
+    st.session_state.locked_creator_center = [40.246860, -111.648667]
 if "locked_editor_center" not in st.session_state:
-    st.session_state.locked_editor_center = [40.253, -111.640]
+    st.session_state.locked_editor_center = [40.246860, -111.648667]
 if "locked_viewer_center" not in st.session_state:
-    st.session_state.locked_viewer_center = [40.253, -111.640]
+    st.session_state.locked_viewer_center = [40.246860, -111.648667]
 
 # Mavic 3 Multispectral Sensor Specs
 SENSOR_W = 17.3  
@@ -616,7 +616,7 @@ def generate_native_kmz_contents(coords, cfg):
 # ==========================================
 st.set_page_config(layout="wide", page_title="Flight Planner")
 
-st.title("🛰️ Flight Planner")
+st.title("DJI Flight Planner")
 page = st.radio("Navigation", ["Creator", "Editor", "Viewer"], horizontal=True, label_visibility="collapsed")
 
 # --- CREATOR MODE ---
@@ -629,6 +629,8 @@ if page == 'Creator':
         
         st.header("2. Waypoint Settings")
         st.number_input("Relative Altitude (ft)", key="alt_ft", on_change=sync_geometry)
+        st.info("❗Elevation is relative to the take off point, NOT the mission start point.")
+
         st.slider("Gimbal Pitch (°)", -90, 0, key="pitch", on_change=sync_geometry)
         
         pitch_rad = math.radians(abs(st.session_state.pitch))
@@ -636,7 +638,7 @@ if page == 'Creator':
         gsd_cm = (D_ft_c * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_c != float('inf') else 0
         st.info(f"📐 Est. Ground GSD: {gsd_cm:.2f} cm/px")
         
-        side = st.selectbox("Side", ["right", "left"])
+        side = st.selectbox("Side of flight path", ["right", "left"])
         
         st.header("3. Hardware & Payload")
         hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()))
@@ -689,7 +691,7 @@ if page == 'Creator':
 
     top_hud = st.container()
 
-    default_c_center = [40.253, -111.640]
+    default_c_center = [40.246860, -111.648667]
     c_start_loc = st.session_state.get('creator_center', default_c_center)
     c_start_zoom = st.session_state.get('creator_zoom', 17)
     
@@ -722,7 +724,7 @@ if page == 'Creator':
         st.session_state.creator_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
         st.session_state.creator_zoom = map_data["zoom"]
         c_lat, c_lon = st.session_state.creator_center
-        st.info(f"📍 Current Screen Center: **{c_lat:.6f}, {c_lon:.6f}** (Click 'Update' in sidebar to fetch restrictions here)")
+        st.info(f"📍 Current Screen Center: **{c_lat:.6f}, {c_lon:.6f}** (Click 'Update' in sidebar to update restrictions in this area)")
 
     if map_data.get("all_drawings"):
         coords = [(c[1], c[0]) for c in map_data["all_drawings"][-1]['geometry']['coordinates']]
@@ -750,7 +752,7 @@ if page == 'Creator':
             if st.button("🚀 Save & Generate KMZ"):
                 with st.spinner("Calculating terrain elevations and generating KMZ..."):
                     cfg = {
-                        "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_mph": trans_speed_mph,
+                        "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_mph": trans_speed_mph, 
                         "alt_ft": st.session_state.alt_ft, "pitch": st.session_state.pitch, "side": side, 
                         "trigger_type": st.session_state.trigger_type, 
                         "interval_ft": st.session_state.t_dist_val if st.session_state.trigger_type == "distance" else 0, 
@@ -759,13 +761,20 @@ if page == 'Creator':
                         "camera_type": camera_type,
                         "drone_sub": drone_sub_enum,
                         "payload_sub": payload_sub_enum
-                }
-                template_kml, waylines_wpml = generate_native_kmz_contents(coords, cfg)
-                with zipfile.ZipFile(f"missions/{mission_name}.kmz", 'w') as kmz:
-                    kmz.writestr("wpmz/waylines.wpml", waylines_wpml)
-                    kmz.writestr("wpmz/template.kml", template_kml)
+                    }
+                    
+                    h_val = int(st.session_state.alt_ft)
+                    a_val = int(abs(st.session_state.pitch))
+                    ol_val = int(st.session_state.overlap_pct)
+                    suffix = f"_H{h_val}A{a_val}OL{ol_val}"
+                    final_filename = f"{mission_name}{suffix}"
 
-                st.success(f"Saved {mission_name}.kmz to missions/")
+                    template_kml, waylines_wpml = generate_native_kmz_contents(coords, cfg)
+                    with zipfile.ZipFile(f"missions/{final_filename}.kmz", 'w') as kmz:
+                        kmz.writestr("wpmz/waylines.wpml", waylines_wpml)
+                        kmz.writestr("wpmz/template.kml", template_kml)
+                    
+                st.success(f"Saved {final_filename}.kmz to missions/")
             st.divider()
 
 # --- EDITOR MODE ---
@@ -812,8 +821,10 @@ elif page == 'Editor':
             e_trans = st.number_input("Takeoff Speed (mph)", value=meta['trans_speed_mph'])
             
             st.number_input("Relative Altitude (ft)", key="e_alt_ft", on_change=e_sync_geometry)
+            st.info("❗Elevation is relative to the take off point, NOT the mission start point.")
+
             st.slider("Gimbal Pitch (°)", -90, 0, key="e_pitch", on_change=e_sync_geometry)
-            
+
             pitch_rad_e = math.radians(abs(st.session_state.e_pitch))
             D_ft_e = st.session_state.e_alt_ft / math.sin(pitch_rad_e) if pitch_rad_e > 0 else float('inf')
             e_gsd_cm = (D_ft_e * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_e != float('inf') else 0
@@ -983,7 +994,7 @@ elif page == 'Editor':
             st.session_state.editor_center = [map_data_edit["center"]["lat"], map_data_edit["center"]["lng"]]
             st.session_state.editor_zoom = map_data_edit["zoom"]
             c_lat, c_lon = st.session_state.editor_center
-            st.info(f"📍 Current Screen Center: **{c_lat:.6f}, {c_lon:.6f}** (Click 'Update' in sidebar to fetch restrictions here)")
+            st.info(f"📍 Current Screen Center: **{c_lat:.6f}, {c_lon:.6f}** (Click 'Update' in sidebar to update restrictions in this area)")
 
         if map_data_edit.get("all_drawings") and len(map_data_edit["all_drawings"]) > 0:
             final_coords = [(c[1], c[0]) for c in map_data_edit["all_drawings"][-1]['geometry']['coordinates']]
@@ -1014,8 +1025,8 @@ elif page == 'Editor':
 
             if st.button("💾 Save & Update Mission"):
                 with st.spinner("Calculating terrain elevations and generating KMZ..."):
-                    cfg = {
-                        "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_mph": trans_speed_mph,
+                    new_cfg = {
+                        "safe_takeoff_ft": e_safe, "trans_speed_mph": e_trans, "alt_ft": st.session_state.e_alt_ft,
                         "pitch": st.session_state.e_pitch, "side": e_side, "trigger_type": st.session_state.e_trigger_type,
                         "interval_ft": st.session_state.e_t_dist_val if st.session_state.e_trigger_type == "distance" else 0, 
                         "interval_sec": st.session_state.e_t_time_val if st.session_state.e_trigger_type == "time" else 0, 
@@ -1023,12 +1034,20 @@ elif page == 'Editor':
                         "camera_type": e_camera_type,
                         "drone_sub": e_drone_sub_enum,
                         "payload_sub": e_payload_sub_enum
-                }
-                template_kml, waylines_wpml = generate_native_kmz_contents(final_coords, new_cfg)
-                with zipfile.ZipFile(f"missions/{edit_name}.kmz", 'w') as kmz:
-                    kmz.writestr("wpmz/waylines.wpml", waylines_wpml)
-                    kmz.writestr("wpmz/template.kml", template_kml)
-                st.success(f"Successfully updated and saved as {edit_name}.kmz!")
+                    }
+                    
+                    h_val = int(st.session_state.e_alt_ft)
+                    a_val = int(abs(st.session_state.e_pitch))
+                    ol_val = int(st.session_state.e_overlap_pct)
+                    suffix = f"_H{h_val}A{a_val}OL{ol_val}"
+                    final_filename = f"{edit_name}{suffix}"
+
+                    template_kml, waylines_wpml = generate_native_kmz_contents(final_coords, new_cfg)
+                    with zipfile.ZipFile(f"missions/{final_filename}.kmz", 'w') as kmz:
+                        kmz.writestr("wpmz/waylines.wpml", waylines_wpml)
+                        kmz.writestr("wpmz/template.kml", template_kml)
+                        
+                st.success(f"Successfully updated and saved as {final_filename}.kmz!")
             st.divider()
 
 # ==========================================
@@ -1257,4 +1276,4 @@ elif page == 'Viewer':
                     st.session_state.viewer_center = [map_data_view["center"]["lat"], map_data_view["center"]["lng"]]
                     st.session_state.viewer_zoom = map_data_view["zoom"]
                     c_lat, c_lon = st.session_state.viewer_center
-                    st.sidebar.info(f"📍 **Current Screen Center:**\n\n`{c_lat:.6f}, {c_lon:.6f}`\n\n(Click 'Update' above to fetch restrictions here)")
+                    st.sidebar.info(f"📍 **Current Screen Center:**\n\n`{c_lat:.6f}, {c_lon:.6f}`\n\n(Click 'Update' in sidebar to update restrictions in this area)")
