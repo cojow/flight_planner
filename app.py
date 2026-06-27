@@ -13,6 +13,8 @@ from folium.plugins import Draw, PolyLineTextPath
 from folium.features import DivIcon
 from streamlit_folium import st_folium
 from branca.element import Element
+import re
+from geopy.geocoders import Nominatim
 
 # --- RASTERIO SAFELOAD ---
 try:
@@ -96,6 +98,28 @@ def get_bearing(p1, p2):
     y = math.sin(d_lon) * math.cos(lat2)
     x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(d_lon)
     return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_coords_from_search(query):
+    """Parses a lat,lon string or geocodes an address to return [lat, lon]."""
+    if not query:
+        return None
+        
+    # 1. Check if the user typed direct coordinates (e.g., "40.253, -111.640")
+    match = re.match(r"^\s*(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)\s*$", query)
+    if match:
+        return [float(match.group(1)), float(match.group(3))]
+    
+    # 2. If it's not coordinates, try to geocode the address
+    try:
+        geolocator = Nominatim(user_agent="dji_flight_planner_app")
+        location = geolocator.geocode(query)
+        if location:
+            return [location.latitude, location.longitude]
+    except Exception as e:
+        pass
+        
+    return None
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_elevations_open_elev(coords):
@@ -736,6 +760,23 @@ if page == 'Creator':
         c_lat, c_lon = st.session_state.creator_center
         st.info(f"📍 Current Screen Center: **{c_lat:.6f}, {c_lon:.6f}** (Click 'Update' in sidebar to update restrictions in this area)")
 
+    search_col1, search_col2 = st.columns([3, 1])
+    with search_col1:
+        c_search_query = st.text_input("Jump to Address or Lat/Lon", key="c_search_input", placeholder="e.g. 1600 Pennsylvania Ave or 40.25, -111.64")
+    with search_col2:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("🔍 Search", key="c_btn_search", use_container_width=True):
+            with st.spinner("Searching..."):
+                new_coords = get_coords_from_search(c_search_query)
+                if new_coords:
+                    # Update both the locked render center and the tracked state center
+                    st.session_state.locked_creator_center = new_coords
+                    st.session_state.creator_center = new_coords
+                    st.rerun()
+                else:
+                    st.error("Location not found. Try a different query.")
+    st.write("---")
+
     if map_data.get("all_drawings"):
         coords = [(c[1], c[0]) for c in map_data["all_drawings"][-1]['geometry']['coordinates']]
         total_dist_ft = sum(get_haversine_dist(coords[i], coords[i+1]) for i in range(len(coords)-1)) * M_TO_FT
@@ -1026,6 +1067,22 @@ elif page == 'Editor':
             st.session_state.editor_zoom = map_data_edit["zoom"]
             c_lat, c_lon = st.session_state.editor_center
             st.info(f"📍 Current Screen Center: **{c_lat:.6f}, {c_lon:.6f}**")
+
+        e_search_col1, e_search_col2 = st.columns([3, 1])
+        with e_search_col1:
+            e_search_query = st.text_input("Jump to Address or Lat/Lon", key="e_search_input", placeholder="e.g. 1600 Pennsylvania Ave or 40.25, -111.64")
+        with e_search_col2:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("🔍 Search", key="e_btn_search", use_container_width=True):
+                with st.spinner("Searching..."):
+                    new_coords = get_coords_from_search(e_search_query)
+                    if new_coords:
+                        st.session_state.locked_editor_center = new_coords
+                        st.session_state.editor_center = new_coords
+                        st.rerun()
+                    else:
+                        st.error("Location not found. Try a different query.")
+        st.write("---")
 
         final_coords = [(c[1], c[0]) for c in map_data_edit["all_drawings"][-1]['geometry']['coordinates']] if map_data_edit.get("all_drawings") and len(map_data_edit["all_drawings"]) > 0 else current_coords
         if map_data_edit.get("all_drawings") and len(map_data_edit["all_drawings"]) > 0: st.info("✏️ Using newly drawn line from the map.")
