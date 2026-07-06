@@ -32,6 +32,13 @@ try:
 except ImportError:
     RASTERIO_AVAILABLE = False
 
+# --- MTP BRIDGE SAFELOAD (direct libmtp bindings for DJI Fly transfers) ---
+try:
+    import mtp_bridge
+    MTP_BRIDGE_AVAILABLE = True
+except Exception:
+    MTP_BRIDGE_AVAILABLE = False
+
 # ==========================================
 # CONSTANTS & SETUP
 # ==========================================
@@ -89,6 +96,47 @@ def kill_macos_hijackers():
     subprocess.run("killall -9 'Image Capture Extension'", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     time.sleep(1)
 
+def find_child_folder_id(folders_text, parent_name, child_name):
+    """
+    Walks the indentation-based `mtp-folders` tree dump to find the ID of a
+    *direct* child folder named `child_name` under a folder named
+    `parent_name`, matching by tree depth rather than plain substring search.
+    The same name (e.g. a mission UUID) can legitimately appear in multiple
+    places in the tree (the mission's own folder under 'waypoint', and its
+    preview image subfolder under 'map_preview', which is itself nested
+    under 'waypoint') - direct-child matching is required to tell those
+    apart. Each line is "<id>\\t<indent><name>", where indentation depth is
+    the number of leading spaces after the tab.
+    """
+    parent_indent = None
+    child_indent = None
+    for line in folders_text.split('\n'):
+        if '\t' not in line:
+            continue
+        fid, rest = line.split('\t', 1)
+        fid = fid.strip()
+        if not fid.isdigit():
+            continue
+        indent = len(rest) - len(rest.lstrip(' '))
+        name = rest.strip()
+        if not name:
+            continue
+
+        if parent_indent is not None and indent <= parent_indent:
+            parent_indent = None  # exited the parent's subtree entirely
+            child_indent = None
+
+        if parent_indent is None and name == parent_name:
+            parent_indent = indent
+            continue
+
+        if parent_indent is not None:
+            if child_indent is None:
+                child_indent = indent  # depth of the first (direct) child seen
+            if indent == child_indent and name == child_name:
+                return fid
+    return None
+
 def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbnails=True):
     """
     Scans the RC 2 for dummy missions and caches our custom hijacked thumbnails.
@@ -119,20 +167,31 @@ def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbn
         for uuid, folder_id in nests.items():
             cache_path = os.path.join(cache_dir, f"{uuid}.jpg")
             file_id_to_pull = None
-            
-            # Check A: Did we inject it directly into the UUID folder?
-            for block in file_blocks:
-                if f"Parent ID: {folder_id}" in block and f"{uuid}.jpg" in block:
-                    file_id_to_pull = block.split()[0].strip()
-                    break
-                    
-            # Check B: Did we inject it into the map_preview folder?
+
+            # Check A: the subfolder under map_preview named after this mission's
+            # UUID - this is the location DJI Fly's native UI actually reads
+            # mission preview thumbnails from.
+            preview_subfolder_id = find_child_folder_id(folders, "map_preview", uuid) if preview_id else None
+            if preview_subfolder_id:
+                for block in file_blocks:
+                    if f"Parent ID: {preview_subfolder_id}" in block and f"{uuid}.jpg" in block:
+                        file_id_to_pull = block.split()[0].strip()
+                        break
+
+            # Check B: did we inject it directly into the UUID's own mission folder?
+            if not file_id_to_pull:
+                for block in file_blocks:
+                    if f"Parent ID: {folder_id}" in block and f"{uuid}.jpg" in block:
+                        file_id_to_pull = block.split()[0].strip()
+                        break
+
+            # Check C: did we inject it flat into the map_preview folder?
             if not file_id_to_pull and preview_id:
                 for block in file_blocks:
                     if f"Parent ID: {preview_id}" in block and f"{uuid}.jpg" in block:
                         file_id_to_pull = block.split()[0].strip()
                         break
-            
+
             # If we found our custom hijacked image, pull it to the Mac
             if file_id_to_pull:
                 subprocess.run(f'mtp-getfile {shlex.quote(file_id_to_pull)} {shlex.quote(cache_path)}', shell=True, capture_output=True)
@@ -149,27 +208,26 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
     kill_macos_hijackers()
     
     folders = subprocess.run("mtp-folders", shell=True, capture_output=True, text=True).stdout
-    
-    target_folder_id = None
+
+    target_folder_id = find_child_folder_id(folders, "waypoint", target_uuid)
     map_preview_id = None
-    
     for line in folders.split('\n'):
-        if target_uuid in line:
-            parts = line.strip().split()
-            if parts[0].isdigit():
-                target_folder_id = parts[0]
         if "map_preview" in line:
             parts = line.strip().split()
             if parts[0].isdigit():
                 map_preview_id = parts[0]
-                
+                break
+    # The subfolder under map_preview named after this mission's UUID - this is
+    # the location DJI Fly's native UI actually reads preview thumbnails from.
+    preview_subfolder_id = find_child_folder_id(folders, "map_preview", target_uuid)
+
     if not target_folder_id:
         return False, "Target folder missing from controller. Please scan again."
-        
+
     # 1. PURGE OLD FILES
     files = subprocess.run("mtp-files", shell=True, capture_output=True, text=True).stdout
     file_blocks = files.split("File ID: ")
-    
+
     deleted_something = False
     for block in file_blocks:
         try:
@@ -179,6 +237,11 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
                 deleted_something = True
 
             if map_preview_id and f"Parent ID: {map_preview_id}" in block and target_uuid in block:
+                fid = block.split()[0].strip()
+                subprocess.run(f"mtp-delfile -n {shlex.quote(fid)}", shell=True, stderr=subprocess.DEVNULL)
+                deleted_something = True
+
+            if preview_subfolder_id and f"Parent ID: {preview_subfolder_id}" in block:
                 fid = block.split()[0].strip()
                 subprocess.run(f"mtp-delfile -n {shlex.quote(fid)}", shell=True, stderr=subprocess.DEVNULL)
                 deleted_something = True
@@ -192,29 +255,47 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
         time.sleep(3.5) 
             
     # 3. PUSH NEW FILES
+    # NOTE: the `mtp-sendfile` CLI is not used here. It derives both the on-device
+    # filename AND the PTP object-format code from the LOCAL file's name/extension,
+    # ignoring the desired remote name entirely, and this controller's MTP responder
+    # rejects the generic/unknown format code that .kmz files fall into. mtp_bridge
+    # talks to libmtp directly so the destination filename and format code can be
+    # set independently (the KMZ is sent disguised as a JPEG to get past the
+    # rejection; the JPG thumbnail is already a real JPEG so no disguise is needed).
+    if not MTP_BRIDGE_AVAILABLE:
+        return False, "mtp_bridge module unavailable (is libmtp installed?)."
+
     subprocess.run(f'xattr -c {shlex.quote(local_kmz_path)}', shell=True)
     remote_kmz = f"{target_uuid}.kmz"
-    kmz_cmd = f'mtp-sendfile {shlex.quote(local_kmz_path)} {shlex.quote(remote_kmz)} {target_folder_id}'
-    result_kmz = subprocess.run(kmz_cmd, shell=True, capture_output=True, text=True)
+    ok_kmz, msg_kmz = mtp_bridge.send_disguised_file(
+        local_path=local_kmz_path, remote_filename=remote_kmz, parent_folder_id=target_folder_id
+    )
+    if not ok_kmz:
+        return False, f"KMZ transfer failed: {msg_kmz}"
 
     local_jpg_path = local_kmz_path.replace('.kmz', '.jpg')
     if os.path.exists(local_jpg_path):
         subprocess.run(f'xattr -c {shlex.quote(local_jpg_path)}', shell=True)
         remote_jpg = f"{target_uuid}.jpg"
 
-        subprocess.run(f'mtp-sendfile {shlex.quote(local_jpg_path)} {shlex.quote(remote_jpg)} {target_folder_id}', shell=True)
+        mtp_bridge.send_disguised_file(
+            local_path=local_jpg_path, remote_filename=remote_jpg, parent_folder_id=target_folder_id
+        )
         if map_preview_id:
-            subprocess.run(f'mtp-sendfile {shlex.quote(local_jpg_path)} {shlex.quote(remote_jpg)} {map_preview_id}', shell=True)
-            
+            mtp_bridge.send_disguised_file(
+                local_path=local_jpg_path, remote_filename=remote_jpg, parent_folder_id=map_preview_id
+            )
+        if preview_subfolder_id:
+            mtp_bridge.send_disguised_file(
+                local_path=local_jpg_path, remote_filename=remote_jpg, parent_folder_id=preview_subfolder_id
+            )
+
     # 4. USB BUFFER FLUSH
-    # Ask the controller for folders one more time. This forces the macOS USB 
+    # Ask the controller for folders one more time. This forces the macOS USB
     # connection to stay open until the controller confirms disk writes are complete.
     subprocess.run("mtp-folders", shell=True, capture_output=True)
-            
-    if result_kmz.returncode == 0 or "Sent file" in result_kmz.stdout:
-        return True, "Success. (Reminder: Ensure DJI Fly is closed on the RC 2 before opening!)"
-    else:
-        return False, result_kmz.stderr.strip()
+
+    return True, "Success. (Reminder: Ensure DJI Fly is closed on the RC 2 before opening!)"
 
 def export_mission_kmz_from_strings(template_kml_str, waylines_wpml_str, output_kmz_path, is_dji_fly):
     """
@@ -352,32 +433,46 @@ def get_tif_bounds_wgs84(tif_path):
     except Exception:
         return None
 
-def generate_name_thumbnail(mission_name, output_filepath):
+def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_filepath):
     """
-    Generates a 16:9 dark-mode thumbnail displaying the mission name in large text.
+    Generates a 16:9 dark-mode thumbnail showing the mission name plus its
+    key flight parameters (height, angle, overlap), so the plan is
+    identifiable at a glance without needing the encoded filename suffix.
     """
     # Create a 16:9 canvas with DJI's dark UI background
     fig, ax = plt.subplots(figsize=(8, 4.5), facecolor='#121212')
     ax.set_facecolor('#121212')
-    
-    # Wrap the text so it doesn't run off the edges (breaks around 14 chars for larger font)
-    wrapped_text = "\n".join(textwrap.wrap(mission_name, width=14))
-    
-    # Render massive, centered text
-    # The 'transform=ax.transAxes' forces (0.5, 0.5) to be the absolute center of the image
-    ax.text(0.5, 0.5, wrapped_text, 
-            color='#00FFFF', 
-            fontsize=72, 
-            ha='center', 
-            va='center', 
+
+    # Wrap the name so it doesn't run off the edges (breaks around 16 chars for this font size).
+    # Underscores are treated as spaces here so textwrap can break at word
+    # boundaries instead of hard-splitting mid-word (e.g. "Fly_Mission_Flight").
+    display_name = mission_name.replace('_', ' ')
+    wrapped_name = "\n".join(textwrap.wrap(display_name, width=16)) or display_name
+
+    # Name: large, cyan, bold, in the upper portion of the frame
+    ax.text(0.5, 0.68, wrapped_name,
+            color='#00FFFF',
+            fontsize=52,
+            ha='center',
+            va='center',
             weight='bold',
-            transform=ax.transAxes) 
+            transform=ax.transAxes)
+
+    # Flight parameters: height / angle / overlap, stacked below the name
+    info_text = f"H: {alt_ft:.0f} ft\nA: {abs(pitch):.0f}°\nOL: {overlap_pct:.0f}%"
+    ax.text(0.5, 0.24, info_text,
+            color='#FFFFFF',
+            fontsize=30,
+            ha='center',
+            va='center',
+            linespacing=1.6,
+            transform=ax.transAxes)
 
     # Strip away all axes, borders, and margins
     ax.axis('off')
     plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
     plt.margins(0, 0)
-    
+
     # Save as a standard low-footprint JPG
     plt.savefig(output_filepath, format='jpg', dpi=120, bbox_inches='tight', pad_inches=0)
     plt.close()
@@ -1203,27 +1298,32 @@ if page == 'Creator':
                         "is_dji_fly": is_dji_fly
                     }
                     
+                    platform_prefix = "Fly" if is_dji_fly else "Pilot"
+                    prefixed_name = f"{platform_prefix}_{mission_name}"
                     suffix = f"_H{int(safe_get_float('alt_ft', 50.0))}A{int(abs(safe_get_float('pitch', -60.0)))}OL{int(safe_get_float('overlap_pct', 70.0))}"
-                    final_filename = f"{mission_name}{suffix}"
+                    final_filename = f"{prefixed_name}{suffix}"
 
                     if save_option == "Root (missions/)": final_dir = MISSION_DIR
                     elif save_option == "Create New Folder...": final_dir = os.path.join(MISSION_DIR, new_dir_name)
                     elif save_option == "Custom Path...": final_dir = custom_path_name
                     else: final_dir = os.path.join(MISSION_DIR, save_option)
-                        
+
                     os.makedirs(final_dir, exist_ok=True)
                     final_filepath = os.path.join(final_dir, f"{final_filename}.kmz")
 
                     template_kml, waylines_wpml = generate_native_kmz_contents(coords, cfg, c_elev_source, c_tif_path)
                     export_mission_kmz_from_strings(
-                        template_kml_str=template_kml, 
-                        waylines_wpml_str=waylines_wpml, 
-                        output_kmz_path=final_filepath, 
+                        template_kml_str=template_kml,
+                        waylines_wpml_str=waylines_wpml,
+                        output_kmz_path=final_filepath,
                         is_dji_fly=is_dji_fly
                     )
                     thumbnail_path = final_filepath.replace('.kmz', '.jpg')
-                    generate_name_thumbnail(final_filename, thumbnail_path)
-                    
+                    generate_name_thumbnail(
+                        prefixed_name, safe_get_float('alt_ft', 50.0), safe_get_float('pitch', -60.0),
+                        safe_get_float('overlap_pct', 70.0), thumbnail_path
+                    )
+
                 st.success(f"Saved {final_filename}.kmz to {final_dir}/")
             st.divider()
 
@@ -1511,21 +1611,26 @@ elif page == 'Editor':
                         "is_dji_fly": e_is_dji_fly
                     }
                     
+                    e_platform_prefix = "Fly" if e_is_dji_fly else "Pilot"
+                    e_prefixed_name = f"{e_platform_prefix}_{edit_name}"
                     suffix = f"_H{int(safe_get_float('e_alt_ft', 50.0))}A{int(abs(safe_get_float('e_pitch', -60.0)))}OL{int(safe_get_float('e_overlap_pct', 70.0))}"
-                    final_filename = f"{edit_name}{suffix}"
+                    final_filename = f"{e_prefixed_name}{suffix}"
 
                     template_kml, waylines_wpml = generate_native_kmz_contents(final_coords, new_cfg, e_elev_source, e_tif_path)
-                    
+
                     final_filepath = os.path.join(active_dir, f"{final_filename}.kmz")
                     export_mission_kmz_from_strings(
-                        template_kml_str=template_kml, 
-                        waylines_wpml_str=waylines_wpml, 
-                        output_kmz_path=final_filepath, 
-                        is_dji_fly=is_dji_fly
+                        template_kml_str=template_kml,
+                        waylines_wpml_str=waylines_wpml,
+                        output_kmz_path=final_filepath,
+                        is_dji_fly=e_is_dji_fly
                     )
 
                     thumbnail_path = final_filepath.replace('.kmz', '.jpg')
-                    generate_name_thumbnail(final_filename, thumbnail_path)   
+                    generate_name_thumbnail(
+                        e_prefixed_name, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0),
+                        safe_get_float('e_overlap_pct', 70.0), thumbnail_path
+                    )
 
                 st.success(f"Successfully updated and saved as {final_filename}.kmz in {selected_dir_name}!")
             st.divider()
