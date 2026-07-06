@@ -433,40 +433,81 @@ def get_tif_bounds_wgs84(tif_path):
     except Exception:
         return None
 
-def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_filepath):
+def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_filepath, coords=None):
     """
-    Generates a 16:9 dark-mode thumbnail showing the mission name plus its
-    key flight parameters (height, angle, overlap), so the plan is
-    identifiable at a glance without needing the encoded filename suffix.
+    Generates a 16:9 dark-mode thumbnail: mission name and key flight
+    parameters (height, angle, overlap) on the left, so the plan is
+    identifiable at a glance without needing the encoded filename suffix,
+    and a small true-shape line drawing of the flight path in a thin
+    bordered box on the right, captioned "flight path".
     """
-    # Create a 16:9 canvas with DJI's dark UI background
-    fig, ax = plt.subplots(figsize=(8, 4.5), facecolor='#121212')
+    fig_w, fig_h = 8, 4.5
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h), facecolor='#121212')
     ax.set_facecolor('#121212')
 
-    # Wrap the name so it doesn't run off the edges (breaks around 16 chars for this font size).
-    # Underscores are treated as spaces here so textwrap can break at word
-    # boundaries instead of hard-splitting mid-word (e.g. "Fly_Mission_Flight").
+    # --- LEFT: name + flight parameters ---
+    # Wrap the name so it doesn't run off the edges. Underscores are treated
+    # as spaces here so textwrap can break at word boundaries instead of
+    # hard-splitting mid-word (e.g. "Fly_Mission_Flight").
     display_name = mission_name.replace('_', ' ')
-    wrapped_name = "\n".join(textwrap.wrap(display_name, width=16)) or display_name
+    wrapped_name = "\n".join(textwrap.wrap(display_name, width=12)) or display_name
 
-    # Name: large, cyan, bold, in the upper portion of the frame
-    ax.text(0.5, 0.68, wrapped_name,
+    ax.text(0.27, 0.68, wrapped_name,
             color='#00FFFF',
-            fontsize=52,
+            fontsize=42,
             ha='center',
             va='center',
             weight='bold',
             transform=ax.transAxes)
 
-    # Flight parameters: height / angle / overlap, stacked below the name
     info_text = f"H: {alt_ft:.0f} ft\nA: {abs(pitch):.0f}°\nOL: {overlap_pct:.0f}%"
-    ax.text(0.5, 0.24, info_text,
+    ax.text(0.27, 0.24, info_text,
             color='#FFFFFF',
-            fontsize=30,
+            fontsize=26,
             ha='center',
             va='center',
             linespacing=1.6,
             transform=ax.transAxes)
+
+    # --- RIGHT: flight path drawing in a thin bordered box ---
+    if coords and len(coords) >= 2:
+        box_size_in = 2.1
+        box_cx_in, box_cy_in = 6.3, 2.35
+        box_x0_frac = (box_cx_in - box_size_in / 2) / fig_w
+        box_y0_frac = (box_cy_in - box_size_in / 2) / fig_h
+        box_w_frac = box_size_in / fig_w
+        box_h_frac = box_size_in / fig_h
+
+        ax.add_patch(plt.Rectangle(
+            (box_x0_frac, box_y0_frac), box_w_frac, box_h_frac,
+            transform=ax.transAxes, facecolor='none', edgecolor='#FFFFFF', linewidth=1.2
+        ))
+
+        # Project lat/lon to local planar inches (equirectangular approx, fine
+        # for small local flight areas) so the drawn shape isn't distorted,
+        # then scale/center it to fit inside the box while preserving aspect.
+        lats = [c[0] for c in coords]
+        lons = [c[1] for c in coords]
+        lat0 = sum(lats) / len(lats)
+        xs_m = [(lon - lons[0]) * math.cos(math.radians(lat0)) for lon in lons]
+        ys_m = [(lat - lats[0]) for lat in lats]
+        width_m = max(xs_m) - min(xs_m) or 1e-9
+        height_m = max(ys_m) - min(ys_m) or 1e-9
+        mid_x = (max(xs_m) + min(xs_m)) / 2
+        mid_y = (max(ys_m) + min(ys_m)) / 2
+        scale = 0.72 * box_size_in / max(width_m, height_m)
+
+        xs_frac = [(box_cx_in + (x - mid_x) * scale) / fig_w for x in xs_m]
+        ys_frac = [(box_cy_in + (y - mid_y) * scale) / fig_h for y in ys_m]
+
+        ax.plot(xs_frac, ys_frac, color='#FFFFFF', linewidth=1.6, transform=ax.transAxes)
+
+        ax.text(box_x0_frac + box_w_frac / 2, box_y0_frac - 0.07, "flight path",
+                color='#AAAAAA',
+                fontsize=13,
+                ha='center',
+                va='center',
+                transform=ax.transAxes)
 
     # Strip away all axes, borders, and margins
     ax.axis('off')
@@ -610,20 +651,30 @@ def get_photo_footprint(lat, lon, alt_ft, pitch, yaw):
         final_corners.append([lat + dlat, lon + dlon])
     return final_corners
 
-def interpolate_path(coords, gap_m):
-    """Breaks down a corner-based path into physical waypoints for DJI Fly compatibility."""
-    if gap_m <= 0 or len(coords) < 2: 
+def interpolate_path(coords, gap_m, return_frac=False):
+    """
+    Breaks down a corner-based path into physical waypoints for DJI Fly
+    compatibility. When return_frac=True, also returns a parallel list of
+    (segment_index, frac) tuples describing each output point's position
+    along the original path - used to interpolate other per-waypoint values
+    (like elevation) consistently with the same points, without having to
+    re-query them for every densified waypoint.
+    """
+    if gap_m <= 0 or len(coords) < 2:
+        if return_frac:
+            return coords, [(i, 0.0) for i in range(len(coords))]
         return coords
-    
+
     dense_coords = [coords[0]]
+    fracs = [(0, 0.0)]
     cum_dist = [0.0]
     total_dist_m = 0.0
-    
+
     for i in range(len(coords)-1):
         d = get_haversine_dist(coords[i], coords[i+1])
         total_dist_m += d
         cum_dist.append(total_dist_m)
-        
+
     target_dist = gap_m
     while target_dist <= total_dist_m + 0.001:
         for i in range(len(cum_dist) - 1):
@@ -634,13 +685,29 @@ def interpolate_path(coords, gap_m):
                     lat = coords[i][0] + (coords[i+1][0] - coords[i][0]) * frac
                     lon = coords[i][1] + (coords[i+1][1] - coords[i][1]) * frac
                     dense_coords.append((lat, lon))
+                    fracs.append((i, frac))
                 break
         target_dist += gap_m
-        
+
     if get_haversine_dist(dense_coords[-1], coords[-1]) > gap_m * 0.1:
         dense_coords.append(coords[-1])
-        
+        fracs.append((len(coords) - 2, 1.0))
+
+    if return_frac:
+        return dense_coords, fracs
     return dense_coords
+
+def interpolate_elevations(elevations, fracs):
+    """
+    Linearly interpolates elevation values at each (segment_index, frac)
+    position produced by interpolate_path(return_frac=True), so densified
+    waypoints get a sensible elevation without re-querying the elevation
+    source for every one of them.
+    """
+    return [
+        elevations[i] + (elevations[min(i + 1, len(elevations) - 1)] - elevations[i]) * frac
+        for i, frac in fracs
+    ]
 
 # ==========================================
 # SESSION STATE INITIALIZATION & SAFE CALLBACKS
@@ -808,11 +875,19 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
     
     if is_dji_fly:
         gap_m = max(1.0, cfg['interval_ft'] * FT_TO_M) if cfg["trigger_type"] == "distance" else cfg['speed_m'] * cfg['interval_sec']
-        coords = interpolate_path(coords, gap_m)
-        
+        # Query elevations only for the original corner waypoints (same as
+        # DJI Pilot), then interpolate for the densified in-between points.
+        # Re-querying every dense waypoint's elevation was the choke point
+        # here, especially with USGS 3DEP, which looks up one coordinate
+        # at a time.
+        corner_elevations = get_elevations_batch(coords, elev_source, tif_path)
+        coords, fracs = interpolate_path(coords, gap_m, return_frac=True)
+        elevations = interpolate_elevations(corner_elevations, fracs)
+    else:
+        elevations = get_elevations_batch(coords, elev_source, tif_path)
+
     ms_ts = int(datetime.now().timestamp() * 1000)
-    
-    elevations = get_elevations_batch(coords, elev_source, tif_path)
+
     start_elev = elevations[0] if elevations else 0
     target_agl_m = cfg["alt_ft"] * FT_TO_M
     
@@ -1321,7 +1396,7 @@ if page == 'Creator':
                     thumbnail_path = final_filepath.replace('.kmz', '.jpg')
                     generate_name_thumbnail(
                         prefixed_name, safe_get_float('alt_ft', 50.0), safe_get_float('pitch', -60.0),
-                        safe_get_float('overlap_pct', 70.0), thumbnail_path
+                        safe_get_float('overlap_pct', 70.0), thumbnail_path, coords=coords
                     )
 
                 st.success(f"Saved {final_filename}.kmz to {final_dir}/")
@@ -1629,7 +1704,7 @@ elif page == 'Editor':
                     thumbnail_path = final_filepath.replace('.kmz', '.jpg')
                     generate_name_thumbnail(
                         e_prefixed_name, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0),
-                        safe_get_float('e_overlap_pct', 70.0), thumbnail_path
+                        safe_get_float('e_overlap_pct', 70.0), thumbnail_path, coords=final_coords
                     )
 
                 st.success(f"Successfully updated and saved as {final_filename}.kmz in {selected_dir_name}!")
