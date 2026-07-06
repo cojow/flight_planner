@@ -7,7 +7,7 @@ import urllib.parse
 import math
 import zipfile
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 from geopy.geocoders import Nominatim
 import folium
@@ -15,6 +15,14 @@ from folium.plugins import Draw, PolyLineTextPath
 from folium.features import DivIcon
 from streamlit_folium import st_folium
 from branca.element import Element
+import shutil
+from PIL import Image
+import subprocess
+import shlex
+import time
+import matplotlib.pyplot as plt
+import textwrap
+
 
 # --- RASTERIO SAFELOAD ---
 try:
@@ -59,13 +67,175 @@ CAM_VAL_MAP = {v: k for k, v in CAM_DISPLAY_MAP.items()}
 
 # Updated Hardware Map with DJI Fly
 HARDWARE_MAP = {
-    "DJI Pilot 2 (Mavic 3M) (Drone: 0, Payload: 3)": {"drone_sub": "0", "payload_sub": "3", "is_dji_fly": False},
-    "DJI Fly (RC2 / Mini / Air Series)": {"drone_sub": "0", "payload_sub": "0", "is_dji_fly": True}
-}
+    "DJI Pilot 2 (Mavic 3M) (Drone: 0, Payload: 3)": {
+        "drone_enum": "77", "drone_sub": "0", 
+        "payload_enum": "68", "payload_sub": "3", 
+        "is_dji_fly": False
+        },
+    "DJI Fly (RC2 / Mini / Air Series)": {
+        "drone_enum": "67", "drone_sub": "0", 
+        "payload_enum": "43", "payload_sub": "0", 
+        "is_dji_fly": True
+        }
+    }
 
 # ==========================================
 # EXTERNAL DATA & ELEVATION HELPERS
 # ==========================================
+
+def kill_macos_hijackers():
+    """Kills macOS background apps that lock the MTP port."""
+    subprocess.run("killall -9 PTPCamera", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    subprocess.run("killall -9 'Image Capture Extension'", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    time.sleep(1)
+
+def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbnails=True):
+    """
+    Scans the RC 2 for dummy missions and caches our custom hijacked thumbnails.
+    """
+    kill_macos_hijackers()
+    os.makedirs(cache_dir, exist_ok=True)
+    
+    try:
+        # 1. Fetch Folders
+        folders = subprocess.run("mtp-folders", shell=True, capture_output=True, text=True).stdout
+        matches = re.findall(r'^\s*(\d+)\s+([A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12})\b', folders, re.MULTILINE | re.IGNORECASE)
+        nests = {match[1].upper(): match[0] for match in matches}
+        
+        preview_id = None
+        for line in folders.split('\n'):
+            if "map_preview" in line:
+                preview_id = line.split()[0]
+                break
+                
+        if not pull_thumbnails:
+            return nests, preview_id
+            
+        # 2. Fetch File Index
+        files = subprocess.run("mtp-files", shell=True, capture_output=True, text=True).stdout
+        file_blocks = files.split("File ID: ")
+        
+        # 3. Pull our custom Title Card thumbnails
+        for uuid, folder_id in nests.items():
+            cache_path = os.path.join(cache_dir, f"{uuid}.jpg")
+            file_id_to_pull = None
+            
+            # Check A: Did we inject it directly into the UUID folder?
+            for block in file_blocks:
+                if f"Parent ID: {folder_id}" in block and f"{uuid}.jpg" in block:
+                    file_id_to_pull = block.split()[0].strip()
+                    break
+                    
+            # Check B: Did we inject it into the map_preview folder?
+            if not file_id_to_pull and preview_id:
+                for block in file_blocks:
+                    if f"Parent ID: {preview_id}" in block and f"{uuid}.jpg" in block:
+                        file_id_to_pull = block.split()[0].strip()
+                        break
+            
+            # If we found our custom hijacked image, pull it to the Mac
+            if file_id_to_pull:
+                subprocess.run(f'mtp-getfile {shlex.quote(file_id_to_pull)} {shlex.quote(cache_path)}', shell=True, capture_output=True)
+
+        return nests, preview_id
+    except Exception as e:
+        return {}, None
+
+def push_mission_to_nest(local_kmz_path, target_uuid):
+    """
+    Hardened push function. Features FUSE cooldowns and explicit cache flushing
+    to prevent silent Android transfer failures.
+    """
+    kill_macos_hijackers()
+    
+    folders = subprocess.run("mtp-folders", shell=True, capture_output=True, text=True).stdout
+    
+    target_folder_id = None
+    map_preview_id = None
+    
+    for line in folders.split('\n'):
+        if target_uuid in line:
+            parts = line.strip().split()
+            if parts[0].isdigit():
+                target_folder_id = parts[0]
+        if "map_preview" in line:
+            parts = line.strip().split()
+            if parts[0].isdigit():
+                map_preview_id = parts[0]
+                
+    if not target_folder_id:
+        return False, "Target folder missing from controller. Please scan again."
+        
+    # 1. PURGE OLD FILES
+    files = subprocess.run("mtp-files", shell=True, capture_output=True, text=True).stdout
+    file_blocks = files.split("File ID: ")
+    
+    deleted_something = False
+    for block in file_blocks:
+        try:
+            if f"Parent ID: {target_folder_id}" in block:
+                fid = block.split()[0].strip()
+                subprocess.run(f"mtp-delfile -n {shlex.quote(fid)}", shell=True, stderr=subprocess.DEVNULL)
+                deleted_something = True
+
+            if map_preview_id and f"Parent ID: {map_preview_id}" in block and target_uuid in block:
+                fid = block.split()[0].strip()
+                subprocess.run(f"mtp-delfile -n {shlex.quote(fid)}", shell=True, stderr=subprocess.DEVNULL)
+                deleted_something = True
+        except Exception:
+            pass
+            
+    # 2. THE FUSE COOLDOWN (CRITICAL FIX)
+    # If we deleted files, Android needs time to update its SQLite MediaStore DB.
+    # If we push instantly, Android drops the incoming file into the void.
+    if deleted_something:
+        time.sleep(3.5) 
+            
+    # 3. PUSH NEW FILES
+    subprocess.run(f'xattr -c {shlex.quote(local_kmz_path)}', shell=True)
+    remote_kmz = f"{target_uuid}.kmz"
+    kmz_cmd = f'mtp-sendfile {shlex.quote(local_kmz_path)} {shlex.quote(remote_kmz)} {target_folder_id}'
+    result_kmz = subprocess.run(kmz_cmd, shell=True, capture_output=True, text=True)
+
+    local_jpg_path = local_kmz_path.replace('.kmz', '.jpg')
+    if os.path.exists(local_jpg_path):
+        subprocess.run(f'xattr -c {shlex.quote(local_jpg_path)}', shell=True)
+        remote_jpg = f"{target_uuid}.jpg"
+
+        subprocess.run(f'mtp-sendfile {shlex.quote(local_jpg_path)} {shlex.quote(remote_jpg)} {target_folder_id}', shell=True)
+        if map_preview_id:
+            subprocess.run(f'mtp-sendfile {shlex.quote(local_jpg_path)} {shlex.quote(remote_jpg)} {map_preview_id}', shell=True)
+            
+    # 4. USB BUFFER FLUSH
+    # Ask the controller for folders one more time. This forces the macOS USB 
+    # connection to stay open until the controller confirms disk writes are complete.
+    subprocess.run("mtp-folders", shell=True, capture_output=True)
+            
+    if result_kmz.returncode == 0 or "Sent file" in result_kmz.stdout:
+        return True, "Success. (Reminder: Ensure DJI Fly is closed on the RC 2 before opening!)"
+    else:
+        return False, result_kmz.stderr.strip()
+
+def export_mission_kmz_from_strings(template_kml_str, waylines_wpml_str, output_kmz_path, is_dji_fly):
+    """
+    Exports the KMZ from memory strings differently depending on the hardware map.
+    - is_dji_fly = True: Enforces the strict 'wpmz/' parent directory architecture.
+    - is_dji_fly = False: Uses standard root-level zipping for DJI Pilot.
+    """
+
+    with zipfile.ZipFile(output_kmz_path, 'w', zipfile.ZIP_DEFLATED) as kmz:
+        if is_dji_fly:
+            # Forces the files inside a 'wpmz/' folder inside the zip
+            kmz.writestr('wpmz/template.kml', template_kml_str)
+            if waylines_wpml_str:
+                kmz.writestr('wpmz/waylines.wpml', waylines_wpml_str)
+                
+        else:
+            # Zips the files directly into the root of the archive (Pilot behavior)
+            kmz.writestr('template.kml', template_kml_str)
+            if waylines_wpml_str:
+                kmz.writestr('waylines.wpml', waylines_wpml_str)
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_coords_from_search(query):
     """Parses a lat,lon string or geocodes an address to return [lat, lon]."""
@@ -182,6 +352,36 @@ def get_tif_bounds_wgs84(tif_path):
     except Exception:
         return None
 
+def generate_name_thumbnail(mission_name, output_filepath):
+    """
+    Generates a 16:9 dark-mode thumbnail displaying the mission name in large text.
+    """
+    # Create a 16:9 canvas with DJI's dark UI background
+    fig, ax = plt.subplots(figsize=(8, 4.5), facecolor='#121212')
+    ax.set_facecolor('#121212')
+    
+    # Wrap the text so it doesn't run off the edges (breaks around 14 chars for larger font)
+    wrapped_text = "\n".join(textwrap.wrap(mission_name, width=14))
+    
+    # Render massive, centered text
+    # The 'transform=ax.transAxes' forces (0.5, 0.5) to be the absolute center of the image
+    ax.text(0.5, 0.5, wrapped_text, 
+            color='#00FFFF', 
+            fontsize=72, 
+            ha='center', 
+            va='center', 
+            weight='bold',
+            transform=ax.transAxes) 
+
+    # Strip away all axes, borders, and margins
+    ax.axis('off')
+    plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+    plt.margins(0, 0)
+    
+    # Save as a standard low-footprint JPG
+    plt.savefig(output_filepath, format='jpg', dpi=120, bbox_inches='tight', pad_inches=0)
+    plt.close()
+
 def get_elevations_batch(coords, source, tif_path=None):
     if not coords:
         return []
@@ -191,6 +391,90 @@ def get_elevations_batch(coords, source, tif_path=None):
         return get_elevations_raster(coords, tif_path)
     else:
         return get_elevations_open_elev(coords)
+
+def get_exif_datetime(filepath):
+    """Extracts the exact time the photo was taken from EXIF data."""
+    try:
+        with Image.open(filepath) as img:
+            exif = img._getexif()
+            if not exif:
+                return None
+            for tag, value in exif.items():
+                if tag == 36867: 
+                    return datetime.strptime(value, "%Y:%m:%d %H:%M:%S")
+    except Exception:
+        pass
+    return None
+
+def st_group_images_by_time(source_folder, output_folder, target_date, gap_minutes=5):
+    """Streamlit-adapted function to filter and group images by time gaps."""
+    valid_extensions = {'.jpg', '.jpeg', '.png', '.tif', '.tiff'}
+    os.makedirs(output_folder, exist_ok=True)
+    
+    image_data = []
+    try:
+        files = os.listdir(source_folder)
+    except Exception as e:
+        st.error(f"Error accessing source directory: {e}")
+        return
+
+    progress_bar = st.progress(0, text="Scanning files for EXIF data...")
+    
+    for i, filename in enumerate(files):
+        ext = os.path.splitext(filename)[1].lower()
+        if ext in valid_extensions:
+            filepath = os.path.join(source_folder, filename)
+            taken_time = get_exif_datetime(filepath)
+            
+            if taken_time and taken_time.date() == target_date:
+                image_data.append({'path': filepath, 'name': filename, 'time': taken_time})
+        
+        progress_bar.progress((i + 1) / len(files), text=f"Scanning files... ({i+1}/{len(files)})")
+                
+    if not image_data:
+        progress_bar.empty()
+        st.warning(f"No images found for {target_date.strftime('%Y-%m-%d')} in the source folder.")
+        return
+
+    image_data.sort(key=lambda x: x['time'])
+
+    groups = []
+    current_group = [image_data[0]]
+    gap_threshold = timedelta(minutes=gap_minutes)
+
+    for i in range(1, len(image_data)):
+        time_diff = image_data[i]['time'] - image_data[i-1]['time']
+        if time_diff <= gap_threshold:
+            current_group.append(image_data[i])
+        else:
+            groups.append(current_group)
+            current_group = [image_data[i]]
+            
+    if current_group:
+        groups.append(current_group)
+
+    progress_bar.empty()
+    st.info(f"Found {len(groups)} distinct flight groups.")
+    
+    copy_progress = st.progress(0, text="Copying images to group folders...")
+    total_images = sum(len(g) for g in groups)
+    copied = 0
+    
+    for i, group in enumerate(groups):
+        group_start_datetime = group[0]['time'].strftime("%Y-%m-%d_%H-%M-%S")
+        folder_name = f"Group_{i+1}_{group_start_datetime}"
+        folder_path = os.path.join(output_folder, folder_name)
+        
+        os.makedirs(folder_path, exist_ok=True)
+        
+        for img in group:
+            target_path = os.path.join(folder_path, img['name'])
+            shutil.copy2(img['path'], target_path) 
+            copied += 1
+            copy_progress.progress(copied / total_images, text=f"Copying images... ({copied}/{total_images})")
+            
+    copy_progress.empty()
+    st.success(f"Successfully sorted {total_images} images into {len(groups)} folders at '{output_folder}'.")
 
 # ==========================================
 # 3D ROTATION MATRIX FOOTPRINT CALCULATOR
@@ -349,7 +633,6 @@ def e_sync_geometry():
 # DATA EXTRACTION (FOR EDITOR)
 # ==========================================
 def parse_kmz_for_editing(full_path):
-    ns = {'kml': 'http://www.opengis.net/kml/2.2', 'wpml': 'http://www.dji.com/wpmz/1.0.6'}
     meta = {
         "safe_takeoff_ft": 60.0, "trans_speed_mph": 22.0, "speed_m": 4.11, "speed_mph": 6.0,
         "alt_ft": 50.0, "pitch": -60.0, "trigger_type": "distance", 
@@ -442,7 +725,9 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
     trans_m = cfg["trans_speed_mph"] * MPH_TO_MS
     speed_m = cfg["speed_m"]
     lens_str = cfg.get("camera_type", "visible")
+    drone_enum = cfg.get("drone_enum", "77")
     drone_sub_enum = cfg.get("drone_sub", "0")
+    payload_enum = cfg.get("payload_enum", "68")
     payload_sub_enum = cfg.get("payload_sub", "3")
     
     total_dist_m = sum(get_haversine_dist(coords[i], coords[i+1]) for i in range(len(coords)-1))
@@ -653,8 +938,8 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
       <wpml:executeRCLostAction>goBack</wpml:executeRCLostAction>
       <wpml:takeOffSecurityHeight>{safe_m:.1f}</wpml:takeOffSecurityHeight>
       <wpml:globalTransitionalSpeed>{trans_m:.1f}</wpml:globalTransitionalSpeed>
-      <wpml:droneInfo><wpml:droneEnumValue>77</wpml:droneEnumValue><wpml:droneSubEnumValue>{drone_sub_enum}</wpml:droneSubEnumValue></wpml:droneInfo>
-      <wpml:payloadInfo><wpml:payloadEnumValue>68</wpml:payloadEnumValue><wpml:payloadSubEnumValue>{payload_sub_enum}</wpml:payloadSubEnumValue><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:payloadInfo>
+      <wpml:droneInfo><wpml:droneEnumValue>{drone_enum}</wpml:droneEnumValue><wpml:droneSubEnumValue>{drone_sub_enum}</wpml:droneSubEnumValue></wpml:droneInfo>
+      <wpml:payloadInfo><wpml:payloadEnumValue>{payload_enum}</wpml:payloadEnumValue><wpml:payloadSubEnumValue>{payload_sub_enum}</wpml:payloadSubEnumValue><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:payloadInfo>
     </wpml:missionConfig>
     <Folder>
       <wpml:templateType>waypoint</wpml:templateType>
@@ -697,7 +982,7 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
       <wpml:executeRCLostAction>goBack</wpml:executeRCLostAction>
       <wpml:takeOffSecurityHeight>{safe_m:.1f}</wpml:takeOffSecurityHeight>
       <wpml:globalTransitionalSpeed>{trans_m:.1f}</wpml:globalTransitionalSpeed>
-      <wpml:droneInfo><wpml:droneEnumValue>77</wpml:droneEnumValue><wpml:droneSubEnumValue>{drone_sub_enum}</wpml:droneSubEnumValue></wpml:droneInfo>
+      <wpml:droneInfo><wpml:droneEnumValue>{drone_enum}</wpml:droneEnumValue><wpml:droneSubEnumValue>{drone_sub_enum}</wpml:droneSubEnumValue></wpml:droneInfo>
       <wpml:waylineAvoidLimitAreaMode>0</wpml:waylineAvoidLimitAreaMode>
       <wpml:payloadInfo><wpml:payloadEnumValue>68</wpml:payloadEnumValue><wpml:payloadSubEnumValue>{payload_sub_enum}</wpml:payloadSubEnumValue><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:payloadInfo>
     </wpml:missionConfig>
@@ -724,14 +1009,16 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
 # ==========================================
 st.set_page_config(layout="wide", page_title="Flight Planner")
 st.title("DJI Flight Planner")
-page = st.radio("Navigation", ["Creator", "Editor", "Viewer"], horizontal=True, label_visibility="collapsed")
+page = st.radio("Navigation", ["Creator", "Editor", "Viewer  |", "Photo Sorter", "DJI Fly Transfer"], horizontal=True, label_visibility="collapsed")
 
 # --- CREATOR MODE ---
 if page == 'Creator':
     with st.sidebar:
         st.header("1. Hardware & Payload")
         hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()))
+        drone_enum = HARDWARE_MAP[hw_choice]["drone_enum"]
         drone_sub_enum = HARDWARE_MAP[hw_choice]["drone_sub"]
+        payload_enum = HARDWARE_MAP[hw_choice]["payload_enum"]
         payload_sub_enum = HARDWARE_MAP[hw_choice]["payload_sub"]
         is_dji_fly = HARDWARE_MAP[hw_choice].get("is_dji_fly", False)
         
@@ -744,14 +1031,14 @@ if page == 'Creator':
 
         st.header("2. Global Config")
         mission_name = st.text_input("Filename", "Mission_Flight")
-        trans_speed_mph = st.number_input("Takeoff Speed (mph)", value=22.0)
-        safe_takeoff_ft = st.number_input("Safe Takeoff Alt (ft)", value=60.0)
+        trans_speed_mph = st.number_input("Takeoff Speed (mph)", value=22.0, step=1.0)
+        safe_takeoff_ft = st.number_input("Safe Takeoff Alt (ft)", value=60.0, step=1.0)
         
         st.header("3. Waypoint Settings")
-        st.number_input("Relative Altitude (ft)", key="alt_ft", on_change=sync_geometry)
+        st.number_input("Relative Altitude (ft)", value=60.0, key="alt_ft", step=1.0, on_change=sync_geometry)
         st.info("❗Elevation is relative to the take off point, NOT the mission start point.")
 
-        c_elev_source = st.selectbox("Elevation Source", ["Open-Elevation (Global)", "USGS 3DEP (US High-Res)", "Local GeoTIFF"], key="c_source")
+        c_elev_source = st.selectbox("Elevation Source", ["USGS 3DEP (US High-Res)", "Open-Elevation (Global)", "Local GeoTIFF"], key="c_source")
         if c_elev_source == "Open-Elevation (Global)":
             st.warning("Can be off by several dozen feet. Use with caution.")
         elif c_elev_source == "USGS 3DEP (US High-Res)":
@@ -771,7 +1058,7 @@ if page == 'Creator':
                 else:
                     st.warning("No .tif files found in the 'surfaces' folder.")
 
-        st.slider("Gimbal Pitch (°)", -90, 0, key="pitch", on_change=sync_geometry)
+        st.slider("Gimbal Pitch (°)", -90, 0, value= -60, key="pitch", on_change=sync_geometry)
         
         current_pitch = safe_get_float('pitch', -60.0)
         pitch_rad = math.radians(abs(current_pitch))
@@ -787,9 +1074,9 @@ if page == 'Creator':
         st.radio("Type", ["distance", "time"], key="trigger_type", on_change=sync_geometry)
         
         if st.session_state.get('trigger_type', 'distance') == "distance":
-            st.number_input("Interval (ft)", key="t_dist_val", min_value=1.0, on_change=sync_dist_to_overlap)
+            st.number_input("Interval (ft)", key="t_dist_val", min_value=1.0, step=1.0, on_change=sync_dist_to_overlap)
             st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=sync_overlap_to_dist)
-            manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, value=6.0)
+            manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=4.0)
             speed_m = manual_mph * MPH_TO_MS
             
             gap_m = max(1.0, safe_get_float('t_dist_val', 9.0) * FT_TO_M)
@@ -805,7 +1092,7 @@ if page == 'Creator':
                 speed_m = min(max((safe_get_float('target_gap_ft', 26.2) * FT_TO_M) / t_val_sec, 1.0), 10.0)
                 st.info(f"Auto-Calculated Speed: {speed_m * MS_TO_MPH:.1f} mph")
             else:
-                manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, value=6.0)
+                manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, value=6.0, step=1.0)
                 speed_m = manual_mph * MPH_TO_MS
                 current_gap = speed_m * M_TO_FT * t_val_sec
                 fw = get_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
@@ -844,7 +1131,7 @@ if page == 'Creator':
             folium.Marker(st.session_state.locked_creator_center, icon=DivIcon(html='<div style="font-size: 12px; color: grey;">No FAA restrictions at this location</div>')).add_to(m)
 
     Draw(export=False, draw_options={'polyline':{'shapeOptions':{'color':'#00ffff','weight':5}}}).add_to(m)
-    map_data = st_folium(m, width=1200, height=600, key=f"creator_map_{show_faa_airspace}_{c_elev_source}_{c_show_bounds}")
+    map_data = st_folium(m, width=1200, height=600, key="creator_map")
 
     if map_data and map_data.get("center"):
         st.session_state.creator_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
@@ -872,7 +1159,7 @@ if page == 'Creator':
         coords = [(c[1], c[0]) for c in map_data["all_drawings"][-1]['geometry']['coordinates']]
         total_dist_ft = sum(get_haversine_dist(coords[i], coords[i+1]) for i in range(len(coords)-1)) * M_TO_FT
         
-        gap_ft = max(1.0, safe_get_float('t_dist_val', 9.0) * M_TO_FT) if st.session_state.get('trigger_type', 'distance') == "distance" else speed_m * t_val_sec * M_TO_FT
+        gap_ft = max(1.0, safe_get_float('t_dist_val', 9.0) ) if st.session_state.get('trigger_type', 'distance') == "distance" else speed_m * t_val_sec #* M_TO_FT
             
         if len(coords) > photo_start_wp:
             dist_to_start = sum(get_haversine_dist(coords[i], coords[i+1]) for i in range(photo_start_wp)) * M_TO_FT
@@ -898,7 +1185,7 @@ if page == 'Creator':
                 save_option = st.selectbox("Save Destination", ["Root (missions/)", "Create New Folder...", "Custom Path..."] + existing_dirs)
             with save_col2:
                 new_dir_name = st.text_input("New Folder Name", "New_Project") if save_option == "Create New Folder..." else ""
-                custom_path_name = st.text_input("Absolute File Path", "/Users/connor/Desktop/") if save_option == "Custom Path..." else ""
+                custom_path_name = st.text_input("Absolute File Path", os.path.join(os.path.expanduser("~"), "Desktop")) if save_option == "Custom Path..." else ""
             with save_col3:
                 st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
                 save_clicked = st.button("Save & Generate KMZ", use_container_width=True, disabled=save_disabled)
@@ -928,9 +1215,14 @@ if page == 'Creator':
                     final_filepath = os.path.join(final_dir, f"{final_filename}.kmz")
 
                     template_kml, waylines_wpml = generate_native_kmz_contents(coords, cfg, c_elev_source, c_tif_path)
-                    with zipfile.ZipFile(final_filepath, 'w') as kmz:
-                        kmz.writestr("wpmz/waylines.wpml", waylines_wpml)
-                        kmz.writestr("wpmz/template.kml", template_kml)
+                    export_mission_kmz_from_strings(
+                        template_kml_str=template_kml, 
+                        waylines_wpml_str=waylines_wpml, 
+                        output_kmz_path=final_filepath, 
+                        is_dji_fly=is_dji_fly
+                    )
+                    thumbnail_path = final_filepath.replace('.kmz', '.jpg')
+                    generate_name_thumbnail(final_filename, thumbnail_path)
                     
                 st.success(f"Saved {final_filename}.kmz to {final_dir}/")
             st.divider()
@@ -960,6 +1252,10 @@ elif page == 'Editor':
             meta = parse_kmz_for_editing(full_path)
             st.session_state.meta = meta
             st.session_state.editor_key = str(datetime.now().timestamp())
+
+            if meta['coords']:
+                st.session_state.locked_editor_center = list(meta['coords'][0])
+                st.session_state.editor_center = list(meta['coords'][0])
             
             st.session_state.e_alt_ft = meta['alt_ft']
             st.session_state.e_pitch = int(meta['pitch'])
@@ -976,8 +1272,10 @@ elif page == 'Editor':
         
         with st.sidebar:
             st.header("1. Hardware & Payload")
-            e_hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()), index=list(HARDWARE_MAP.keys()).index(meta.get('hardware_key', "Mavic 3 Multispectral (Drone: 0, Payload: 3)")))
+            e_hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()), index=list(HARDWARE_MAP.keys()).index(meta.get('hardware_key', "DJI Pilot 2 (Mavic 3M) (Drone: 0, Payload: 3)")))
+            e_drone_enum = HARDWARE_MAP[e_hw_choice]["drone_enum"]
             e_drone_sub_enum = HARDWARE_MAP[e_hw_choice]["drone_sub"]
+            e_payload_enum = HARDWARE_MAP[e_hw_choice]["payload_enum"]
             e_payload_sub_enum = HARDWARE_MAP[e_hw_choice]["payload_sub"]
             e_is_dji_fly = HARDWARE_MAP[e_hw_choice].get("is_dji_fly", False)
             
@@ -993,7 +1291,7 @@ elif page == 'Editor':
             st.header("2. Modify Parameters")
             e_safe = st.number_input("Safe Takeoff Alt (ft)", value=meta['safe_takeoff_ft'])
             e_trans = st.number_input("Takeoff Speed (mph)", value=meta['trans_speed_mph'])
-            st.number_input("Relative Altitude (ft)", key="e_alt_ft", on_change=e_sync_geometry)
+            st.number_input("Relative Altitude (ft)", value=60.0, key="e_alt_ft", step=1.0, on_change=e_sync_geometry)
             st.info("❗Elevation is relative to the take off point, NOT the mission start point.")
 
             e_elev_source = st.selectbox("Elevation Source", ["Open-Elevation (Global)", "USGS 3DEP (US High-Res)", "Local GeoTIFF"], key="e_source")
@@ -1016,7 +1314,7 @@ elif page == 'Editor':
                     else:
                         st.warning("No .tif files found in the 'surfaces' folder.")
 
-            st.slider("Gimbal Pitch (°)", -90, 0, key="e_pitch", on_change=e_sync_geometry)
+            st.slider("Gimbal Pitch (°)", -90, 0, value= -60, key="e_pitch", on_change=e_sync_geometry)
 
             current_e_pitch = safe_get_float('e_pitch', -60.0)
             pitch_rad_e = math.radians(abs(current_e_pitch))
@@ -1032,9 +1330,9 @@ elif page == 'Editor':
             safe_e_speed = max(2.3, float(meta.get('speed_mph', 6.0)))
             
             if st.session_state.get('e_trigger_type', 'distance') == "distance":
-                st.number_input("Interval (ft)", key="e_t_dist_val", min_value=1.0, on_change=e_sync_dist_to_overlap)
+                st.number_input("Interval (ft)", key="e_t_dist_val", min_value=1.0, step=1.0, on_change=e_sync_dist_to_overlap)
                 st.number_input("Forward Overlap (%)", key="e_overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=e_sync_overlap_to_dist)
-                e_speed_m = st.number_input("Flight Speed (mph)", min_value=2.3, value=safe_e_speed) * MPH_TO_MS
+                e_speed_m = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=safe_e_speed) * MPH_TO_MS
                 
                 gap_m = max(1.0, safe_get_float('e_t_dist_val', 9.0) * FT_TO_M)
                 max_speed_m = gap_m / min_photo_interval_sec
@@ -1051,7 +1349,7 @@ elif page == 'Editor':
                     e_speed_m = min(max((safe_get_float('e_target_gap_ft', 26.2) * FT_TO_M) / e_tval_sec, 1.0), 10.0)
                     st.info(f"Auto-Calculated Speed: {e_speed_m * MS_TO_MPH:.1f} mph")
                 else:
-                    e_speed_m = st.number_input("Manual Speed (mph)", min_value=2.3, value=safe_e_speed) * MPH_TO_MS
+                    e_speed_m = st.number_input("Manual Speed (mph)", min_value=2.3, value=safe_e_speed, step=1.0) * MPH_TO_MS
                     fw = get_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
                     current_overlap = ((fw - (e_speed_m * M_TO_FT * e_tval_sec)) / fw) * 100 if fw > 0 else 0
                     st.info(f"Current Overlap: {max(0, min(current_overlap, 99.9)):.1f}%")
@@ -1095,7 +1393,7 @@ elif page == 'Editor':
         line = folium.PolyLine(current_coords, color="#00ffff", weight=5).add_to(m_edit)
         PolyLineTextPath(line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '24', 'fill-opacity': '0.3'}).add_to(m_edit)
         
-        gap_ft_preview = max(1.0, safe_get_float('e_t_dist_val', 9.0) * M_TO_FT) if st.session_state.get('e_trigger_type', 'distance') == "distance" else e_speed_m * safe_get_float('e_t_time_val', 2.0) * M_TO_FT
+        gap_ft_preview = max(1.0, safe_get_float('e_t_dist_val', 9.0) ) if st.session_state.get('e_trigger_type', 'distance') == "distance" else e_speed_m * safe_get_float('e_t_time_val', 2.0) * M_TO_FT#* M_TO_FT
 
         yaws = []
         for i in range(len(current_coords) - 1):
@@ -1154,7 +1452,7 @@ elif page == 'Editor':
                         break
                 current_dist += gap_ft_preview
 
-        map_data_edit = st_folium(m_edit, width=1200, height=600, key=f"editor_map_{show_faa_airspace}_{show_footprints}_{e_elev_source}_{e_show_bounds}")
+        map_data_edit = st_folium(m_edit, width=1200, height=600, key="editor_map")
 
         if map_data_edit and map_data_edit.get("center"):
             st.session_state.editor_center = [map_data_edit["center"]["lat"], map_data_edit["center"]["lng"]]
@@ -1183,7 +1481,7 @@ elif page == 'Editor':
 
         with top_hud:
             total_dist_ft = sum(get_haversine_dist(final_coords[i], final_coords[i+1]) for i in range(len(final_coords)-1)) * M_TO_FT
-            gap_ft = max(1.0, safe_get_float('e_t_dist_val', 9.0) * M_TO_FT) if st.session_state.get('e_trigger_type', 'distance') == "distance" else e_speed_m * safe_get_float('e_t_time_val', 2.0) * M_TO_FT
+            gap_ft = max(1.0, safe_get_float('e_t_dist_val', 9.0) ) if st.session_state.get('e_trigger_type', 'distance') == "distance" else e_speed_m * safe_get_float('e_t_time_val', 2.0) * M_TO_FT #* M_TO_FT
                 
             if len(final_coords) > e_start_wp:
                 dist_to_start = sum(get_haversine_dist(final_coords[i], final_coords[i+1]) for i in range(e_start_wp)) * M_TO_FT
@@ -1219,17 +1517,23 @@ elif page == 'Editor':
                     template_kml, waylines_wpml = generate_native_kmz_contents(final_coords, new_cfg, e_elev_source, e_tif_path)
                     
                     final_filepath = os.path.join(active_dir, f"{final_filename}.kmz")
-                    with zipfile.ZipFile(final_filepath, 'w') as kmz:
-                        kmz.writestr("wpmz/waylines.wpml", waylines_wpml)
-                        kmz.writestr("wpmz/template.kml", template_kml)
-                        
+                    export_mission_kmz_from_strings(
+                        template_kml_str=template_kml, 
+                        waylines_wpml_str=waylines_wpml, 
+                        output_kmz_path=final_filepath, 
+                        is_dji_fly=is_dji_fly
+                    )
+
+                    thumbnail_path = final_filepath.replace('.kmz', '.jpg')
+                    generate_name_thumbnail(final_filename, thumbnail_path)   
+
                 st.success(f"Successfully updated and saved as {final_filename}.kmz in {selected_dir_name}!")
             st.divider()
 
 # ==========================================
 # VIEWER MODE
 # ==========================================
-elif page == 'Viewer':
+elif page == 'Viewer  |':
     existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d))]
     col_dir, col_file, col_multi = st.columns([2, 3, 1])
     with col_dir: selected_dir_name = st.selectbox("Select Folder", ["Root (missions/)"] + existing_dirs, key="view_dir")
@@ -1268,8 +1572,7 @@ elif page == 'Viewer':
             for kmz_idx, current_kmz in enumerate(selected_kmzs):
                 line_color = colors[kmz_idx % len(colors)]
                 full_path = os.path.join(active_dir, current_kmz)
-                ns = {'kml': 'http://www.opengis.net/kml/2.2', 'wpml': 'http://www.dji.com/wpmz/1.0.6'}
-                
+
                 try:
                     with zipfile.ZipFile(full_path, 'r') as kmz:
                         waylines_file = [name for name in kmz.namelist() if name.endswith('waylines.wpml')][0]
@@ -1281,9 +1584,11 @@ elif page == 'Viewer':
                     continue
                 
                 meta = {"speed": 0, "pitch": -60, "mode": "None", "t_val": 0, "alt": 50.0, "safe_alt": 0, "start_idx": 0, "camera_type": "visible"}
-                
+
                 p_node = root.find('.//{*}waypointGimbalHeadingParam/{*}waypointGimbalPitchAngle')
                 if p_node is not None: meta['pitch'] = float(p_node.text)
+                speed_node = root.find('.//{*}autoFlightSpeed')
+                if speed_node is not None: meta['speed'] = float(speed_node.text)
 
                 wp_data = []
                 for pm in root.findall('.//{*}Placemark'):
@@ -1328,6 +1633,10 @@ elif page == 'Viewer':
 
                 if wp_data:
                     if m_view is None:
+                        if 'current_viewer_file' not in st.session_state or st.session_state.current_viewer_file != selected_kmzs[0]:
+                            st.session_state.current_viewer_file = selected_kmzs[0]
+                            st.session_state.locked_viewer_center = [wp_data[0]['lat'], wp_data[0]['lon']]
+                        
                         m_view = folium.Map(location=st.session_state.locked_viewer_center, zoom_start=19, tiles=None)
                         folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_view)
                         
@@ -1451,10 +1760,263 @@ elif page == 'Viewer':
                     </div>
                 '''
                 m_view.get_root().html.add_child(Element(hud_html))
-                map_data_view = st_folium(m_view, width=1200, height=600, key=f"viewer_map_{show_faa_airspace}_{show_footprints}")
+                map_data_view = st_folium(m_view, width=1200, height=600, key="viewer_map")
             
                 if map_data_view and map_data_view.get("center"):
                     st.session_state.viewer_center = [map_data_view["center"]["lat"], map_data_view["center"]["lng"]]
                     st.session_state.viewer_zoom = map_data_view["zoom"]
                     c_lat, c_lon = st.session_state.viewer_center
                     st.sidebar.info(f"Current Screen Center: {c_lat:.6f}, {c_lon:.6f} (Click 'Update' in sidebar to update restrictions in this area)")
+
+# ==========================================
+# PHOTO SORTER MODE
+# ==========================================
+elif page == 'Photo Sorter':
+    st.header("Photo Sorter")
+    st.write("Automatically group drone photos into separate folders based on the time they were taken.")
+    st.write("This is for specifically for drones the use DJI Fly.")
+
+    # Initialize default paths in session state so they don't reset
+    if "sorter_source" not in st.session_state:
+        st.session_state.sorter_source = os.path.expanduser("~")
+    if "sorter_output" not in st.session_state:
+        st.session_state.sorter_output = os.path.join(os.path.expanduser("~"), "Output")
+
+    # Helper functions to open the Mac Finder window using AppleScript via subprocess
+    
+    # Helper functions to open the OS-native folder picker
+    def pick_source_folder():
+        import platform
+        import subprocess
+        
+        current_os = platform.system()
+        folder_path = None
+        
+        if current_os == "Darwin":  # macOS
+            script = '''
+            tell application "System Events"
+                activate
+                set f to choose folder with prompt "Select Source Directory"
+                return POSIX path of f
+            end tell
+            '''
+            try:
+                res = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+                if res.returncode == 0 and res.stdout.strip():
+                    folder_path = res.stdout.strip()
+            except Exception as e:
+                st.error(f"Failed to open Mac folder picker: {e}")
+                
+        elif current_os == "Windows":  # Windows
+            import tkinter as tk
+            from tkinter import filedialog
+            try:
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes('-topmost', True) # Forces window to the front on Windows
+                folder = filedialog.askdirectory(master=root, title="Select Source Directory")
+                root.destroy()
+                if folder:
+                    folder_path = folder
+            except Exception as e:
+                st.error(f"Failed to open Windows folder picker: {e}")
+                
+        if folder_path:
+            st.session_state.sorter_source = folder_path
+
+    def pick_output_folder():
+        import platform
+        import subprocess
+        
+        current_os = platform.system()
+        folder_path = None
+        
+        if current_os == "Darwin":  # macOS
+            script = '''
+            tell application "System Events"
+                activate
+                set f to choose folder with prompt "Select Output Directory"
+                return POSIX path of f
+            end tell
+            '''
+            try:
+                res = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+                if res.returncode == 0 and res.stdout.strip():
+                    folder_path = res.stdout.strip()
+            except Exception as e:
+                st.error(f"Failed to open Mac folder picker: {e}")
+                
+        elif current_os == "Windows":  # Windows
+            import tkinter as tk
+            from tkinter import filedialog
+            try:
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes('-topmost', True)
+                folder = filedialog.askdirectory(master=root, title="Select Output Directory")
+                root.destroy()
+                if folder:
+                    folder_path = folder
+            except Exception as e:
+                st.error(f"Failed to open Windows folder picker: {e}")
+                
+        if folder_path:
+            st.session_state.sorter_output = folder_path
+
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        c1_text, c1_btn = st.columns([5, 1])
+        with c1_text:
+            st.text_input("Source Directory (Where the photos are currently)", key="sorter_source")
+        with c1_btn:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            st.button("📂", key="btn_pick_source", on_click=pick_source_folder, help="Browse for Source Directory")
+            
+        target_date = st.date_input("Target Date")
+
+    with col2:
+        c2_text, c2_btn = st.columns([5, 1])
+        with c2_text:
+            st.text_input("Output Directory (Where to create the group folders)", key="sorter_output")
+        with c2_btn:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            st.button("📂", key="btn_pick_output", on_click=pick_output_folder, help="Browse for Output Directory")
+            
+        gap_minutes = st.number_input("Time Gap (minutes)", min_value=1, value=5, step=1, help="If the time between two sequential photos exceeds this gap, a new folder is created.")
+        
+    st.write("---")
+    submit_btn = st.button("🚀 Sort Photos", use_container_width=True)
+    
+    if submit_btn:
+        source_dir = st.session_state.sorter_source
+        output_dir = st.session_state.sorter_output
+        
+        if not source_dir or not os.path.exists(source_dir):
+            st.error("The source directory does not exist or is invalid.")
+        elif not output_dir:
+            st.error("Please provide an output directory.")
+        else:
+            with st.spinner("Processing images..."):
+                st_group_images_by_time(source_dir, output_dir, target_date, gap_minutes)
+
+# ==========================================
+# BATCH TRANSFER MODE
+# ==========================================
+elif page == 'DJI Fly Transfer':
+    st.header("DJI Fly Batch Mission Transfer")
+    st.write("Assign local flight plans (left) to overwrite existing missions on the RC 2 (right).")
+    
+    if 'rc_nests' not in st.session_state:
+        st.session_state.rc_nests = {}
+        st.session_state.preview_id = None
+
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("1. Source Missions")
+        existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
+        selected_dir_name = st.selectbox("Select Local Folder", ["Root (missions/)"] + existing_dirs, key="batch_dir")
+        
+        active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
+        kmz_files = [f for f in os.listdir(active_dir) if f.endswith(".kmz")]
+        
+        if not kmz_files:
+            st.warning(f"No .kmz files found in {selected_dir_name}.")
+        else:
+            st.info(f"Found {len(kmz_files)} missions ready for transfer.")
+            
+    with col2:
+        st.subheader("2. Controller Nests")
+        st.write("Connect the RC 2 via USB, power on, and close Android File Transfer.")
+        if st.button("🔄 Scan RC 2 & Pull Previews", use_container_width=True):
+            with st.spinner("Scanning MTP and downloading thumbnails... (This takes a few seconds)"):
+                st.session_state.rc_nests, st.session_state.preview_id = fetch_controller_nests_and_previews()
+                
+        if st.session_state.rc_nests:
+            st.success(f"Found {len(st.session_state.rc_nests)} authorized mission slots.")
+        else:
+            st.warning("No controller connected, or no dummy missions found.")
+
+    st.write("---")
+    
+    # --- The Visual Mapping UI ---
+    if kmz_files and st.session_state.rc_nests:
+        st.subheader("3. Assign & Transfer")
+        
+        max_rows = max(len(kmz_files), len(st.session_state.rc_nests))
+        num_rows = st.number_input("Number of missions to assign", min_value=1, max_value=max_rows, value=min(3, max_rows))
+        
+        transfer_map = {}
+        local_options = ["--- Select Local Mission ---"] + kmz_files
+        nest_options = ["--- Select Target Nest ---"] + list(st.session_state.rc_nests.keys())
+        
+        # Header formatting
+        h1, h2, h3 = st.columns([4, 1, 4])
+        h1.markdown("**Local Mission** (What to push)")
+        h3.markdown("**Controller Target** (What will be overwritten)")
+        
+        # Dynamic Visual Rows
+        for i in range(int(num_rows)):
+            st.markdown(f"**Assignment {i+1}**")
+            row_c1, row_c2, row_c3 = st.columns([4, 1, 4])
+            
+            with row_c1:
+                default_loc = (i + 1) if (i + 1) < len(local_options) else 0
+                loc_choice = st.selectbox(f"Local {i}", local_options, index=default_loc, key=f"loc_{i}", label_visibility="collapsed")
+                
+                # Show Local Preview Image
+                if loc_choice != "--- Select Local Mission ---":
+                    local_jpg = os.path.join(active_dir, loc_choice.replace('.kmz', '.jpg'))
+                    if os.path.exists(local_jpg):
+                        st.image(local_jpg, use_container_width=True)
+                    else:
+                        st.info("No custom title card generated.")
+
+            with row_c2:
+                # Add a visual arrow pointing from local to remote
+                st.markdown("<h1 style='text-align: center; color: gray; margin-top: 40px;'>➔</h1>", unsafe_allow_html=True)
+                
+            with row_c3:
+                default_nest = (i + 1) if (i + 1) < len(nest_options) else 0
+                nest_choice = st.selectbox(f"Nest {i}", nest_options, index=default_nest, key=f"nest_{i}", label_visibility="collapsed")
+                
+                # Show Cached Controller Preview Image
+                if nest_choice != "--- Select Target Nest ---":
+                    cached_jpg = os.path.join("missions/.cache", f"{nest_choice}.jpg")
+                    if os.path.exists(cached_jpg):
+                        st.image(cached_jpg, use_container_width=True, caption=f"Current: {nest_choice[-8:]}")
+                    else:
+                        st.info("Native Dummy Mission\n\n*(Preview unreadable over USB until overridden)*")
+                
+            if loc_choice != "--- Select Local Mission ---" and nest_choice != "--- Select Target Nest ---":
+                transfer_map[loc_choice] = nest_choice
+            
+            st.write("---")
+                    
+        if st.button("🚀 Execute Visual Transfer", use_container_width=True):
+            if not transfer_map:
+                st.warning("No valid pairs assigned! Select a local mission and a target nest.")
+            else:
+                progress_bar = st.progress(0, text="Initializing transfer...")
+                total_tasks = len(transfer_map)
+                completed = 0
+                
+                for kmz_name, target_uuid in transfer_map.items():
+                    local_path = os.path.join(active_dir, kmz_name)
+                    target_folder_id = st.session_state.rc_nests[target_uuid]
+                    
+                    progress_bar.progress(completed / total_tasks, text=f"Transferring {kmz_name}...")
+                    
+                    # Call the MTP helper we updated earlier
+                    success, error_msg = push_mission_to_nest(local_path, target_uuid)
+                    
+                    if success:
+                        st.success(f"✅ Transferred **{kmz_name}** into slot `{target_uuid}`")
+                    else:
+                        st.error(f"❌ Failed to transfer **{kmz_name}**: {error_msg}")
+                        
+                    completed += 1
+                    time.sleep(1.5) # Let the Android File System breathe
+                    
+                progress_bar.progress(1.0, text="Batch transfer complete! Safe to unplug RC 2.")

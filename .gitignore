@@ -7,6 +7,8 @@ launch.json
 .vscode
 .idea
 .claude
+*__pycache__
+*dignostic_tests
 
 #Ignore generated missions
 missions/
