@@ -96,206 +96,168 @@ def kill_macos_hijackers():
     subprocess.run("killall -9 'Image Capture Extension'", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     time.sleep(1)
 
-def find_child_folder_id(folders_text, parent_name, child_name):
-    """
-    Walks the indentation-based `mtp-folders` tree dump to find the ID of a
-    *direct* child folder named `child_name` under a folder named
-    `parent_name`, matching by tree depth rather than plain substring search.
-    The same name (e.g. a mission UUID) can legitimately appear in multiple
-    places in the tree (the mission's own folder under 'waypoint', and its
-    preview image subfolder under 'map_preview', which is itself nested
-    under 'waypoint') - direct-child matching is required to tell those
-    apart. Each line is "<id>\\t<indent><name>", where indentation depth is
-    the number of leading spaces after the tab.
-    """
-    parent_indent = None
-    child_indent = None
-    for line in folders_text.split('\n'):
-        if '\t' not in line:
-            continue
-        fid, rest = line.split('\t', 1)
-        fid = fid.strip()
-        if not fid.isdigit():
-            continue
-        indent = len(rest) - len(rest.lstrip(' '))
-        name = rest.strip()
-        if not name:
-            continue
-
-        if parent_indent is not None and indent <= parent_indent:
-            parent_indent = None  # exited the parent's subtree entirely
-            child_indent = None
-
-        if parent_indent is None and name == parent_name:
-            parent_indent = indent
-            continue
-
-        if parent_indent is not None:
-            if child_indent is None:
-                child_indent = indent  # depth of the first (direct) child seen
-            if indent == child_indent and name == child_name:
-                return fid
-    return None
+# The path, as a chain of folder names, from the device root down to where
+# DJI Fly keeps its dummy mission slots. Walking down this one specific
+# chain with targeted per-folder queries touches a few dozen objects total;
+# `mtp-folders`/`mtp-files` touch the device's entire object store (tens of
+# thousands of objects on a well-used controller) to find the same thing.
+WAYPOINT_PATH = ["Android", "data", "dji.go.v5", "files", "waypoint"]
+UUID_RE = re.compile(r'^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$', re.IGNORECASE)
 
 def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbnails=True):
     """
-    Scans the RC 2 for dummy missions and caches our custom hijacked thumbnails.
+    Scans the RC 2 for dummy missions and caches our custom hijacked
+    thumbnails, using targeted per-folder libmtp queries instead of a
+    full-device file enumeration.
     """
     kill_macos_hijackers()
     os.makedirs(cache_dir, exist_ok=True)
-    
+
+    if not MTP_BRIDGE_AVAILABLE:
+        return {}, None
+
     try:
-        # 1. Fetch Folders
-        folders = subprocess.run("mtp-folders", shell=True, capture_output=True, text=True).stdout
-        matches = re.findall(r'^\s*(\d+)\s+([A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12})\b', folders, re.MULTILINE | re.IGNORECASE)
-        nests = {match[1].upper(): match[0] for match in matches}
-        
-        preview_id = None
-        for line in folders.split('\n'):
-            if "map_preview" in line:
-                preview_id = line.split()[0]
-                break
-                
-        if not pull_thumbnails:
+        with mtp_bridge.MTPSession() as session:
+            waypoint_id = session.resolve_path(WAYPOINT_PATH)
+            if waypoint_id is None:
+                return {}, None
+
+            waypoint_children = session.list_children(waypoint_id)
+            nests = {}
+            preview_id = None
+            for item in waypoint_children:
+                if not item["is_folder"]:
+                    continue
+                if item["name"] == "map_preview":
+                    preview_id = item["id"]
+                elif UUID_RE.match(item["name"]):
+                    nests[item["name"].upper()] = item["id"]
+
+            if not pull_thumbnails or not preview_id:
+                return nests, preview_id
+
+            preview_children = session.list_children(preview_id)
+
+            for uuid, folder_id in nests.items():
+                cache_path = os.path.join(cache_dir, f"{uuid}.jpg")
+                file_id_to_pull = None
+
+                # Check A: the subfolder under map_preview named after this mission's
+                # UUID - this is the location DJI Fly's native UI actually reads
+                # mission preview thumbnails from.
+                preview_subfolder = next((it for it in preview_children if it["is_folder"] and it["name"] == uuid), None)
+                if preview_subfolder:
+                    sub_match = next((it for it in session.list_children(preview_subfolder["id"]) if it["name"] == f"{uuid}.jpg"), None)
+                    if sub_match:
+                        file_id_to_pull = sub_match["id"]
+
+                # Check B: did we inject it directly into the UUID's own mission folder?
+                if file_id_to_pull is None:
+                    own_match = next((it for it in session.list_children(folder_id) if it["name"] == f"{uuid}.jpg"), None)
+                    if own_match:
+                        file_id_to_pull = own_match["id"]
+
+                # Check C: did we inject it flat into the map_preview folder?
+                if file_id_to_pull is None:
+                    flat_match = next((it for it in preview_children if it["name"] == f"{uuid}.jpg"), None)
+                    if flat_match:
+                        file_id_to_pull = flat_match["id"]
+
+                # If we found our custom hijacked image, pull it to the Mac
+                if file_id_to_pull is not None:
+                    session.pull_file(file_id_to_pull, cache_path)
+
             return nests, preview_id
-            
-        # 2. Fetch File Index
-        files = subprocess.run("mtp-files", shell=True, capture_output=True, text=True).stdout
-        file_blocks = files.split("File ID: ")
-        
-        # 3. Pull our custom Title Card thumbnails
-        for uuid, folder_id in nests.items():
-            cache_path = os.path.join(cache_dir, f"{uuid}.jpg")
-            file_id_to_pull = None
-
-            # Check A: the subfolder under map_preview named after this mission's
-            # UUID - this is the location DJI Fly's native UI actually reads
-            # mission preview thumbnails from.
-            preview_subfolder_id = find_child_folder_id(folders, "map_preview", uuid) if preview_id else None
-            if preview_subfolder_id:
-                for block in file_blocks:
-                    if f"Parent ID: {preview_subfolder_id}" in block and f"{uuid}.jpg" in block:
-                        file_id_to_pull = block.split()[0].strip()
-                        break
-
-            # Check B: did we inject it directly into the UUID's own mission folder?
-            if not file_id_to_pull:
-                for block in file_blocks:
-                    if f"Parent ID: {folder_id}" in block and f"{uuid}.jpg" in block:
-                        file_id_to_pull = block.split()[0].strip()
-                        break
-
-            # Check C: did we inject it flat into the map_preview folder?
-            if not file_id_to_pull and preview_id:
-                for block in file_blocks:
-                    if f"Parent ID: {preview_id}" in block and f"{uuid}.jpg" in block:
-                        file_id_to_pull = block.split()[0].strip()
-                        break
-
-            # If we found our custom hijacked image, pull it to the Mac
-            if file_id_to_pull:
-                subprocess.run(f'mtp-getfile {shlex.quote(file_id_to_pull)} {shlex.quote(cache_path)}', shell=True, capture_output=True)
-
-        return nests, preview_id
-    except Exception as e:
+    except mtp_bridge.MTPBridgeError:
+        return {}, None
+    except Exception:
         return {}, None
 
 def push_mission_to_nest(local_kmz_path, target_uuid):
     """
-    Hardened push function. Features FUSE cooldowns and explicit cache flushing
-    to prevent silent Android transfer failures.
+    Pushes a local KMZ (and its paired JPG thumbnail, if present) to an
+    existing dummy mission slot on the RC 2, replacing whatever's there.
+    Runs the whole operation - locating folders, purging old files, pushing
+    new ones - over a single continuous device connection rather than many
+    separate `mtp-*` process invocations, which avoids both the slow
+    full-device enumeration those tools do and the device's tendency to
+    renumber object IDs between separate connections.
     """
     kill_macos_hijackers()
-    
-    folders = subprocess.run("mtp-folders", shell=True, capture_output=True, text=True).stdout
 
-    target_folder_id = find_child_folder_id(folders, "waypoint", target_uuid)
-    map_preview_id = None
-    for line in folders.split('\n'):
-        if "map_preview" in line:
-            parts = line.strip().split()
-            if parts[0].isdigit():
-                map_preview_id = parts[0]
-                break
-    # The subfolder under map_preview named after this mission's UUID - this is
-    # the location DJI Fly's native UI actually reads preview thumbnails from.
-    preview_subfolder_id = find_child_folder_id(folders, "map_preview", target_uuid)
-
-    if not target_folder_id:
-        return False, "Target folder missing from controller. Please scan again."
-
-    # 1. PURGE OLD FILES
-    files = subprocess.run("mtp-files", shell=True, capture_output=True, text=True).stdout
-    file_blocks = files.split("File ID: ")
-
-    deleted_something = False
-    for block in file_blocks:
-        try:
-            if f"Parent ID: {target_folder_id}" in block:
-                fid = block.split()[0].strip()
-                subprocess.run(f"mtp-delfile -n {shlex.quote(fid)}", shell=True, stderr=subprocess.DEVNULL)
-                deleted_something = True
-
-            if map_preview_id and f"Parent ID: {map_preview_id}" in block and target_uuid in block:
-                fid = block.split()[0].strip()
-                subprocess.run(f"mtp-delfile -n {shlex.quote(fid)}", shell=True, stderr=subprocess.DEVNULL)
-                deleted_something = True
-
-            if preview_subfolder_id and f"Parent ID: {preview_subfolder_id}" in block:
-                fid = block.split()[0].strip()
-                subprocess.run(f"mtp-delfile -n {shlex.quote(fid)}", shell=True, stderr=subprocess.DEVNULL)
-                deleted_something = True
-        except Exception:
-            pass
-            
-    # 2. THE FUSE COOLDOWN (CRITICAL FIX)
-    # If we deleted files, Android needs time to update its SQLite MediaStore DB.
-    # If we push instantly, Android drops the incoming file into the void.
-    if deleted_something:
-        time.sleep(3.5) 
-            
-    # 3. PUSH NEW FILES
-    # NOTE: the `mtp-sendfile` CLI is not used here. It derives both the on-device
-    # filename AND the PTP object-format code from the LOCAL file's name/extension,
-    # ignoring the desired remote name entirely, and this controller's MTP responder
-    # rejects the generic/unknown format code that .kmz files fall into. mtp_bridge
-    # talks to libmtp directly so the destination filename and format code can be
-    # set independently (the KMZ is sent disguised as a JPEG to get past the
-    # rejection; the JPG thumbnail is already a real JPEG so no disguise is needed).
     if not MTP_BRIDGE_AVAILABLE:
         return False, "mtp_bridge module unavailable (is libmtp installed?)."
 
-    subprocess.run(f'xattr -c {shlex.quote(local_kmz_path)}', shell=True)
-    remote_kmz = f"{target_uuid}.kmz"
-    ok_kmz, msg_kmz = mtp_bridge.send_disguised_file(
-        local_path=local_kmz_path, remote_filename=remote_kmz, parent_folder_id=target_folder_id
-    )
-    if not ok_kmz:
-        return False, f"KMZ transfer failed: {msg_kmz}"
+    try:
+        with mtp_bridge.MTPSession() as session:
+            waypoint_id = session.resolve_path(WAYPOINT_PATH)
+            if waypoint_id is None:
+                return False, "Could not locate the 'waypoint' folder on the controller."
 
-    local_jpg_path = local_kmz_path.replace('.kmz', '.jpg')
-    if os.path.exists(local_jpg_path):
-        subprocess.run(f'xattr -c {shlex.quote(local_jpg_path)}', shell=True)
-        remote_jpg = f"{target_uuid}.jpg"
+            waypoint_children = session.list_children(waypoint_id)
+            target_folder_id = next((it["id"] for it in waypoint_children if it["is_folder"] and it["name"] == target_uuid), None)
+            map_preview_id = next((it["id"] for it in waypoint_children if it["is_folder"] and it["name"] == "map_preview"), None)
 
-        mtp_bridge.send_disguised_file(
-            local_path=local_jpg_path, remote_filename=remote_jpg, parent_folder_id=target_folder_id
-        )
-        if map_preview_id:
-            mtp_bridge.send_disguised_file(
-                local_path=local_jpg_path, remote_filename=remote_jpg, parent_folder_id=map_preview_id
-            )
-        if preview_subfolder_id:
-            mtp_bridge.send_disguised_file(
-                local_path=local_jpg_path, remote_filename=remote_jpg, parent_folder_id=preview_subfolder_id
-            )
+            if not target_folder_id:
+                return False, "Target folder missing from controller. Please scan again."
 
-    # 4. USB BUFFER FLUSH
-    # Ask the controller for folders one more time. This forces the macOS USB
-    # connection to stay open until the controller confirms disk writes are complete.
-    subprocess.run("mtp-folders", shell=True, capture_output=True)
+            # The subfolder under map_preview named after this mission's UUID - this
+            # is the location DJI Fly's native UI actually reads preview thumbnails from.
+            preview_subfolder_id = session.find_child(map_preview_id, target_uuid) if map_preview_id else None
 
-    return True, "Success. (Reminder: Ensure DJI Fly is closed on the RC 2 before opening!)"
+            # 1. PURGE OLD FILES
+            deleted_something = False
+            for item in session.list_children(target_folder_id):
+                if session.delete_object(item["id"]):
+                    deleted_something = True
+
+            if map_preview_id:
+                for item in session.list_children(map_preview_id):
+                    if not item["is_folder"] and target_uuid in item["name"]:
+                        if session.delete_object(item["id"]):
+                            deleted_something = True
+
+            if preview_subfolder_id:
+                for item in session.list_children(preview_subfolder_id):
+                    if session.delete_object(item["id"]):
+                        deleted_something = True
+
+            # 2. THE FUSE COOLDOWN (CRITICAL FIX)
+            # If we deleted files, Android needs time to update its SQLite MediaStore DB.
+            # If we push instantly, Android drops the incoming file into the void.
+            if deleted_something:
+                time.sleep(3.5)
+
+            # 3. PUSH NEW FILES
+            # NOTE: the `mtp-sendfile` CLI is not used here. It derives both the
+            # on-device filename AND the PTP object-format code from the LOCAL
+            # file's name/extension, ignoring the desired remote name entirely,
+            # and this controller's MTP responder rejects the generic/unknown
+            # format code that .kmz files fall into. mtp_bridge talks to libmtp
+            # directly so the destination filename and format code can be set
+            # independently (the KMZ is sent disguised as a JPEG to get past
+            # the rejection; the JPG thumbnail is already a real JPEG so no
+            # disguise is needed).
+            subprocess.run(f'xattr -c {shlex.quote(local_kmz_path)}', shell=True)
+            remote_kmz = f"{target_uuid}.kmz"
+            ok_kmz, msg_kmz = session.send_disguised_file(local_kmz_path, remote_kmz, target_folder_id)
+            if not ok_kmz:
+                return False, f"KMZ transfer failed: {msg_kmz}"
+
+            local_jpg_path = local_kmz_path.replace('.kmz', '.jpg')
+            if os.path.exists(local_jpg_path):
+                subprocess.run(f'xattr -c {shlex.quote(local_jpg_path)}', shell=True)
+                remote_jpg = f"{target_uuid}.jpg"
+
+                session.send_disguised_file(local_jpg_path, remote_jpg, target_folder_id)
+                if map_preview_id:
+                    session.send_disguised_file(local_jpg_path, remote_jpg, map_preview_id)
+                if preview_subfolder_id:
+                    session.send_disguised_file(local_jpg_path, remote_jpg, preview_subfolder_id)
+
+            return True, "Success. (Reminder: Ensure DJI Fly is closed on the RC 2 before opening!)"
+    except mtp_bridge.MTPBridgeError as e:
+        return False, str(e)
 
 def export_mission_kmz_from_strings(template_kml_str, waylines_wpml_str, output_kmz_path, is_dji_fly):
     """
