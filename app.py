@@ -2581,7 +2581,17 @@ elif page == 'DJI Fly Transfer':
                 "DJI Fly caches each mission's thumbnail privately and won't pick up "
                 "the new one automatically - not even after a full power cycle. Open "
                 "each mission below in DJI Fly and save it once to force its "
-                "thumbnail to refresh on the controller."
+                "thumbnail to refresh on the controller. The picture shown is what that "
+                "mission currently still looks like on the controller's screen (the UUID "
+                "itself isn't visible there), so you can spot the right one in DJI Fly's list."
             )
             for kmz_name, target_uuid in st.session_state.last_transfer_checklist:
-                st.checkbox(f"{kmz_name} → `{target_uuid}`", key=f"refresh_check_{target_uuid}")
+                check_col1, check_col2 = st.columns([1, 5])
+                with check_col1:
+                    cached_jpg = os.path.join("missions/.cache", f"{target_uuid}.jpg")
+                    if os.path.exists(cached_jpg):
+                        st.image(cached_jpg, width=1600)
+                    else:
+                        st.caption("(no preview cached - scan the RC 2 to fetch one)")
+                with check_col2:
+                    st.checkbox(f"{kmz_name} → `{target_uuid}`", key=f"refresh_check_{target_uuid}")
