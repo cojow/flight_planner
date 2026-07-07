@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 import textwrap
 import ctypes
 import ctypes.util
+import platform
 
 
 # --- RASTERIO SAFELOAD ---
@@ -378,15 +379,16 @@ CAM_VAL_MAP = {v: k for k, v in CAM_DISPLAY_MAP.items()}
 
 # Updated Hardware Map with DJI Fly
 HARDWARE_MAP = {
-    "DJI Pilot 2 (Mavic 3M) (Drone: 0, Payload: 3)": {
-        "drone_enum": "77", "drone_sub": "0", 
-        "payload_enum": "68", "payload_sub": "3", 
-        "is_dji_fly": False
-        },
     "DJI Fly (RC2 / Mini / Air Series)": {
         "drone_enum": "67", "drone_sub": "0", 
         "payload_enum": "43", "payload_sub": "0", 
         "is_dji_fly": True
+        },
+
+    "DJI Pilot 2 (Mavic 3M) (Drone: 0, Payload: 3)": {
+        "drone_enum": "77", "drone_sub": "0", 
+        "payload_enum": "68", "payload_sub": "3", 
+        "is_dji_fly": False
         }
     }
 
@@ -583,6 +585,20 @@ def export_mission_kmz_from_strings(template_kml_str, waylines_wpml_str, output_
             if waylines_wpml_str:
                 kmz.writestr('waylines.wpml', waylines_wpml_str)
 
+def is_dji_fly_kmz(kmz_path):
+    """
+    Determines whether a .kmz was built for DJI Fly (files nested under a
+    wpmz/ folder) vs DJI Pilot (files at the zip root) - mirrors exactly how
+    export_mission_kmz_from_strings lays out each platform's package, so it
+    works regardless of filename (including files predating the Pilot/Fly
+    filename prefix).
+    """
+    try:
+        with zipfile.ZipFile(kmz_path, 'r') as kmz:
+            return any(name.startswith('wpmz/') for name in kmz.namelist())
+    except Exception:
+        return False
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_coords_from_search(query):
     """Parses a lat,lon string or geocodes an address to return [lat, lon]."""
@@ -699,13 +715,39 @@ def get_tif_bounds_wgs84(tif_path):
     except Exception:
         return None
 
+# Name-text color bands by relative altitude, in 40 ft increments (0-39,
+# 40-79, ... 360-399), so missions sharing the same flight path but flown at
+# different heights/angles are visually distinguishable at a glance. Anything
+# 400 ft and up falls through to ALTITUDE_COLOR_400_PLUS.
+ALTITUDE_COLOR_BANDS = [
+    (40, '#00FFFF'),   # 0-39 ft: cyan
+    (80, '#00FF9C'),   # 40-79 ft: spring green
+    (120, '#7FFF00'),  # 80-119 ft: chartreuse
+    (160, '#FFFF00'),  # 120-159 ft: yellow
+    (200, '#FFC400'),  # 160-199 ft: amber
+    (240, '#FF9100'),  # 200-239 ft: orange
+    (280, '#FF3D00'),  # 240-279 ft: red-orange
+    (320, '#FF1493'),  # 280-319 ft: deep pink
+    (360, '#FF00FF'),  # 320-359 ft: magenta
+    (400, '#BF00FF'),  # 360-399 ft: purple
+]
+ALTITUDE_COLOR_400_PLUS = '#7B2FFF'  # 400+ ft: violet
+
+def get_altitude_color(alt_ft):
+    for threshold, color in ALTITUDE_COLOR_BANDS:
+        if alt_ft < threshold:
+            return color
+    return ALTITUDE_COLOR_400_PLUS
+
 def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_filepath, coords=None):
     """
     Generates a 16:9 dark-mode thumbnail: mission name and key flight
     parameters (height, angle, overlap) on the left, so the plan is
     identifiable at a glance without needing the encoded filename suffix,
     and a small true-shape line drawing of the flight path in a thin
-    bordered box on the right, captioned "flight path".
+    bordered box on the right, captioned "flight path". The name's color
+    is banded by altitude (see ALTITUDE_COLOR_BANDS) so missions sharing a
+    path but flown at different heights are easy to tell apart.
     """
     fig_w, fig_h = 8, 4.5
     fig, ax = plt.subplots(figsize=(fig_w, fig_h), facecolor='#121212')
@@ -719,7 +761,7 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
     wrapped_name = "\n".join(textwrap.wrap(display_name, width=12)) or display_name
 
     ax.text(0.27, 0.68, wrapped_name,
-            color='#00FFFF',
+            color=get_altitude_color(alt_ft),
             fontsize=42,
             ha='center',
             va='center',
@@ -793,6 +835,45 @@ def get_elevations_batch(coords, source, tif_path=None):
         return get_elevations_raster(coords, tif_path)
     else:
         return get_elevations_open_elev(coords)
+
+def pick_folder_dialog(prompt_title):
+    """
+    Opens the OS-native folder picker (AppleScript on macOS, tkinter on
+    Windows) and returns the chosen absolute path, or None if cancelled,
+    unsupported, or the picker failed.
+    """
+    current_os = platform.system()
+    folder_path = None
+
+    if current_os == "Darwin":
+        script = f'''
+        tell application "System Events"
+            activate
+            set f to choose folder with prompt "{prompt_title}"
+            return POSIX path of f
+        end tell
+        '''
+        try:
+            res = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+            if res.returncode == 0 and res.stdout.strip():
+                folder_path = res.stdout.strip()
+        except Exception as e:
+            st.error(f"Failed to open Mac folder picker: {e}")
+    elif current_os == "Windows":
+        import tkinter as tk
+        from tkinter import filedialog
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)  # Forces window to the front on Windows
+            folder = filedialog.askdirectory(master=root, title=prompt_title)
+            root.destroy()
+            if folder:
+                folder_path = folder
+        except Exception as e:
+            st.error(f"Failed to open Windows folder picker: {e}")
+
+    return folder_path
 
 def get_exif_datetime(filepath):
     """Extracts the exact time the photo was taken from EXIF data."""
@@ -1459,7 +1540,7 @@ if page == 'Creator':
         is_dji_fly = HARDWARE_MAP[hw_choice].get("is_dji_fly", False)
         
         if is_dji_fly:
-            st.warning("DJI Fly enforces a hard limit of 99 photos per mission. Saving will be disabled if you exceed this.")
+            st.warning("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
         
         cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"])
         camera_type = CAM_VAL_MAP[cam_choice]
@@ -1543,10 +1624,53 @@ if page == 'Creator':
                 st.session_state.locked_creator_center = st.session_state.creator_center
                 st.rerun()
 
+    # --- SAVE DESTINATION (always visible; does not reset when the drawn line changes) ---
+    if "c_browsed_dir" not in st.session_state:
+        st.session_state.c_browsed_dir = None
+
+    def _clear_c_browsed_dir():
+        st.session_state.c_browsed_dir = None
+
+    @st.dialog("Create New Folder")
+    def _c_new_folder_dialog():
+        folder_name_input = st.text_input("Folder Name", key="c_popup_new_folder_name")
+        if st.button("Create", key="c_popup_create_folder_btn"):
+            if folder_name_input.strip():
+                os.makedirs(os.path.join(MISSION_DIR, folder_name_input.strip()), exist_ok=True)
+                st.success(f"Created '{folder_name_input.strip()}'")
+                st.rerun()
+            else:
+                st.warning("Enter a folder name.")
+
+    existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
+    save_col1, save_col2, save_col3, save_col4 = st.columns([3, 3, 0.6, 0.6])
+    with save_col1:
+        save_option = st.selectbox(
+            "Save Destination", ["Root (missions/)"] + existing_dirs,
+            key="c_save_option", on_change=_clear_c_browsed_dir
+        )
+    with save_col2:
+        new_dir_name = st.text_input("New Folder Name", "New_Project", key="c_new_dir_name") if save_option == "Create New Folder..." else ""
+    with save_col3:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("📂", key="c_btn_browse_dir", help="Browse for a save directory", use_container_width=True):
+            picked = pick_folder_dialog("Select Save Directory")
+            if picked:
+                st.session_state.c_browsed_dir = picked
+                st.rerun()
+    with save_col4:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("＋", key="c_btn_new_folder_popup", help="Create a new empty folder", use_container_width=True):
+            _c_new_folder_dialog()
+
+    if st.session_state.c_browsed_dir:
+        st.caption(f"📁 Saving to custom path: {st.session_state.c_browsed_dir}")
+    st.write("---")
+
     top_hud = st.container()
     m = folium.Map(location=st.session_state.locked_creator_center, zoom_start=17, tiles=None)
     folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m)
-    
+
     if c_elev_source == "Local GeoTIFF" and c_tif_path and c_show_bounds:
         bounds = get_tif_bounds_wgs84(c_tif_path)
         if bounds:
@@ -1603,50 +1727,42 @@ if page == 'Creator':
         else:
             est_photos = 0
 
+        save_disabled = False
+        if is_dji_fly and est_photos > 99:
+            st.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please reduce your distance or increase the interval.")
+            save_disabled = True
+
         with top_hud:
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft")
             c2.metric("Estimated Photos", f"{est_photos}" + (" / 99" if is_dji_fly else ""))
-            c3.metric("Flight Speed", f"{speed_m * MS_TO_MPH:.1f} mph")
-            st.write("---")
-            
-            save_disabled = False
-            if is_dji_fly and est_photos > 99:
-                st.error("DJI Fly limits missions to a maximum of 99 waypoints (photos). Please reduce your distance or increase the interval.")
-                save_disabled = True
-            
-            existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d))]
-            save_col1, save_col2, save_col3 = st.columns([2, 2, 2])
-            with save_col1:
-                save_option = st.selectbox("Save Destination", ["Root (missions/)", "Create New Folder...", "Custom Path..."] + existing_dirs)
-            with save_col2:
-                new_dir_name = st.text_input("New Folder Name", "New_Project") if save_option == "Create New Folder..." else ""
-                custom_path_name = st.text_input("Absolute File Path", os.path.join(os.path.expanduser("~"), "Desktop")) if save_option == "Custom Path..." else ""
-            with save_col3:
-                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            with c3:
+                st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
                 save_clicked = st.button("Save & Generate KMZ", use_container_width=True, disabled=save_disabled)
+            st.write("---")
 
             if save_clicked:
                 with st.spinner("Calculating terrain elevations and generating KMZ..."):
                     cfg = {
-                        "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_mph": trans_speed_mph, 
-                        "alt_ft": safe_get_float('alt_ft', 50.0), "pitch": safe_get_float('pitch', -60.0), "side": side, 
-                        "trigger_type": st.session_state.get('trigger_type', 'distance'), 
-                        "interval_ft": safe_get_float('t_dist_val', 9.0) if st.session_state.get('trigger_type', 'distance') == "distance" else 0.0, 
-                        "interval_sec": t_val_sec if st.session_state.get('trigger_type', 'distance') == "time" else 0.0, 
+                        "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_mph": trans_speed_mph,
+                        "alt_ft": safe_get_float('alt_ft', 50.0), "pitch": safe_get_float('pitch', -60.0), "side": side,
+                        "trigger_type": st.session_state.get('trigger_type', 'distance'),
+                        "interval_ft": safe_get_float('t_dist_val', 9.0) if st.session_state.get('trigger_type', 'distance') == "distance" else 0.0,
+                        "interval_sec": t_val_sec if st.session_state.get('trigger_type', 'distance') == "time" else 0.0,
                         "speed_m": speed_m, "photo_start_wp": int(photo_start_wp),
                         "camera_type": camera_type, "drone_sub": drone_sub_enum, "payload_sub": payload_sub_enum,
                         "is_dji_fly": is_dji_fly
                     }
-                    
+
                     platform_prefix = "Fly" if is_dji_fly else "Pilot"
-                    prefixed_name = f"{platform_prefix}_{mission_name}"
+                    prefixed_name = f"{mission_name}_{platform_prefix}"
                     suffix = f"_H{int(safe_get_float('alt_ft', 50.0))}A{int(abs(safe_get_float('pitch', -60.0)))}OL{int(safe_get_float('overlap_pct', 70.0))}"
                     final_filename = f"{prefixed_name}{suffix}"
 
-                    if save_option == "Root (missions/)": final_dir = MISSION_DIR
+                    if st.session_state.c_browsed_dir:
+                        final_dir = st.session_state.c_browsed_dir
+                    elif save_option == "Root (missions/)": final_dir = MISSION_DIR
                     elif save_option == "Create New Folder...": final_dir = os.path.join(MISSION_DIR, new_dir_name)
-                    elif save_option == "Custom Path...": final_dir = custom_path_name
                     else: final_dir = os.path.join(MISSION_DIR, save_option)
 
                     os.makedirs(final_dir, exist_ok=True)
@@ -1670,7 +1786,7 @@ if page == 'Creator':
 
 # --- EDITOR MODE ---
 elif page == 'Editor':
-    existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d))]
+    existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
     col_dir, col_file, col_new = st.columns([2, 3, 1])
     with col_dir: selected_dir_name = st.selectbox("Select Folder", ["Root (missions/)"] + existing_dirs, key="edit_dir")
         
@@ -1713,7 +1829,7 @@ elif page == 'Editor':
         
         with st.sidebar:
             st.header("1. Hardware & Payload")
-            e_hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()), index=list(HARDWARE_MAP.keys()).index(meta.get('hardware_key', "DJI Pilot 2 (Mavic 3M) (Drone: 0, Payload: 3)")))
+            e_hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()), index=list(HARDWARE_MAP.keys()).index(meta.get('hardware_key', "DJI Fly (RC2 / Mini / Air Series)")))
             e_drone_enum = HARDWARE_MAP[e_hw_choice]["drone_enum"]
             e_drone_sub_enum = HARDWARE_MAP[e_hw_choice]["drone_sub"]
             e_payload_enum = HARDWARE_MAP[e_hw_choice]["payload_enum"]
@@ -1721,7 +1837,7 @@ elif page == 'Editor':
             e_is_dji_fly = HARDWARE_MAP[e_hw_choice].get("is_dji_fly", False)
             
             if e_is_dji_fly:
-                st.warning("DJI Fly enforces a hard limit of 99 photos per mission. Saving will be disabled if you exceed this.")
+                st.warning("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
             
             current_cam_display = CAM_DISPLAY_MAP.get(meta.get('camera_type', 'visible'), "RGB Only")
             e_cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"], index=["RGB Only", "Multispectral Only", "RGB + Multispectral"].index(current_cam_display))
@@ -1937,7 +2053,7 @@ elif page == 'Editor':
 
             save_disabled = False
             if e_is_dji_fly and est_photos > 99:
-                st.error("DJI Fly limits missions to a maximum of 99 waypoints (photos). Please reduce your distance or increase the interval.")
+                st.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please reduce your distance or increase the interval.")
                 save_disabled = True
 
             if st.button("Save & Update Mission", disabled=save_disabled):
@@ -1953,7 +2069,7 @@ elif page == 'Editor':
                     }
                     
                     e_platform_prefix = "Fly" if e_is_dji_fly else "Pilot"
-                    e_prefixed_name = f"{e_platform_prefix}_{edit_name}"
+                    e_prefixed_name = f"{edit_name}_{e_platform_prefix}"
                     suffix = f"_H{int(safe_get_float('e_alt_ft', 50.0))}A{int(abs(safe_get_float('e_pitch', -60.0)))}OL{int(safe_get_float('e_overlap_pct', 70.0))}"
                     final_filename = f"{e_prefixed_name}{suffix}"
 
@@ -1980,7 +2096,7 @@ elif page == 'Editor':
 # VIEWER MODE
 # ==========================================
 elif page == 'Viewer  |':
-    existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d))]
+    existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
     col_dir, col_file, col_multi = st.columns([2, 3, 1])
     with col_dir: selected_dir_name = st.selectbox("Select Folder", ["Root (missions/)"] + existing_dirs, key="view_dir")
         
@@ -2228,84 +2344,13 @@ elif page == 'Photo Sorter':
     if "sorter_output" not in st.session_state:
         st.session_state.sorter_output = os.path.join(os.path.expanduser("~"), "Output")
 
-    # Helper functions to open the Mac Finder window using AppleScript via subprocess
-    
-    # Helper functions to open the OS-native folder picker
     def pick_source_folder():
-        import platform
-        import subprocess
-        
-        current_os = platform.system()
-        folder_path = None
-        
-        if current_os == "Darwin":  # macOS
-            script = '''
-            tell application "System Events"
-                activate
-                set f to choose folder with prompt "Select Source Directory"
-                return POSIX path of f
-            end tell
-            '''
-            try:
-                res = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
-                if res.returncode == 0 and res.stdout.strip():
-                    folder_path = res.stdout.strip()
-            except Exception as e:
-                st.error(f"Failed to open Mac folder picker: {e}")
-                
-        elif current_os == "Windows":  # Windows
-            import tkinter as tk
-            from tkinter import filedialog
-            try:
-                root = tk.Tk()
-                root.withdraw()
-                root.attributes('-topmost', True) # Forces window to the front on Windows
-                folder = filedialog.askdirectory(master=root, title="Select Source Directory")
-                root.destroy()
-                if folder:
-                    folder_path = folder
-            except Exception as e:
-                st.error(f"Failed to open Windows folder picker: {e}")
-                
+        folder_path = pick_folder_dialog("Select Source Directory")
         if folder_path:
             st.session_state.sorter_source = folder_path
 
     def pick_output_folder():
-        import platform
-        import subprocess
-        
-        current_os = platform.system()
-        folder_path = None
-        
-        if current_os == "Darwin":  # macOS
-            script = '''
-            tell application "System Events"
-                activate
-                set f to choose folder with prompt "Select Output Directory"
-                return POSIX path of f
-            end tell
-            '''
-            try:
-                res = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
-                if res.returncode == 0 and res.stdout.strip():
-                    folder_path = res.stdout.strip()
-            except Exception as e:
-                st.error(f"Failed to open Mac folder picker: {e}")
-                
-        elif current_os == "Windows":  # Windows
-            import tkinter as tk
-            from tkinter import filedialog
-            try:
-                root = tk.Tk()
-                root.withdraw()
-                root.attributes('-topmost', True)
-                folder = filedialog.askdirectory(master=root, title="Select Output Directory")
-                root.destroy()
-                if folder:
-                    folder_path = folder
-            except Exception as e:
-                st.error(f"Failed to open Windows folder picker: {e}")
-                
+        folder_path = pick_folder_dialog("Select Output Directory")
         if folder_path:
             st.session_state.sorter_output = folder_path
 
@@ -2365,10 +2410,16 @@ elif page == 'DJI Fly Transfer':
         selected_dir_name = st.selectbox("Select Local Folder", ["Root (missions/)"] + existing_dirs, key="batch_dir")
         
         active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
-        kmz_files = [f for f in os.listdir(active_dir) if f.endswith(".kmz")]
-        
+        # This page is DJI Fly-only (MTP transfer to the RC 2's dummy mission
+        # slots doesn't apply to DJI Pilot missions), so Pilot-format .kmz
+        # files are filtered out rather than just listed alongside Fly ones.
+        kmz_files = [
+            f for f in os.listdir(active_dir)
+            if f.endswith(".kmz") and is_dji_fly_kmz(os.path.join(active_dir, f))
+        ]
+
         if not kmz_files:
-            st.warning(f"No .kmz files found in {selected_dir_name}.")
+            st.warning(f"No DJI Fly missions found in {selected_dir_name}.")
         else:
             st.info(f"Found {len(kmz_files)} missions ready for transfer.")
             
@@ -2394,23 +2445,70 @@ elif page == 'DJI Fly Transfer':
         num_rows = st.number_input("Number of missions to assign", min_value=1, max_value=max_rows, value=min(3, max_rows))
         
         transfer_map = {}
-        local_options = ["--- Select Local Mission ---"] + kmz_files
-        nest_options = ["--- Select Target Nest ---"] + list(st.session_state.rc_nests.keys())
-        
+
         # Header formatting
         h1, h2, h3 = st.columns([4, 1, 4])
         h1.markdown("**Local Mission** (What to push)")
         h3.markdown("**Controller Target** (What will be overwritten)")
-        
+
         # Dynamic Visual Rows
+        # Once a local mission or nest is picked in one row, it's excluded from
+        # the other rows' dropdowns - keeps the lists shrinking as you assign,
+        # instead of showing already-used options, so it's easier to work
+        # through what's left.
+        #
+        # This is done in two passes: first resolve what each row's value
+        # will be (keeping any value the user already explicitly set, and
+        # picking sensible non-overlapping defaults for the rest against a
+        # shrinking pool), then render each row's dropdown with exclusions
+        # computed from that fully-resolved picture. Reading st.session_state
+        # naively mid-loop instead would mix fresh values (for rows already
+        # rendered this run) with stale, previous-run values (for rows not
+        # yet reached) - and on first load, before any row has a value at
+        # all, would produce no exclusions whatsoever.
+        def _resolve_row_values(all_options, session_key_prefix, placeholder):
+            remaining = list(all_options)
+            resolved = {}
+            for j in range(int(num_rows)):
+                state_key = f"{session_key_prefix}{j}"
+                if state_key in st.session_state:
+                    # This row has already been rendered before, even if the
+                    # user has since cleared it back to the placeholder -
+                    # respect that as an intentional "nothing assigned here"
+                    # rather than auto-filling it from the remaining pool,
+                    # which would keep it (and whatever got auto-filled)
+                    # wrongly excluded from every other row's options.
+                    existing = st.session_state[state_key]
+                    resolved[j] = existing if (existing == placeholder or existing in remaining) else placeholder
+                elif remaining:
+                    resolved[j] = remaining[0]
+                else:
+                    resolved[j] = placeholder
+                if resolved[j] in remaining:
+                    remaining.remove(resolved[j])
+            return resolved
+
+        resolved_locs = _resolve_row_values(kmz_files, "loc_", "--- Select Local Mission ---")
+        resolved_nests = _resolve_row_values(list(st.session_state.rc_nests.keys()), "nest_", "--- Select Target Nest ---")
+
         for i in range(int(num_rows)):
             st.markdown(f"**Assignment {i+1}**")
             row_c1, row_c2, row_c3 = st.columns([4, 1, 4])
-            
+
+            chosen_locs_elsewhere = {v for j, v in resolved_locs.items() if j != i} - {"--- Select Local Mission ---"}
+            chosen_nests_elsewhere = {v for j, v in resolved_nests.items() if j != i} - {"--- Select Target Nest ---"}
+
+            row_local_options = ["--- Select Local Mission ---"] + [
+                k for k in kmz_files if k not in chosen_locs_elsewhere
+            ]
+            row_nest_options = ["--- Select Target Nest ---"] + [
+                n for n in st.session_state.rc_nests.keys() if n not in chosen_nests_elsewhere
+            ]
+
             with row_c1:
-                default_loc = (i + 1) if (i + 1) < len(local_options) else 0
-                loc_choice = st.selectbox(f"Local {i}", local_options, index=default_loc, key=f"loc_{i}", label_visibility="collapsed")
-                
+                default_loc = row_local_options.index(resolved_locs[i]) if resolved_locs[i] in row_local_options else 0
+                loc_choice = st.selectbox(f"Local {i}", row_local_options, index=default_loc, key=f"loc_{i}", label_visibility="collapsed")
+
                 # Show Local Preview Image
                 if loc_choice != "--- Select Local Mission ---":
                     local_jpg = os.path.join(active_dir, loc_choice.replace('.kmz', '.jpg'))
@@ -2422,10 +2520,10 @@ elif page == 'DJI Fly Transfer':
             with row_c2:
                 # Add a visual arrow pointing from local to remote
                 st.markdown("<h1 style='text-align: center; color: gray; margin-top: 40px;'>➔</h1>", unsafe_allow_html=True)
-                
+
             with row_c3:
-                default_nest = (i + 1) if (i + 1) < len(nest_options) else 0
-                nest_choice = st.selectbox(f"Nest {i}", nest_options, index=default_nest, key=f"nest_{i}", label_visibility="collapsed")
+                default_nest = row_nest_options.index(resolved_nests[i]) if resolved_nests[i] in row_nest_options else 0
+                nest_choice = st.selectbox(f"Nest {i}", row_nest_options, index=default_nest, key=f"nest_{i}", label_visibility="collapsed")
                 
                 # Show Cached Controller Preview Image
                 if nest_choice != "--- Select Target Nest ---":
@@ -2444,25 +2542,46 @@ elif page == 'DJI Fly Transfer':
             if not transfer_map:
                 st.warning("No valid pairs assigned! Select a local mission and a target nest.")
             else:
+                st.session_state.last_transfer_checklist = []  # reset for this batch
+
                 progress_bar = st.progress(0, text="Initializing transfer...")
                 total_tasks = len(transfer_map)
                 completed = 0
-                
+
                 for kmz_name, target_uuid in transfer_map.items():
                     local_path = os.path.join(active_dir, kmz_name)
                     target_folder_id = st.session_state.rc_nests[target_uuid]
-                    
+
                     progress_bar.progress(completed / total_tasks, text=f"Transferring {kmz_name}...")
-                    
+
                     # Call the MTP helper we updated earlier
                     success, error_msg = push_mission_to_nest(local_path, target_uuid)
-                    
+
                     if success:
                         st.success(f"✅ Transferred **{kmz_name}** into slot `{target_uuid}`")
+                        st.session_state.last_transfer_checklist.append((kmz_name, target_uuid))
                     else:
                         st.error(f"❌ Failed to transfer **{kmz_name}**: {error_msg}")
-                        
+
                     completed += 1
                     time.sleep(1.5) # Let the Android File System breathe
-                    
-                progress_bar.progress(1.0, text="Batch transfer complete! Safe to unplug RC 2.")
+
+                progress_bar.progress(1.0, text="Batch transfer complete!")
+
+        # DJI Fly caches each mission's thumbnail privately and won't pick up a
+        # newly-pushed one on its own - not even after a full power cycle (see
+        # session notes). Opening a mission in DJI Fly and saving it once is
+        # the only thing that's been found to force a refresh, so surface a
+        # checklist of exactly what was just transferred rather than leaving
+        # the user to remember on their own.
+        if st.session_state.get("last_transfer_checklist"):
+            st.write("---")
+            st.subheader("📋 Manual Thumbnail Refresh Checklist")
+            st.info(
+                "DJI Fly caches each mission's thumbnail privately and won't pick up "
+                "the new one automatically - not even after a full power cycle. Open "
+                "each mission below in DJI Fly and save it once to force its "
+                "thumbnail to refresh on the controller."
+            )
+            for kmz_name, target_uuid in st.session_state.last_transfer_checklist:
+                st.checkbox(f"{kmz_name} → `{target_uuid}`", key=f"refresh_check_{target_uuid}")
