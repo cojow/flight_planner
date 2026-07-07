@@ -1065,6 +1065,207 @@ def interpolate_elevations(elevations, fracs):
     ]
 
 # ==========================================
+# MAPPING MISSION (AREA COVERAGE) PATH GENERATOR
+# ==========================================
+FT_PER_DEG_LAT = 111320 * M_TO_FT  # ~365,223 ft per degree of latitude
+
+def project_footprint_ft(alt_ft, pitch, yaw_deg):
+    """
+    Projects the four camera-sensor corners onto flat ground and returns
+    them as (east_ft, north_ft) offsets from the nadir point. This is the
+    same pinhole/rotation math as get_photo_footprint (the footprints drawn
+    in the Viewer), just in a local planar frame instead of lat/lon, so any
+    overlap derived from it matches what the app actually images. Returns
+    None if the camera is too shallow for the rays to reach the ground.
+    """
+    w, h, f = SENSOR_W, SENSOR_H, FOCAL_L
+    corners = [(-w/2, h/2, -f), (w/2, h/2, -f), (w/2, -h/2, -f), (-w/2, -h/2, -f)]
+    yaw_rad = math.radians(yaw_deg)
+    pitch_rad = math.radians(pitch + 90)
+
+    Rz = [[math.cos(yaw_rad), math.sin(yaw_rad), 0],
+          [-math.sin(yaw_rad), math.cos(yaw_rad), 0], [0, 0, 1]]
+    Rx = [[1, 0, 0],
+          [0, math.cos(pitch_rad), -math.sin(pitch_rad)], [0, math.sin(pitch_rad), math.cos(pitch_rad)]]
+    R = [[sum(Rz[r][k] * Rx[k][col] for k in range(3)) for col in range(3)] for r in range(3)]
+
+    pts = []
+    for corner in corners:
+        ray = [sum(R[r][k] * corner[k] for k in range(3)) for r in range(3)]
+        if ray[2] >= 0:
+            return None  # ray points at or above the horizon - never hits ground
+        t = -alt_ft / ray[2]
+        pts.append((ray[0] * t, ray[1] * t))
+    return pts
+
+def footprint_extents_ft(alt_ft, pitch, side="right"):
+    """
+    True ground-footprint dimensions (feet) for the mission's camera
+    orientation (camera yawed 90 deg off the flight line, tilting to the
+    chosen side), derived by projecting the sensor corners:
+    - along_ft: extent parallel to the flight line (drives frontal overlap)
+    - cross_ft: extent perpendicular to it (drives side overlap)
+    - offset_ft: how far the footprint's cross-track center sits from the
+      point directly below the drone (0 at nadir; grows with tilt)
+    Computed with the flight line running east so along = |x|, cross = |y|.
+    """
+    yaw = 180.0 if side == "right" else 0.0
+    pts = project_footprint_ft(alt_ft, pitch, yaw)
+    if pts is None:
+        return None
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    along_ft = max(xs) - min(xs)
+    cross_ft = max(ys) - min(ys)
+    offset_ft = abs((max(ys) + min(ys)) / 2.0)
+    return along_ft, cross_ft, offset_ft
+
+def mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct, side="right"):
+    """
+    Camera coverage geometry for area-mapping missions, all in feet. Overlap
+    is based on the TRUE projected ground footprint (footprint_extents_ft),
+    not a center-slant approximation, so the requested frontal/side overlap
+    is the overlap the images actually get at any gimbal angle:
+    - interval_ft: photo spacing along each pass (from frontal overlap)
+    - spacing_ft: distance between adjacent passes (from side overlap)
+    - offset_ft: horizontal distance from the drone to the center of what
+      the camera actually images - the flight lines are shifted by this so
+      the *imaged* strips, not the drone itself, line up over the area.
+    Pitch shallower than 20 degrees is clamped - the ground footprint
+    stretches toward infinity as the camera approaches horizontal.
+    """
+    clamped_pitch = -min(90.0, max(20.0, abs(pitch)))
+    extents = footprint_extents_ft(alt_ft, clamped_pitch, side)
+    if extents is None:
+        extents = footprint_extents_ft(alt_ft, -20.0, side)
+    footprint_w_ft, footprint_h_ft, offset_ft = extents
+    return {
+        "footprint_w_ft": footprint_w_ft,
+        "footprint_h_ft": footprint_h_ft,
+        "offset_ft": offset_ft,
+        "interval_ft": max(1.0, footprint_w_ft * (1.0 - frontal_overlap_pct / 100.0)),
+        "spacing_ft": max(1.0, footprint_h_ft * (1.0 - side_overlap_pct / 100.0)),
+    }
+
+def extract_polygon_from_map_data(map_data):
+    """
+    Pulls the most recently drawn polygon (or rectangle - leaflet exports
+    those as polygons too) from an st_folium result as a list of (lat, lon)
+    vertices, or None if nothing polygonal has been drawn.
+    """
+    if not map_data or not map_data.get("all_drawings"):
+        return None
+    for drawing in reversed(map_data["all_drawings"]):
+        geom = drawing.get("geometry", {})
+        if geom.get("type") == "Polygon" and geom.get("coordinates"):
+            ring = geom["coordinates"][0]
+            coords = [(c[1], c[0]) for c in ring]
+            if len(coords) > 1 and coords[0] == coords[-1]:
+                coords = coords[:-1]
+            if len(coords) >= 3:
+                return coords
+    return None
+
+def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap_pct, side_overlap_pct, side="right"):
+    """
+    Builds a serpentine (lawnmower) flight path whose camera footprints
+    fully cover the drawn boundary polygon, honoring altitude, gimbal
+    pitch, and frontal/side overlap. The drone path itself may run outside
+    the boundary: passes extend half a footprint past each end so photo
+    coverage reaches the edges, and with an oblique gimbal the flight
+    lines are offset sideways so the *imaged* strips (not the drone) land
+    on the target area. Passes sweep parallel to the boundary's longest
+    edge to minimize turns, alternating direction; because the camera
+    stays on the drone's chosen side, the sideways offset flips with each
+    direction change.
+
+    Returns (path_coords, info) where path_coords is the corner-waypoint
+    serpentine as (lat, lon) tuples, or (None, None) for a degenerate
+    boundary.
+    """
+    if not boundary_coords or len(boundary_coords) < 3:
+        return None, None
+
+    geom = mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct, side)
+    fw, fh = geom["footprint_w_ft"], geom["footprint_h_ft"]
+    offset, spacing = geom["offset_ft"], geom["spacing_ft"]
+
+    # Project to a local planar frame in feet (equirectangular approximation,
+    # fine at flight-area scale).
+    lat0 = sum(c[0] for c in boundary_coords) / len(boundary_coords)
+    lon0 = sum(c[1] for c in boundary_coords) / len(boundary_coords)
+    cos_lat = math.cos(math.radians(lat0))
+    pts = [((c[1] - lon0) * cos_lat * FT_PER_DEG_LAT, (c[0] - lat0) * FT_PER_DEG_LAT) for c in boundary_coords]
+
+    # Sweep parallel to the longest boundary edge; rotate that edge horizontal.
+    best_len, sweep_ang = 0.0, 0.0
+    n = len(pts)
+    for i in range(n):
+        x1, y1 = pts[i]
+        x2, y2 = pts[(i + 1) % n]
+        edge_len = math.hypot(x2 - x1, y2 - y1)
+        if edge_len > best_len:
+            best_len, sweep_ang = edge_len, math.atan2(y2 - y1, x2 - x1)
+    ca, sa = math.cos(-sweep_ang), math.sin(-sweep_ang)
+    rot = [(x * ca - y * sa, x * sa + y * ca) for x, y in pts]
+
+    ys = [pt[1] for pt in rot]
+    xs_all = [pt[0] for pt in rot]
+    ymin, ymax = min(ys), max(ys)
+    height = ymax - ymin
+
+    # Imaged-strip centers: evenly respaced so the first/last strips exactly
+    # reach the boundary's extents (actual side overlap comes out >= requested).
+    if fh >= height:
+        centers = [(ymin + ymax) / 2.0]
+    else:
+        n_passes = math.ceil((height - fh) / spacing) + 1
+        step = (height - fh) / (n_passes - 1)
+        centers = [ymin + fh / 2.0 + k * step for k in range(n_passes)]
+
+    def band_x_range(lo, hi):
+        """x-extent of the boundary within the horizontal band [lo, hi]."""
+        xs = [x for x, y in rot if lo <= y <= hi]
+        for i in range(n):
+            x1, y1 = rot[i]
+            x2, y2 = rot[(i + 1) % n]
+            for y_line in (lo, (lo + hi) / 2.0, hi):
+                if (y1 - y_line) * (y2 - y_line) < 0:
+                    t = (y_line - y1) / (y2 - y1)
+                    xs.append(x1 + t * (x2 - x1))
+        if not xs:
+            xs = xs_all
+        return min(xs), max(xs)
+
+    side_sign = 1.0 if side == "right" else -1.0
+    path_rot = []
+    for k, c in enumerate(centers):
+        x_lo, x_hi = band_x_range(c - fh / 2.0, c + fh / 2.0)
+        # Extend so the end photos' footprints reach past the boundary edge.
+        x_lo -= fw / 2.0
+        x_hi += fw / 2.0
+        eastbound = (k % 2 == 0)
+        # Camera looks to the drone's chosen side of travel; place the drone
+        # on the opposite side of the strip so the footprint lands on it.
+        y_drone = c + (side_sign * offset if eastbound else -side_sign * offset)
+        if eastbound:
+            path_rot += [(x_lo, y_drone), (x_hi, y_drone)]
+        else:
+            path_rot += [(x_hi, y_drone), (x_lo, y_drone)]
+
+    # Rotate back and unproject.
+    ca2, sa2 = math.cos(sweep_ang), math.sin(sweep_ang)
+    path_coords = []
+    for x, y in path_rot:
+        gx = x * ca2 - y * sa2
+        gy = x * sa2 + y * ca2
+        path_coords.append((lat0 + gy / FT_PER_DEG_LAT, lon0 + gx / (FT_PER_DEG_LAT * cos_lat)))
+
+    info = dict(geom)
+    info["num_passes"] = len(centers)
+    return path_coords, info
+
+# ==========================================
 # SESSION STATE INITIALIZATION & SAFE CALLBACKS
 # ==========================================
 if "alt_ft" not in st.session_state: st.session_state.alt_ft = 50.0
@@ -1094,9 +1295,15 @@ def safe_get_float(key, default_val):
         return default_val
 
 def get_center_footprint(pitch, alt):
-    if pitch == 0: return 999999.0  
-    slant_dist = alt / math.sin(math.radians(abs(pitch)))
-    return slant_dist * (SENSOR_W / FOCAL_L)
+    # Along-track ground footprint (feet), used to convert between photo
+    # interval and forward overlap. Uses the true projected footprint rather
+    # than a center-slant estimate, so forward overlap matches the images at
+    # any gimbal angle (identical to the old estimate at nadir, but the old
+    # estimate under-reported the footprint - and so over-reported overlap -
+    # as the camera tilted).
+    if pitch == 0: return 999999.0
+    extents = footprint_extents_ft(alt, pitch)
+    return extents[0] if extents else 999999.0
 
 def sync_dist_to_overlap():
     fw = get_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
@@ -1538,18 +1745,38 @@ page = st.radio("Navigation", ["Creator", "Editor", "Viewer  |", "Photo Sorter",
 
 # --- CREATOR MODE ---
 if page == 'Creator':
+    if "map_boundary" not in st.session_state:
+        st.session_state.map_boundary = None
+
     with st.sidebar:
+        mapping_mode = st.checkbox(
+            "Change to a mapping mission", value=False, key="mapping_mode",
+            help="Draw the area you want mapped instead of a flight line. The flight "
+                 "path is auto-calculated from altitude, gimbal pitch, and frontal/side "
+                 "overlap, and may extend outside the drawn boundary."
+        )
+
         st.header("1. Hardware & Payload")
-        hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()))
-        drone_enum = HARDWARE_MAP[hw_choice]["drone_enum"]
-        drone_sub_enum = HARDWARE_MAP[hw_choice]["drone_sub"]
-        payload_enum = HARDWARE_MAP[hw_choice]["payload_enum"]
-        payload_sub_enum = HARDWARE_MAP[hw_choice]["payload_sub"]
-        is_dji_fly = HARDWARE_MAP[hw_choice].get("is_dji_fly", False)
-        
-        if is_dji_fly:
+        if mapping_mode:
+            st.info("Mapping missions are generated as DJI Fly waypoint missions.")
+            fly_hw = HARDWARE_MAP["DJI Fly (RC2 / Mini / Air Series)"]
+            drone_enum = fly_hw["drone_enum"]
+            drone_sub_enum = fly_hw["drone_sub"]
+            payload_enum = fly_hw["payload_enum"]
+            payload_sub_enum = fly_hw["payload_sub"]
+            is_dji_fly = True
             st.warning("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
-        
+        else:
+            hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()))
+            drone_enum = HARDWARE_MAP[hw_choice]["drone_enum"]
+            drone_sub_enum = HARDWARE_MAP[hw_choice]["drone_sub"]
+            payload_enum = HARDWARE_MAP[hw_choice]["payload_enum"]
+            payload_sub_enum = HARDWARE_MAP[hw_choice]["payload_sub"]
+            is_dji_fly = HARDWARE_MAP[hw_choice].get("is_dji_fly", False)
+
+            if is_dji_fly:
+                st.warning("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
+
         cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"])
         camera_type = CAM_VAL_MAP[cam_choice]
         min_photo_interval_sec = 2.0 if "narrow_band" in camera_type else 0.7
@@ -1558,9 +1785,13 @@ if page == 'Creator':
         mission_name = st.text_input("Filename", "Mission_Flight")
         trans_speed_mph = st.number_input("Takeoff Speed (mph)", value=22.0, step=1.0)
         safe_takeoff_ft = st.number_input("Safe Takeoff Alt (ft)", value=60.0, step=1.0)
-        
-        st.header("3. Waypoint Settings")
-        st.number_input("Relative Altitude (ft)", value=60.0, key="alt_ft", step=1.0, on_change=sync_geometry)
+
+        if mapping_mode:
+            st.header("3. Mapping Settings")
+            st.number_input("Relative Altitude (ft)", value=100.0, key="map_alt_ft", step=1.0)
+        else:
+            st.header("3. Waypoint Settings")
+            st.number_input("Relative Altitude (ft)", value=60.0, key="alt_ft", step=1.0, on_change=sync_geometry)
         st.info("❗Elevation is relative to the take off point, NOT the mission start point.")
 
         c_elev_source = st.selectbox("Elevation Source", ["USGS 3DEP (US High-Res)", "Open-Elevation (Global)", "Local GeoTIFF"], key="c_source")
@@ -1583,46 +1814,77 @@ if page == 'Creator':
                 else:
                     st.warning("No .tif files found in the 'surfaces' folder.")
 
-        st.slider("Gimbal Pitch (°)", -90, 0, value= -60, key="pitch", on_change=sync_geometry)
-        
-        current_pitch = safe_get_float('pitch', -60.0)
-        pitch_rad = math.radians(abs(current_pitch))
-        current_alt = safe_get_float('alt_ft', 50.0)
-        D_ft_c = current_alt / math.sin(pitch_rad) if pitch_rad > 0 else float('inf')
-        gsd_cm = (D_ft_c * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_c != float('inf') else 0
-        st.info(f"Est. Ground GSD: {gsd_cm:.2f} cm/px")
-        
-        side = st.selectbox("Side of flight path", ["right", "left"])
-        
-        st.header("4. Trigger & Speed")
-        photo_start_wp = st.number_input("Start Photos at Waypoint Index", min_value=0, value=0, step=1)
-        st.radio("Type", ["distance", "time"], key="trigger_type", on_change=sync_geometry)
-        
-        if st.session_state.get('trigger_type', 'distance') == "distance":
-            st.number_input("Interval (ft)", key="t_dist_val", min_value=1.0, step=1.0, on_change=sync_dist_to_overlap)
-            st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=sync_overlap_to_dist)
-            manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=4.0)
+        if mapping_mode:
+            st.slider("Gimbal Pitch (°)", -90, -20, value=-90, key="map_pitch")
+
+            map_alt = safe_get_float('map_alt_ft', 100.0)
+            map_pitch_val = safe_get_float('map_pitch', -90.0)
+            pitch_rad = math.radians(abs(map_pitch_val))
+            D_ft_c = map_alt / math.sin(pitch_rad) if pitch_rad > 0 else float('inf')
+            gsd_cm = (D_ft_c * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_c != float('inf') else 0
+            st.info(f"Est. Ground GSD: {gsd_cm:.2f} cm/px")
+
+            side = st.selectbox("Camera side of flight path", ["right", "left"], key="map_side")
+
+            st.header("4. Coverage & Speed")
+            st.number_input("Frontal Overlap (%)", min_value=0.0, max_value=95.0, value=75.0, step=1.0, key="map_front_ol")
+            st.number_input("Side Overlap (%)", min_value=0.0, max_value=95.0, value=65.0, step=1.0, key="map_side_ol")
+
+            map_geom = mapping_camera_geometry(
+                map_alt, map_pitch_val,
+                safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0), side
+            )
+            st.info(
+                f"Photo every {map_geom['interval_ft']:.0f} ft along track\n\n"
+                f"Flight line spacing: {map_geom['spacing_ft']:.0f} ft"
+            )
+
+            manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=4.0, key="map_speed_mph")
             speed_m = manual_mph * MPH_TO_MS
-            
-            gap_m = max(1.0, safe_get_float('t_dist_val', 9.0) * FT_TO_M)
-            max_speed_m = gap_m / min_photo_interval_sec
+            max_speed_m = (map_geom['interval_ft'] * FT_TO_M) / min_photo_interval_sec
             if speed_m > max_speed_m:
                 st.error(f"Speed Too High! Lower your speed to {max_speed_m * MS_TO_MPH:.1f} mph.")
         else:
-            t_val_sec = st.number_input("Interval (sec)", min_value=min_photo_interval_sec, value=max(2.0, min_photo_interval_sec))
-            auto_speed = st.checkbox("Auto-Calc Speed", True)
-            if auto_speed:
-                st.number_input("Target Gap (ft)", key="target_gap_ft", min_value=1.0, on_change=sync_gap_to_overlap)
-                st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=sync_overlap_to_gap)
-                speed_m = min(max((safe_get_float('target_gap_ft', 26.2) * FT_TO_M) / t_val_sec, 1.0), 10.0)
-                st.info(f"Auto-Calculated Speed: {speed_m * MS_TO_MPH:.1f} mph")
-            else:
-                manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, value=6.0, step=1.0)
+            st.slider("Gimbal Pitch (°)", -90, 0, value= -60, key="pitch", on_change=sync_geometry)
+
+            current_pitch = safe_get_float('pitch', -60.0)
+            pitch_rad = math.radians(abs(current_pitch))
+            current_alt = safe_get_float('alt_ft', 50.0)
+            D_ft_c = current_alt / math.sin(pitch_rad) if pitch_rad > 0 else float('inf')
+            gsd_cm = (D_ft_c * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_c != float('inf') else 0
+            st.info(f"Est. Ground GSD: {gsd_cm:.2f} cm/px")
+
+            side = st.selectbox("Side of flight path", ["right", "left"])
+
+            st.header("4. Trigger & Speed")
+            photo_start_wp = st.number_input("Start Photos at Waypoint Index", min_value=0, value=0, step=1)
+            st.radio("Type", ["distance", "time"], key="trigger_type", on_change=sync_geometry)
+
+            if st.session_state.get('trigger_type', 'distance') == "distance":
+                st.number_input("Interval (ft)", key="t_dist_val", min_value=1.0, step=1.0, on_change=sync_dist_to_overlap)
+                st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=sync_overlap_to_dist)
+                manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=4.0)
                 speed_m = manual_mph * MPH_TO_MS
-                current_gap = speed_m * M_TO_FT * t_val_sec
-                fw = get_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
-                current_overlap = ((fw - current_gap) / fw) * 100 if fw > 0 else 0
-                st.info(f"Current Overlap: {max(0, min(current_overlap, 99.9)):.1f}%")
+
+                gap_m = max(1.0, safe_get_float('t_dist_val', 9.0) * FT_TO_M)
+                max_speed_m = gap_m / min_photo_interval_sec
+                if speed_m > max_speed_m:
+                    st.error(f"Speed Too High! Lower your speed to {max_speed_m * MS_TO_MPH:.1f} mph.")
+            else:
+                t_val_sec = st.number_input("Interval (sec)", min_value=min_photo_interval_sec, value=max(2.0, min_photo_interval_sec))
+                auto_speed = st.checkbox("Auto-Calc Speed", True)
+                if auto_speed:
+                    st.number_input("Target Gap (ft)", key="target_gap_ft", min_value=1.0, on_change=sync_gap_to_overlap)
+                    st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=sync_overlap_to_gap)
+                    speed_m = min(max((safe_get_float('target_gap_ft', 26.2) * FT_TO_M) / t_val_sec, 1.0), 10.0)
+                    st.info(f"Auto-Calculated Speed: {speed_m * MS_TO_MPH:.1f} mph")
+                else:
+                    manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, value=6.0, step=1.0)
+                    speed_m = manual_mph * MPH_TO_MS
+                    current_gap = speed_m * M_TO_FT * t_val_sec
+                    fw = get_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
+                    current_overlap = ((fw - current_gap) / fw) * 100 if fw > 0 else 0
+                    st.info(f"Current Overlap: {max(0, min(current_overlap, 99.9)):.1f}%")
 
         st.header("5. Visuals")
         show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="creator_faa_toggle")
@@ -1698,8 +1960,52 @@ if page == 'Creator':
         elif uasfm_data: 
             folium.Marker(st.session_state.locked_creator_center, icon=DivIcon(html='<div style="font-size: 12px; color: grey;">No FAA restrictions at this location</div>')).add_to(m)
 
-    Draw(export=False, draw_options={'polyline':{'shapeOptions':{'color':'#00ffff','weight':5}}}).add_to(m)
+    if mapping_mode:
+        # Area-drawing tools only; the flight line is computed, not drawn.
+        Draw(export=False, draw_options={
+            'polyline': False,
+            'polygon': {'shapeOptions': {'color': '#00ffff', 'weight': 3}},
+            'rectangle': {'shapeOptions': {'color': '#00ffff', 'weight': 3}},
+            'circle': False, 'circlemarker': False, 'marker': False,
+        }).add_to(m)
+
+        # Overlay the stored boundary and its computed serpentine path. The
+        # boundary lives in our own session key (not just the Draw layer)
+        # because re-rendering the map wipes client-side drawings.
+        if st.session_state.map_boundary:
+            try:
+                preview_path, _preview_info = generate_mapping_flight_path(
+                    st.session_state.map_boundary,
+                    safe_get_float('map_alt_ft', 100.0), safe_get_float('map_pitch', -90.0),
+                    safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0),
+                    side
+                )
+                folium.Polygon(
+                    locations=st.session_state.map_boundary, color="#00ffff", weight=3,
+                    fill=True, fill_opacity=0.08, tooltip="Area to map"
+                ).add_to(m)
+                if preview_path:
+                    path_line = folium.PolyLine(preview_path, color="#ff8800", weight=3, tooltip="Computed flight path").add_to(m)
+                    PolyLineTextPath(path_line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '18', 'fill-opacity': '0.4'}).add_to(m)
+            except Exception:
+                pass
+    else:
+        # Polyline only - a corridor mission is a single flight line, so the
+        # area/point tools are disabled to avoid drawing shapes this mode
+        # can't consume.
+        Draw(export=False, draw_options={
+            'polyline': {'shapeOptions': {'color': '#00ffff', 'weight': 5}},
+            'polygon': False, 'rectangle': False,
+            'circle': False, 'circlemarker': False, 'marker': False,
+        }).add_to(m)
+
     map_data = st_folium(m, width=1200, height=600, key="creator_map")
+
+    if mapping_mode:
+        detected_boundary = extract_polygon_from_map_data(map_data)
+        if detected_boundary and detected_boundary != st.session_state.map_boundary:
+            st.session_state.map_boundary = detected_boundary
+            st.rerun()  # re-render immediately so the computed path overlay appears
 
     if map_data and map_data.get("center"):
         st.session_state.creator_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
@@ -1723,12 +2029,97 @@ if page == 'Creator':
                     st.error("Location not found. Try a different query.")
     st.write("---")
 
-    if map_data.get("all_drawings"):
-        coords = [(c[1], c[0]) for c in map_data["all_drawings"][-1]['geometry']['coordinates']]
+    if mapping_mode:
+        boundary = st.session_state.map_boundary
+        if not boundary:
+            st.info("Draw the area you want to map using the polygon or rectangle tool on the map. "
+                    "The flight path will be calculated automatically and may extend outside the boundary.")
+        else:
+            map_alt = safe_get_float('map_alt_ft', 100.0)
+            map_pitch_val = safe_get_float('map_pitch', -90.0)
+            map_front_ol = safe_get_float('map_front_ol', 75.0)
+            map_side_ol = safe_get_float('map_side_ol', 65.0)
+
+            path_coords, map_info = generate_mapping_flight_path(
+                boundary, map_alt, map_pitch_val, map_front_ol, map_side_ol, side
+            )
+
+            if path_coords:
+                total_dist_ft = sum(get_haversine_dist(path_coords[i], path_coords[i+1]) for i in range(len(path_coords)-1)) * M_TO_FT
+                gap_ft = map_info['interval_ft']
+                est_photos = int(total_dist_ft / gap_ft) + 1 if gap_ft > 0 else 0
+
+                save_disabled = False
+                if est_photos > 99:
+                    st.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please shrink the area, raise the altitude, or reduce the overlaps.")
+                    save_disabled = True
+
+                with top_hud:
+                    c1, c2, c3, c4 = st.columns([1.2, 1.2, 1, 1.6])
+                    c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft")
+                    c2.metric("Estimated Photos", f"{est_photos} / 99")
+                    c3.metric("Passes", f"{map_info['num_passes']}")
+                    with c4:
+                        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+                        save_clicked = st.button("Save & Generate KMZ", use_container_width=True, disabled=save_disabled)
+                        if st.button("🗑 Clear boundary", use_container_width=True, key="btn_clear_boundary"):
+                            st.session_state.map_boundary = None
+                            st.rerun()
+                    st.write("---")
+
+                    if save_clicked:
+                        with st.spinner("Calculating terrain elevations and generating KMZ..."):
+                            cfg = {
+                                "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_mph": trans_speed_mph,
+                                "alt_ft": map_alt, "pitch": map_pitch_val, "side": side,
+                                "trigger_type": "distance",
+                                "interval_ft": gap_ft,
+                                "interval_sec": 0.0,
+                                "speed_m": speed_m, "photo_start_wp": 0,
+                                "camera_type": camera_type, "drone_sub": drone_sub_enum, "payload_sub": payload_sub_enum,
+                                "is_dji_fly": True
+                            }
+
+                            prefixed_name = f"{mission_name}_Fly"
+                            suffix = f"_H{int(map_alt)}A{int(abs(map_pitch_val))}OL{int(map_front_ol)}SO{int(map_side_ol)}"
+                            final_filename = f"{prefixed_name}{suffix}"
+
+                            if st.session_state.c_browsed_dir:
+                                final_dir = st.session_state.c_browsed_dir
+                            elif save_option == "Root (missions/)": final_dir = MISSION_DIR
+                            elif save_option == "Create New Folder...": final_dir = os.path.join(MISSION_DIR, new_dir_name)
+                            else: final_dir = os.path.join(MISSION_DIR, save_option)
+
+                            os.makedirs(final_dir, exist_ok=True)
+                            final_filepath = os.path.join(final_dir, f"{final_filename}.kmz")
+
+                            template_kml, waylines_wpml = generate_native_kmz_contents(path_coords, cfg, c_elev_source, c_tif_path)
+                            export_mission_kmz_from_strings(
+                                template_kml_str=template_kml,
+                                waylines_wpml_str=waylines_wpml,
+                                output_kmz_path=final_filepath,
+                                is_dji_fly=True
+                            )
+                            thumbnail_path = final_filepath.replace('.kmz', '.jpg')
+                            generate_name_thumbnail(
+                                prefixed_name, map_alt, map_pitch_val,
+                                map_front_ol, thumbnail_path, coords=path_coords
+                            )
+
+                        st.success(f"Saved {final_filename}.kmz to {final_dir}/")
+                    st.divider()
+
+    elif map_data.get("all_drawings") and any(
+        d.get('geometry', {}).get('type') == 'LineString' for d in map_data["all_drawings"]
+    ):
+        # Only consider drawn lines here - a polygon left over from mapping
+        # mode has a nested-ring geometry this corridor flow can't consume.
+        line_drawing = [d for d in map_data["all_drawings"] if d.get('geometry', {}).get('type') == 'LineString'][-1]
+        coords = [(c[1], c[0]) for c in line_drawing['geometry']['coordinates']]
         total_dist_ft = sum(get_haversine_dist(coords[i], coords[i+1]) for i in range(len(coords)-1)) * M_TO_FT
-        
+
         gap_ft = max(1.0, safe_get_float('t_dist_val', 9.0) ) if st.session_state.get('trigger_type', 'distance') == "distance" else speed_m * t_val_sec #* M_TO_FT
-            
+
         if len(coords) > photo_start_wp:
             dist_to_start = sum(get_haversine_dist(coords[i], coords[i+1]) for i in range(photo_start_wp)) * M_TO_FT
             est_photos = int(max(0, total_dist_ft - dist_to_start) / gap_ft) + 1 if gap_ft > 0 else 0
@@ -1975,7 +2366,11 @@ elif page == 'Editor':
             elif uasfm_data:
                 folium.Marker(st.session_state.locked_editor_center, icon=DivIcon(html='<div style="font-size: 10px; color: grey; width: 150px;">No FAA restrictions at this location</div>')).add_to(m_edit)
 
-        Draw(export=False, draw_options={'polyline':{'shapeOptions':{'color':'#00ffff','weight':5}}}).add_to(m_edit)
+        Draw(export=False, draw_options={
+            'polyline': {'shapeOptions': {'color': '#00ffff', 'weight': 5}},
+            'polygon': False, 'rectangle': False,
+            'circle': False, 'circlemarker': False, 'marker': False,
+        }).add_to(m_edit)
         line = folium.PolyLine(current_coords, color="#00ffff", weight=5).add_to(m_edit)
         PolyLineTextPath(line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '24', 'fill-opacity': '0.3'}).add_to(m_edit)
         
