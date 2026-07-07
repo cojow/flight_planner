@@ -1,25 +1,26 @@
 # Flight_planner
 An open-source flight planning software for DJI drones. 
-Plans can be made for both DJI Pilot 2 (Mavic) and DJI Fly (Mini) apps. (DJI Fly is under development)
+Plans can be made for both DJI Pilot 2 (Enterprise) and DJI Fly (Commercial) apps.
 
-## Running the Planner
-Download this repository.
+## Running the Planner Steps
+1. Download this repository.
 
-Install the dependencies with the following code.
+2. Install the dependencies with the following code.
 ```
 pip install -r requirements.txt
 ```
 
-Launch the app by running the following in the terminal. 
+3. Launch the app by running the following in the terminal. 
+The app will open in your web browser using a local host.
 ```
 streamlit run app.py
 ```
 
-The app will open in your web browser using a local host.
-
 ## Using the Flight Planner
-The planner is split into three tabs: The Creator, the Editor, and the Viewer. 
-Each have their own applications that are useful as you plan your missions. 
+The mission planner is split into three creation tabs: the *Creator*, the *Editor*, and the *Viewer*. 
+
+The *Photo Sorter* and *DJI Fly Transfer* are tabs designed specifically for getting around the restrictions and annoyances that come with the more affordable commercial drone that use the  DJI Fly app. These are explained in a later section. 
+
 
 ### **The Creator**
 
@@ -44,27 +45,27 @@ These are divided into 5 categories: Hardware, Global Config, waypoint settings,
 Each is explained in the following sections.
 
 ##### Hardware & Payload
-* **Drone Platform**: DJI Pilot 2 or DJI Fly. ❗**THIS OPTION IS VERY IMPORTANT**❗, as it will determine how your flight plan is created.
-DJI Pilot 2 works for higher-end drones/controllers, such as the Mavic series.
- This option allows for very complicated flight plans with hundreds of photos. 
-DJI Fly is the stripped-back version used in the Mini series which doesn't easily support flight plans. 
+* **Drone Platform**: DJI Fly or DJI Pilot 2. ❗**THIS OPTION IS VERY IMPORTANT**❗, as it will determine how your flight plan is created.
+DJI Pilot 2 works for higher-end enterprise drones/controllers, such as the Mavic Enterprise series.
+This option allows for very complicated flight plans with hundreds of photos. 
+DJI Fly is the stripped-back version used in the commercial series which doesn't easily support flight plans. 
 It is limited to 99 photos per flight plan due to each photo having to be a waypoint. 
 *Know which program your drone takes before planning your flight*
-* Sensor mode (RGB, Multispectral, or both for 3M only)
+* Sensor mode (RGB, Multispectral, or both for 3M - DJI Pilot 2 only)
 
 ##### Global Config
-* **File name**: Assign a memorable name. IT will also dynamically append the altitude, gimbal pitch, and overlap to the final saved filename as "_HxxAxxOLxx")
-* **Safe Take-off Altitude (ft) and Take off Speed (mph)**: Most often the defaults are adequate for these. 
+* **File name**: Assign a memorable name. It will also dynamically append the altitude, gimbal pitch, and overlap to the final saved filename as "_HxxAxxOLxx", as well as whether the mission is designed for DJI Pilot 2 or DJI Fly.
+* **Safe Take-off Altitude (ft) and Take off Speed (mph)**: Most often, the defaults are adequate for these. 
 
 
 ##### Waypoint Settings
-* **Relative Altitude (ft)**: This is based on the drone's take-off point.
+* **Relative Altitude (ft)**: This is based on the drone's take-off point, starting at zero.
 ❗Important❗: Every waypoint will be assigned an elevation relative to the first one, which will be set to this value. 
 Thus, the drone should take off as close as possible to the first waypoint.
-* **Elevation Source**: Select between Open-Elevation (high error, Global), USGS 3DEP (Low error, USA only), or Local GeoTIFF files for terrain-following calculations. 
+* **Elevation Source**: Select between Open-Elevation (high error, Global application), USGS 3DEP (Low error, USA only), or Local GeoTIFF files for terrain-following calculations. 
 This is very important if your flight plan is not over a flat surface. 
-* **Gimbal Pitch**: Angle that the pictures will be taken. 
-* **Side**: The aircraft takes pictures to the left or right side of the path
+* **Gimbal Pitch**: Angle at which the pictures will be taken. 
+* **Side**: The aircraft takes pictures to the left or right side of the path.
 
 ##### Trigger & Speed
 * **Start Photos at Waypoint Index** :Delays the camera trigger until a designated waypoint is reached. 
@@ -79,77 +80,85 @@ This is also affected by the altitude, but doesn't edit it.
 
 ##### Map & Visual Features
 * **FAA Airspace Restrictions**: Toggles a live ArcGIS overlay showing LAANC grid ceilings.
-Use this to know if you need to submit an LAANC report before flying. (PROCESS TO SUBMIT THIS IS A WIP)
+Use this to know if you need to submit an LAANC report before flying. 
+In app submitting is not available, you must use another app to do so.
 
-Once your parameters are set and the flight path draw, the total path distance, estimated number of photos to be taken, and the flight speed will appear above the map, along with the * **Save Destination** parameter. 
-Choose between the root "missions" directory, creating a new directory within the "missions" root, or outputting to a custom absolute file path. 
 
-After choosing the save destination, save the flight plan by pressing the "save and generate KMZ" button. 
+##### Main Page Features
+* **Save Destination**: Located above the map. Use the drop down box to choose an existing mission or the default root "missions/" directory. You can create a new folder by pressing the "+" button, or browse to a custom folder location with the file icon. 
+* **Jump to Address/Latlong**: Located at the bottom of the map. Allows you to center the screen on a specific address or latitude and longitude instead of scrolling to it on the map. 
+
+
+Once your parameters are set and the flight path is drawn, the total path distance and estimated number of photos to be taken will appear above the map.
+Save the flight plan by pressing the "save and generate KMZ" button, also found on this line. 
 
 ### **The Viewer**
 
 This tab allows the user to view previously made flight plans. 
-Features include the following:
+Features include:
 
 * **Mission select**: Inspect individual or multiple combined flight plans in the viewer.
  These are chosen from either the root "missions" folder or other custom folders. 
-* **Flight Path Characteristics**: Arrows displaying the direction of the drone flight, the distance between waypoints, and the elevation differences between waypoints. 
+* **Flight Path Characteristics**: Arrows displaying the direction of the drone's flight path, the direction of the drone during flight, the distance between waypoints, and the elevation differences between waypoints. 
 * **Image Footprints**: Projects the camera's field of view onto the map based on altitude, pitch, and drone heading. 
 Allows one to get an estimate of the area covered by the drone photos. 
-This may be turned on or off. 
+This may be turned on or off with a toggle to the left.
 * **Mission Metadata**: View aggregated mission statistics, including total distance and total estimated photos. 
-FAA restrictions may also be turned on or off. 
+FAA restrictions may also be turned on or off with a toggle to the left.
 
 
 ### **The Editor**  
 
 This tab will allow you to edit previously made flight plans. 
 Many of the same parameters in the creator may be edited here, with exceptions noted below. 
-May parts of the viewer can also be seen. 
+Many parts of the viewer can also be seen. 
+(CURRENTLY DOESN'T WORK WITH DJI FLY MISSIONS)
 
 * **Flight Path**: May be edited using the coordinate data editor table to fine-tune exact latitude and longitude values. 
 You can not click and drag the waypoints
 * **File name**: WIP
 
 
-## Uploading to UAV
-This process is different if using a drone that has DJI Pilot 2 or DJI Fly.
 
-### DJI Pilot 2 
-*(This app comes with the enterprise-tier controllers, such as RC Plus and the RC Pro Smart)*
+## Using a Enterprise Series Drone (DJI Pilot 2 app)
+*(This app comes with the enterprise-tier controllers, such as RC Plus and the RC Pro Smart, and only works with Enterprise series drones)*
 
 This is a relatively simple process. 
 First, export your missions from their saved location and place them onto SD card. 
 Second, plug this SD card into your controller, navigate to your flight plans, and hit the import button in the top right corner. 
 From here navigate through your SD card storage to your flight plans, select all the ones you want, and upload them. 
-They are now ready to be used to fly the UAV.
+They are now ready to be used to fly the drone.
 
-### DJI Fly
+## Using a Commercial Series Drone (DJI Fly)
 *(This method is currently tested for DJI RC 2 controllers. The phone app is not yet tested.)*
 
-As mentioned before, DJI makes it very difficult to upload pre-made flight plans into their cheaper drones that use this software. 
-But it is not impossible. 
+As mentioned before, DJI makes it very difficult to upload pre-made flight plans into their commercial drones by heavily locking down their controllers and removing a native import button. They also dump all mission images into one general folder, making it difficult to distinguish between different flight plans. These issues are circumvented by the *Photo Sorter* and *DJI Fly Transfer* tabs. 
 
-The architecture of the file is a stripped back version of the DJI Pilot 2 code, and can not be simply imploted into the controller since it is a highly locked down version of a android phone. 
-The current workaround is to use an application name MavenBridge ---> [Link to download](https://www.mavenpilot.com/mavenbridge/)
 
-MavenBridge is a free, closed source application that is able to push a flight plan to RC controllers. 
-This is done by overwriting a dummy flight plan that was created on the controller. 
-Thus, before using MavenBridge, you will need to have flight plans already created on your controller for the app to override. 
+### **Photo Sorter**
+This tab allows you to automatically group mission photos into folders based on the times that they were taken. It uses the following inputs:
+* **Source Directory**: The location where the drone's image folder is located. 
+* **Output Directory**: Where you want the separated mission folders to be saved. The folders are saved with the date and time of the first image in the folder. 
+* **Target Date**: What date the sorter will look for when grouping missions. Only photos taken on this date will be sorted. 
+* **Time Gap (minutes)**: How long there needs to be between photos for them to be considered as part of different groups/missions. 
 
-To transfer the files, connect your controller to your computer and open MavenBridge. 
-On the left, you will see the controller missions. 
-These are saved internally in the controller as a long string of numbers and letters that DO NOT coordinate with what they are named on the controller. 
-Keeping straight which flight plans are which is the hardest part of this method. On the top right column you can select the folder icon and navigate to where your missions are saved. 
-Now, select the flight plan to be overwritten on the left and the file to overwrite with on the right. 
-Then press the arrow pointing left at the top of the right column. 
+### **DJI Fly Transfer**
+This tab allows you to transfer DJI Fly missions to a RC 2 controller directly from your computer. It is split into the following sections:
 
-To access your uploaded flight plan, first connect your controller to your drone. 
-Then press the blue "GO" button. 
-After that, the left middle side of the screen will show the waypoint mission button (arrow with a S shapped line behind it). 
-Pressing this will open up a small window on the bottom of the screen. Press the white square button and this will take you into your flight history. 
-Here you can find your flight program under the original name of the dummy flight you overwrote. 
+#### 1. Source Missions
+Allows you to choose the folder where your missions are located from the root "mission" folder, a created subfolder, or another folder on your computer. Choosing a folder will tell you how many missions are DJI_Fly missions and are available to be transferred. 
+
+#### 2. Controller Nests
+Connect your powered on controller directly to your computer via a USB cable and press the scan button. After a few seconds it will tell you how many missions you currently have on the controller, and section 3 will appear. 
+
+If section 3 is not showing, make sure the controller is powered on, and that the preview app (Mac), Android File Transfer tools, and MTP tools are closed and not running. These interfere with the connections.  
+
+#### 3. Assign and Transfer
+
+
+#### The Manual Thumbnail Refresh Checklist
+The controller does not automatically update the thumbnails next to the flight missions. Since 
 
 ## Acknowledgements
 - Luigi Pirelli for providing the photo footprint code base. 
-- Mavenbridge
+- Mavenbridge for inspiring the DJI Fly Transfer Code (No MavenBridge code was used in development).

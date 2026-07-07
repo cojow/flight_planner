@@ -753,25 +753,32 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
     fig, ax = plt.subplots(figsize=(fig_w, fig_h), facecolor='#121212')
     ax.set_facecolor('#121212')
 
+    # The controller's own preview display crops roughly the outer 7% off
+    # every edge of these thumbnails, so all content is kept within a safe
+    # margin well inside that crop zone rather than using the full canvas.
+    MARGIN = 0.10
+
     # --- LEFT: name + flight parameters ---
     # Wrap the name so it doesn't run off the edges. Underscores are treated
     # as spaces here so textwrap can break at word boundaries instead of
     # hard-splitting mid-word (e.g. "Fly_Mission_Flight").
     display_name = mission_name.replace('_', ' ')
-    wrapped_name = "\n".join(textwrap.wrap(display_name, width=12)) or display_name
+    wrapped_name = "\n".join(textwrap.wrap(display_name, width=11)) or display_name
 
-    ax.text(0.27, 0.68, wrapped_name,
+    left_x = MARGIN + (1 - 2 * MARGIN) * 0.28
+
+    ax.text(left_x, 1 - MARGIN - (1 - 2 * MARGIN) * 0.20, wrapped_name,
             color=get_altitude_color(alt_ft),
-            fontsize=42,
+            fontsize=38,
             ha='center',
             va='center',
             weight='bold',
             transform=ax.transAxes)
 
     info_text = f"H: {alt_ft:.0f} ft\nA: {abs(pitch):.0f}°\nOL: {overlap_pct:.0f}%"
-    ax.text(0.27, 0.24, info_text,
+    ax.text(left_x, MARGIN + (1 - 2 * MARGIN) * 0.20, info_text,
             color='#FFFFFF',
-            fontsize=26,
+            fontsize=24,
             ha='center',
             va='center',
             linespacing=1.6,
@@ -779,8 +786,9 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
 
     # --- RIGHT: flight path drawing in a thin bordered box ---
     if coords and len(coords) >= 2:
-        box_size_in = 2.1
-        box_cx_in, box_cy_in = 6.3, 2.35
+        box_size_in = 1.75
+        box_cx_in = fig_w * (MARGIN + (1 - 2 * MARGIN) * 0.74)
+        box_cy_in = fig_h * 0.52
         box_x0_frac = (box_cx_in - box_size_in / 2) / fig_w
         box_y0_frac = (box_cy_in - box_size_in / 2) / fig_h
         box_w_frac = box_size_in / fig_w
@@ -1786,15 +1794,36 @@ if page == 'Creator':
 
 # --- EDITOR MODE ---
 elif page == 'Editor':
+    if "e_browsed_dir" not in st.session_state:
+        st.session_state.e_browsed_dir = None
+
+    def _clear_e_browsed_dir():
+        st.session_state.e_browsed_dir = None
+
     existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
-    col_dir, col_file, col_new = st.columns([2, 3, 1])
-    with col_dir: selected_dir_name = st.selectbox("Select Folder", ["Root (missions/)"] + existing_dirs, key="edit_dir")
-        
-    active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
+    col_dir, col_browse, col_file, col_new = st.columns([2, 0.6, 3, 1])
+    with col_dir:
+        selected_dir_name = st.selectbox("Select Folder", ["Root (missions/)"] + existing_dirs, key="edit_dir", on_change=_clear_e_browsed_dir)
+    with col_browse:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("📂", key="e_btn_browse_dir", help="Browse for a mission directory outside missions/"):
+            picked = pick_folder_dialog("Select Mission Directory")
+            if picked:
+                st.session_state.e_browsed_dir = picked
+                st.rerun()
+
+    if st.session_state.e_browsed_dir:
+        active_dir = st.session_state.e_browsed_dir
+        dir_label = active_dir
+        st.caption(f"📁 Browsing: {active_dir}")
+    else:
+        active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
+        dir_label = selected_dir_name
+
     kmz_files = [f for f in os.listdir(active_dir) if f.endswith(".kmz")]
 
     if not kmz_files:
-        st.warning(f"No missions found in {selected_dir_name}.")
+        st.warning(f"No missions found in {dir_label}.")
     else:
         with col_file: selected_kmz = st.selectbox("Select Mission to Edit", kmz_files)
         with col_new:
@@ -2089,22 +2118,43 @@ elif page == 'Editor':
                         safe_get_float('e_overlap_pct', 70.0), thumbnail_path, coords=final_coords
                     )
 
-                st.success(f"Successfully updated and saved as {final_filename}.kmz in {selected_dir_name}!")
+                st.success(f"Successfully updated and saved as {final_filename}.kmz in {dir_label}!")
             st.divider()
 
 # ==========================================
 # VIEWER MODE
 # ==========================================
 elif page == 'Viewer  |':
+    if "v_browsed_dir" not in st.session_state:
+        st.session_state.v_browsed_dir = None
+
+    def _clear_v_browsed_dir():
+        st.session_state.v_browsed_dir = None
+
     existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
-    col_dir, col_file, col_multi = st.columns([2, 3, 1])
-    with col_dir: selected_dir_name = st.selectbox("Select Folder", ["Root (missions/)"] + existing_dirs, key="view_dir")
-        
-    active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
+    col_dir, col_browse, col_file, col_multi = st.columns([2, 0.6, 3, 1])
+    with col_dir:
+        selected_dir_name = st.selectbox("Select Folder", ["Root (missions/)"] + existing_dirs, key="view_dir", on_change=_clear_v_browsed_dir)
+    with col_browse:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("📂", key="v_btn_browse_dir", help="Browse for a mission directory outside missions/"):
+            picked = pick_folder_dialog("Select Mission Directory")
+            if picked:
+                st.session_state.v_browsed_dir = picked
+                st.rerun()
+
+    if st.session_state.v_browsed_dir:
+        active_dir = st.session_state.v_browsed_dir
+        dir_label = active_dir
+        st.caption(f"📁 Browsing: {active_dir}")
+    else:
+        active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
+        dir_label = selected_dir_name
+
     kmz_files = [f for f in os.listdir(active_dir) if f.endswith(".kmz")]
 
     if not kmz_files:
-        st.warning(f"No missions found in {selected_dir_name}.")
+        st.warning(f"No missions found in {dir_label}.")
     else:
         with col_multi:
             st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
@@ -2404,12 +2454,34 @@ elif page == 'DJI Fly Transfer':
 
     col1, col2 = st.columns(2)
     
+    if "batch_browsed_dir" not in st.session_state:
+        st.session_state.batch_browsed_dir = None
+
+    def _clear_batch_browsed_dir():
+        st.session_state.batch_browsed_dir = None
+
     with col1:
         st.subheader("1. Source Missions")
         existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
-        selected_dir_name = st.selectbox("Select Local Folder", ["Root (missions/)"] + existing_dirs, key="batch_dir")
-        
-        active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
+        dir_col, browse_col = st.columns([5, 1])
+        with dir_col:
+            selected_dir_name = st.selectbox("Select Local Folder", ["Root (missions/)"] + existing_dirs, key="batch_dir", on_change=_clear_batch_browsed_dir)
+        with browse_col:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("📂", key="batch_btn_browse_dir", help="Browse for a mission directory outside missions/"):
+                picked = pick_folder_dialog("Select Mission Directory")
+                if picked:
+                    st.session_state.batch_browsed_dir = picked
+                    st.rerun()
+
+        if st.session_state.batch_browsed_dir:
+            active_dir = st.session_state.batch_browsed_dir
+            dir_label = active_dir
+            st.caption(f"📁 Browsing: {active_dir}")
+        else:
+            active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
+            dir_label = selected_dir_name
+
         # This page is DJI Fly-only (MTP transfer to the RC 2's dummy mission
         # slots doesn't apply to DJI Pilot missions), so Pilot-format .kmz
         # files are filtered out rather than just listed alongside Fly ones.
@@ -2419,13 +2491,13 @@ elif page == 'DJI Fly Transfer':
         ]
 
         if not kmz_files:
-            st.warning(f"No DJI Fly missions found in {selected_dir_name}.")
+            st.warning(f"No DJI Fly missions found in {dir_label}.")
         else:
             st.info(f"Found {len(kmz_files)} missions ready for transfer.")
             
     with col2:
         st.subheader("2. Controller Nests")
-        st.write("Connect the RC 2 via USB, power on, and close Android File Transfer.")
+        st.write("Connect the RC 2 via USB, power on, and close Preview and Android File Transfer.")
         if st.button("🔄 Scan RC 2 & Pull Previews", use_container_width=True):
             with st.spinner("Scanning MTP and downloading thumbnails... (This takes a few seconds)"):
                 st.session_state.rc_nests, st.session_state.preview_id = fetch_controller_nests_and_previews()
