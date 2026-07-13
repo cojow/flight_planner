@@ -739,7 +739,7 @@ def get_altitude_color(alt_ft):
             return color
     return ALTITUDE_COLOR_400_PLUS
 
-def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_filepath, coords=None):
+def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_filepath, coords=None, photo_count=None):
     """
     Generates a 16:9 dark-mode thumbnail: mission name and key flight
     parameters (height, angle, overlap) on the left, so the plan is
@@ -775,7 +775,8 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
             weight='bold',
             transform=ax.transAxes)
 
-    info_text = f"H: {alt_ft:.0f} ft\nA: {abs(pitch):.0f}°\nOL: {overlap_pct:.0f}%"
+    photo_line = f"Photos: {photo_count:.0f}\n" if photo_count is not None else ""
+    info_text = f"{photo_line}H: {alt_ft:.0f} ft\nA: {abs(pitch):.0f}°\nOL: {overlap_pct:.0f}%"
     ax.text(left_x, MARGIN + (1 - 2 * MARGIN) * 0.20, info_text,
             color='#FFFFFF',
             fontsize=24,
@@ -1356,6 +1357,53 @@ def e_sync_geometry():
 # ==========================================
 # DATA EXTRACTION (FOR EDITOR)
 # ==========================================
+def strip_flight_suffix(name):
+    """
+    Strips a previously-applied _Fly/_Pilot platform marker and
+    _HxxAxxOLxx(SOxx) parameter suffix from a mission base name, so it can
+    be cleanly regenerated from the current (possibly edited) altitude/
+    pitch/overlap/platform values on save instead of stacking a second
+    suffix on top of the old one.
+    """
+    return re.sub(r'(?:_(?:Fly|Pilot))?_H\d+A\d+OL\d+(?:SO\d+)?$', '', name)
+
+def dedensify_coords(coords, angle_tol_deg=1.0):
+    """
+    Collapses a DJI Fly-densified polyline (extra waypoints inserted at even
+    spacing along each straight segment, for photo triggering) back down to
+    just the original corner vertices, by keeping only points where the
+    flight bearing actually changes. Densified points along a straight run
+    share an identical bearing (pure lat/lon interpolation), so any real
+    turn - even a shallow one - stands out well above float noise.
+
+    A real corner rarely lands exactly on a dense sample (samples are placed
+    at fixed cumulative-distance steps from the start, not reset at each
+    corner), so the single "cut" segment that crosses it shows a bearing
+    change at both its ends - two adjacent flagged points for one corner.
+    Adjacent flags are merged and represented by one point from the run.
+    """
+    if len(coords) <= 2:
+        return list(coords)
+    bend_idxs = []
+    for i in range(1, len(coords) - 1):
+        b_in = get_bearing(coords[i - 1], coords[i])
+        b_out = get_bearing(coords[i], coords[i + 1])
+        diff = abs((b_in - b_out + 180) % 360 - 180)
+        if diff > angle_tol_deg:
+            bend_idxs.append(i)
+
+    corners = [coords[0]]
+    cluster = []
+    for idx in bend_idxs:
+        if cluster and idx != cluster[-1] + 1:
+            corners.append(coords[cluster[len(cluster) // 2]])
+            cluster = []
+        cluster.append(idx)
+    if cluster:
+        corners.append(coords[cluster[len(cluster) // 2]])
+    corners.append(coords[-1])
+    return corners
+
 def parse_kmz_for_editing(full_path):
     meta = {
         "safe_takeoff_ft": 60.0, "trans_speed_mph": 22.0, "speed_m": 4.11, "speed_mph": 6.0,
@@ -1364,11 +1412,12 @@ def parse_kmz_for_editing(full_path):
         "drone_sub": "0", "payload_sub": "3"
     }
     with zipfile.ZipFile(full_path, 'r') as kmz:
+        is_fly = any(name.startswith('wpmz/') for name in kmz.namelist())
         waylines_file = [name for name in kmz.namelist() if name.endswith('waylines.wpml')][0]
         template_file = [name for name in kmz.namelist() if name.endswith('template.kml')][0]
         root_w = ET.fromstring(kmz.read(waylines_file))
         root_t = ET.fromstring(kmz.read(template_file))
-        
+
         # Check namespaces generically in case of DJI Fly (1.0.2)
         safe_node = root_w.find('.//{*}takeOffSecurityHeight')
         if safe_node is not None: meta['safe_takeoff_ft'] = float(safe_node.text) * M_TO_FT
@@ -1395,18 +1444,32 @@ def parse_kmz_for_editing(full_path):
                 hw_key = k
         meta['hardware_key'] = hw_key
 
+        raw_coords = []
         pms = root_w.findall('.//{*}Placemark')
         for i, pm in enumerate(pms):
             c_node = pm.find('.//{*}coordinates')
             if c_node is not None:
                 c_raw = c_node.text.strip().split(',')
-                meta['coords'].append((float(c_raw[1]), float(c_raw[0]))) 
-            
+                raw_coords.append((float(c_raw[1]), float(c_raw[0])))
+
             if i == 0:
                 alt_node = pm.find('.//{*}executeHeight')
                 if alt_node is not None: meta['alt_ft'] = float(alt_node.text) * M_TO_FT
                 pitch_node = pm.find('.//{*}waypointGimbalHeadingParam/{*}waypointGimbalPitchAngle')
-                if pitch_node is not None: meta['pitch'] = float(pitch_node.text)
+                if pitch_node is not None:
+                    meta['pitch'] = float(pitch_node.text)
+                else:
+                    # DJI Fly waypoints don't carry this tag at all - pitch is
+                    # instead set once via the first waypoint's gimbalRotate
+                    # action (see the is_dji_fly branch in
+                    # generate_native_kmz_contents).
+                    for a in pm.findall('.//{*}action'):
+                        func = a.find('.//{*}actionActuatorFunc')
+                        if func is not None and func.text == 'gimbalRotate':
+                            p_angle = a.find('.//{*}actionActuatorFuncParam/{*}gimbalPitchRotateAngle')
+                            if p_angle is not None and p_angle.text:
+                                meta['pitch'] = float(p_angle.text)
+                            break
 
             for ag in pm.findall('.//{*}actionGroup'):
                 t_type = ag.find('.//{*}actionTriggerType')
@@ -1418,7 +1481,7 @@ def parse_kmz_for_editing(full_path):
                         meta['t_val'] = val * M_TO_FT if meta['trigger_type'] == 'distance' else val
                     start_idx = ag.find('.//{*}actionGroupStartIndex')
                     if start_idx is not None: meta['photo_start_wp'] = int(start_idx.text)
-                
+
                 for a in ag.findall('.//{*}action'):
                     func = a.find('.//{*}actionActuatorFunc')
                     if func is not None and func.text == 'takePhoto':
@@ -1426,6 +1489,24 @@ def parse_kmz_for_editing(full_path):
                         if params is not None:
                             lens = params.find('.//{*}payloadLensIndex')
                             if lens is not None: meta['camera_type'] = lens.text
+
+        if is_fly and len(raw_coords) >= 2:
+            # DJI Fly missions store every densified photo waypoint, not the
+            # original drawn corners, and use a per-waypoint reachPoint
+            # trigger rather than Pilot's single multipleDistance/
+            # multipleTiming action, so trigger_type/t_val/photo_start_wp
+            # never match above. Recover the corners by keeping only points
+            # where the flight direction actually changes (dense points
+            # along one straight segment share an identical bearing), and
+            # recover the photo spacing from the distance between the first
+            # two dense points. Without this, re-saving the mission would
+            # re-densify the already-dense coordinate list on top of itself.
+            meta['trigger_type'] = "distance"
+            meta['t_val'] = get_haversine_dist(raw_coords[0], raw_coords[1]) * M_TO_FT
+            meta['photo_start_wp'] = 0
+            meta['coords'] = dedensify_coords(raw_coords)
+        else:
+            meta['coords'] = raw_coords
     return meta
 
 # ==========================================
@@ -1629,7 +1710,7 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
         <wpml:useGlobalSpeed>1</wpml:useGlobalSpeed>
         <wpml:useGlobalTurnParam>1</wpml:useGlobalTurnParam>
         <wpml:waypointHeadingParam>
-          <wpml:waypointHeadingMode>smoothTransition</wpml:waypointHeadingMode>
+          <wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode>
           <wpml:waypointHeadingAngle>{current_yaw}</wpml:waypointHeadingAngle>
           <wpml:waypointPoiPoint>0.000000,0.000000,0.000000</wpml:waypointPoiPoint>
           <wpml:waypointHeadingPathMode>followBadArc</wpml:waypointHeadingPathMode>
@@ -1644,7 +1725,7 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
         <wpml:executeHeight>{alt_m:.1f}</wpml:executeHeight>
         <wpml:waypointSpeed>{speed_m:.2f}</wpml:waypointSpeed>
         <wpml:waypointHeadingParam>
-          <wpml:waypointHeadingMode>smoothTransition</wpml:waypointHeadingMode>
+          <wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode>
           <wpml:waypointHeadingAngle>{current_yaw}</wpml:waypointHeadingAngle>
           <wpml:waypointPoiPoint>0.000000,0.000000,0.000000</wpml:waypointPoiPoint>
           <wpml:waypointHeadingAngleEnable>1</wpml:waypointHeadingAngleEnable>
@@ -1777,7 +1858,12 @@ if page == 'Creator':
             if is_dji_fly:
                 st.warning("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
 
-        cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"])
+        if is_dji_fly:
+            cam_choice = "RGB Only"
+            st.selectbox("Sensor Mode", ["RGB Only"], disabled=True,
+                         help="DJI Fly aircraft are RGB only - sensor mode is not applicable.")
+        else:
+            cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"])
         camera_type = CAM_VAL_MAP[cam_choice]
         min_photo_interval_sec = 2.0 if "narrow_band" in camera_type else 0.7
 
@@ -2103,7 +2189,7 @@ if page == 'Creator':
                             thumbnail_path = final_filepath.replace('.kmz', '.jpg')
                             generate_name_thumbnail(
                                 prefixed_name, map_alt, map_pitch_val,
-                                map_front_ol, thumbnail_path, coords=path_coords
+                                map_front_ol, thumbnail_path, coords=path_coords, photo_count=est_photos
                             )
 
                         st.success(f"Saved {final_filename}.kmz to {final_dir}/")
@@ -2177,7 +2263,7 @@ if page == 'Creator':
                     thumbnail_path = final_filepath.replace('.kmz', '.jpg')
                     generate_name_thumbnail(
                         prefixed_name, safe_get_float('alt_ft', 50.0), safe_get_float('pitch', -60.0),
-                        safe_get_float('overlap_pct', 70.0), thumbnail_path, coords=coords
+                        safe_get_float('overlap_pct', 70.0), thumbnail_path, coords=coords, photo_count=est_photos
                     )
 
                 st.success(f"Saved {final_filename}.kmz to {final_dir}/")
@@ -2220,10 +2306,9 @@ elif page == 'Editor':
         with col_new:
             st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
             make_new_file = st.checkbox("Make new file?", value=False)
-            
-        edit_name = f"{selected_kmz.replace('.kmz', '')}-edited" if make_new_file else selected_kmz.replace('.kmz', '')
+
         full_path = os.path.join(active_dir, selected_kmz)
-        
+
         if 'editor_kmz' not in st.session_state or st.session_state.editor_kmz != full_path:
             st.session_state.editor_kmz = full_path
             meta = parse_kmz_for_editing(full_path)
@@ -2233,7 +2318,10 @@ elif page == 'Editor':
             if meta['coords']:
                 st.session_state.locked_editor_center = list(meta['coords'][0])
                 st.session_state.editor_center = list(meta['coords'][0])
-            
+
+            clean_base_name = strip_flight_suffix(selected_kmz.replace('.kmz', ''))
+            st.session_state.e_name_input = f"{clean_base_name}-edited" if make_new_file else clean_base_name
+
             st.session_state.e_alt_ft = meta['alt_ft']
             st.session_state.e_pitch = int(meta['pitch'])
             st.session_state.e_trigger_type = meta['trigger_type']
@@ -2260,11 +2348,19 @@ elif page == 'Editor':
                 st.warning("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
             
             current_cam_display = CAM_DISPLAY_MAP.get(meta.get('camera_type', 'visible'), "RGB Only")
-            e_cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"], index=["RGB Only", "Multispectral Only", "RGB + Multispectral"].index(current_cam_display))
+            if e_is_dji_fly:
+                e_cam_choice = "RGB Only"
+                st.selectbox("Sensor Mode", ["RGB Only"], disabled=True,
+                             help="DJI Fly aircraft are RGB only - sensor mode is not applicable.")
+            else:
+                e_cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"], index=["RGB Only", "Multispectral Only", "RGB + Multispectral"].index(current_cam_display))
             e_camera_type = CAM_VAL_MAP[e_cam_choice]
             min_photo_interval_sec = 2.0 if "narrow_band" in e_camera_type else 0.7
             
-            st.info(f"Will save as: {edit_name}.kmz")
+            edit_name = st.text_input("Mission Name", key="e_name_input")
+            e_preview_suffix = f"_H{int(safe_get_float('e_alt_ft', 50.0))}A{int(abs(safe_get_float('e_pitch', -60.0)))}OL{int(safe_get_float('e_overlap_pct', 70.0))}"
+            e_preview_platform = "Fly" if e_is_dji_fly else "Pilot"
+            st.info(f"Will save as: {edit_name}_{e_preview_platform}{e_preview_suffix}.kmz")
             st.header("2. Modify Parameters")
             e_safe = st.number_input("Safe Takeoff Alt (ft)", value=meta['safe_takeoff_ft'])
             e_trans = st.number_input("Takeoff Speed (mph)", value=meta['trans_speed_mph'])
@@ -2510,7 +2606,7 @@ elif page == 'Editor':
                     thumbnail_path = final_filepath.replace('.kmz', '.jpg')
                     generate_name_thumbnail(
                         e_prefixed_name, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0),
-                        safe_get_float('e_overlap_pct', 70.0), thumbnail_path, coords=final_coords
+                        safe_get_float('e_overlap_pct', 70.0), thumbnail_path, coords=final_coords, photo_count=est_photos
                     )
 
                 st.success(f"Successfully updated and saved as {final_filename}.kmz in {dir_label}!")
