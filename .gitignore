@@ -12,3 +12,6 @@ launch.json
 
 #Ignore generated missions
 missions/
+
+#Machine-specific tracker folder preference
+.tracker_config.json

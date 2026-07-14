@@ -108,7 +108,6 @@ FAA restrictions may also be turned on or off with a toggle to the left.
 
 
 ### **The Editor**  
-(CURRENTLY DOESN'T WORK CORRECTLY WITH DJI FLY MISSIONS)
 
 This tab will allow you to edit previously made flight plans. 
 Many of the same parameters in the creator may be edited here, with exceptions noted below. 
@@ -116,7 +115,8 @@ Many parts of the viewer can also be seen.
 
 * **Flight Path**: May be edited using the coordinate data editor table to fine-tune exact latitude and longitude values. 
 You can not click and drag the waypoints
-* **File name**: WIP
+* **Make new file**:May be checked to create a new mission, preserving the old one. 
+* **File name**: The name of the flight may be edited from the sidebar, just like the other parameters. The suffix for the mission will be reapplied to reflect any changes made to the height, pitch, and overlap. 
 
 
 
