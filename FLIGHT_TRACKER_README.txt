@@ -61,14 +61,12 @@ it at your shared folder:
     the "Shared flight folder" box, OR
   - Click "Browse" to pick it visually.
 
-By default only .kmz files directly inside that folder are read. If your
-team organizes flights into subfolders (by date, location, etc.), check
-"Include subdirectories" to also scan every folder inside it.
-
-The tracker remembers these choices (saved in a small local file called
-.tracker_config.json) so you won't need to set them again next time you
-run it on this machine. Each person sets this once, pointing at their own
+The tracker remembers this choice (saved in a small local file called
+.tracker_config.json) so you won't need to set it again next time you run
+it on this machine. Each person sets this once, pointing at their own
 Box Drive's copy of the same shared folder.
+
+The path may be updated as need. 
 
 
 UPLOADING A COMPLETED FLIGHT
@@ -94,10 +92,6 @@ flight's details:
   - Date flown
   - Number of photos
   - Height, gimbal pitch, and overlap
-
-This intentionally leaves out the clutter the main app's Viewer shows
-(individual waypoints, per-photo image footprints, elevation/distance
-labels) - just enough to see where you've flown and glance at the specs.
 
 Check "Show FAA restrictions" (top-right) to overlay the same FAA UAS
 Facility Map (LAANC ceiling) grid the main app's Creator/Editor/Viewer

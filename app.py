@@ -21,10 +21,12 @@ import subprocess
 import shlex
 import time
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
 import textwrap
 import ctypes
 import ctypes.util
 import platform
+import io
 
 
 # --- RASTERIO SAFELOAD ---
@@ -488,6 +490,12 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
     separate `mtp-*` process invocations, which avoids both the slow
     full-device enumeration those tools do and the device's tendency to
     renumber object IDs between separate connections.
+
+    Also garbage-collects the shared map_preview folder of stale thumbnails
+    (this mission's old one, plus any orphaned from since-removed dummy
+    slots) each time it's called, since that shared pool is otherwise never
+    revisited and DJI Fly's own thumbnail cache appears to occasionally
+    mismatch a mission to a neighboring file once it's grown large.
     """
     kill_macos_hijackers()
 
@@ -518,8 +526,34 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
                     deleted_something = True
 
             if map_preview_id:
+                # The shared map_preview folder holds one flat thumbnail per
+                # mission ever pushed, but nothing else in the app ever
+                # revisits it, so files belonging to OTHER dummy mission
+                # slots - including slots that don't even exist as a
+                # waypoint folder anymore - pile up here indefinitely. DJI
+                # Fly's own on-controller thumbnail cache reads from this
+                # same shared folder, and unlike our own exact-uuid lookups
+                # (fetch_controller_nests_and_previews), whatever resolution
+                # logic it uses internally is opaque and appears to
+                # sometimes grab a neighboring file instead of the intended
+                # one - most likely right after a bulk transfer touches many
+                # of these in quick succession. We can't fix DJI Fly's own
+                # logic, so instead shrink the pool of stale candidates it
+                # has to pick from: delete the current mission's old
+                # thumbnail (about to be replaced) plus any orphaned one
+                # left over from a since-removed dummy slot.
+                # Compared case-insensitively since UUID_RE (and the device
+                # itself) don't guarantee consistent casing between a
+                # waypoint folder's own name and the filenames we pushed
+                # against it.
+                valid_uuids = {it["name"].upper() for it in waypoint_children if it["is_folder"] and it["name"] != "map_preview"}
                 for item in session.list_children(map_preview_id):
-                    if not item["is_folder"] and target_uuid in item["name"]:
+                    if item["is_folder"]:
+                        continue
+                    name, ext = os.path.splitext(item["name"])
+                    if ext.lower() != ".jpg" or not UUID_RE.match(name):
+                        continue
+                    if name.upper() == target_uuid.upper() or name.upper() not in valid_uuids:
                         if session.delete_object(item["id"]):
                             deleted_something = True
 
@@ -739,6 +773,60 @@ def get_altitude_color(alt_ft):
             return color
     return ALTITUDE_COLOR_400_PLUS
 
+def latlon_to_global_px(lat, lon, zoom, tile_size=256):
+    """Web Mercator lat/lon -> pixel coordinates on the full world map at a given zoom."""
+    lat_rad = math.radians(max(min(lat, 85.05112878), -85.05112878))
+    n = 2.0 ** zoom
+    x = (lon + 180.0) / 360.0 * n * tile_size
+    y = (1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi) / 2.0 * n * tile_size
+    return x, y
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def fetch_basemap_image(min_lat, min_lon, max_lat, max_lon, target_px=420):
+    """
+    Fetches a Google roadmap tile mosaic cropped exactly to the given
+    lat/lon bounding box, for use as street context behind a thumbnail's
+    flight-path drawing. Returns None (caller falls back to a plain
+    background) if the network is unavailable or the fetch fails.
+    """
+    tile_size = 256
+    lat0 = (min_lat + max_lat) / 2
+    lon0 = (min_lon + max_lon) / 2
+    width_m = get_haversine_dist((lat0, min_lon), (lat0, max_lon))
+    height_m = get_haversine_dist((min_lat, lon0), (max_lat, lon0))
+    span_m = max(width_m, height_m, 1e-6)
+
+    meters_per_px = 156543.03392 * math.cos(math.radians(lat0))
+    zoom = int(round(math.log2(meters_per_px * target_px / span_m)))
+    zoom = max(3, min(20, zoom))
+
+    x0, y0 = latlon_to_global_px(max_lat, min_lon, zoom, tile_size)
+    x1, y1 = latlon_to_global_px(min_lat, max_lon, zoom, tile_size)
+    x0, x1 = sorted((x0, x1))
+    y0, y1 = sorted((y0, y1))
+
+    tile_x0, tile_x1 = int(x0 // tile_size), int(x1 // tile_size)
+    tile_y0, tile_y1 = int(y0 // tile_size), int(y1 // tile_size)
+
+    mosaic = Image.new('RGB', ((tile_x1 - tile_x0 + 1) * tile_size, (tile_y1 - tile_y0 + 1) * tile_size), '#e8e8e0')
+
+    try:
+        for tx in range(tile_x0, tile_x1 + 1):
+            for ty in range(tile_y0, tile_y1 + 1):
+                url = f"https://mt1.google.com/vt/lyrs=m&x={tx}&y={ty}&z={zoom}"
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    tile_img = Image.open(io.BytesIO(response.read())).convert('RGB')
+                mosaic.paste(tile_img, ((tx - tile_x0) * tile_size, (ty - tile_y0) * tile_size))
+    except Exception:
+        return None
+
+    crop_box = (
+        int(x0 - tile_x0 * tile_size), int(y0 - tile_y0 * tile_size),
+        int(x1 - tile_x0 * tile_size), int(y1 - tile_y0 * tile_size),
+    )
+    return mosaic.crop(crop_box)
+
 def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_filepath, coords=None, photo_count=None):
     """
     Generates a 16:9 dark-mode thumbnail: mission name and key flight
@@ -795,11 +883,6 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
         box_w_frac = box_size_in / fig_w
         box_h_frac = box_size_in / fig_h
 
-        ax.add_patch(plt.Rectangle(
-            (box_x0_frac, box_y0_frac), box_w_frac, box_h_frac,
-            transform=ax.transAxes, facecolor='none', edgecolor='#FFFFFF', linewidth=1.2
-        ))
-
         # Project lat/lon to local planar inches (equirectangular approx, fine
         # for small local flight areas) so the drawn shape isn't distorted,
         # then scale/center it to fit inside the box while preserving aspect.
@@ -817,7 +900,32 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
         xs_frac = [(box_cx_in + (x - mid_x) * scale) / fig_w for x in xs_m]
         ys_frac = [(box_cy_in + (y - mid_y) * scale) / fig_h for y in ys_m]
 
-        ax.plot(xs_frac, ys_frac, color='#FFFFFF', linewidth=1.6, transform=ax.transAxes)
+        # The box shows this exact same square region of ground the path was
+        # just scaled into, converted back to lat/lon, so a fetched basemap
+        # tile lines up pixel-for-pixel with the drawn path on top of it.
+        box_extent_m = box_size_in / scale
+        box_min_lon = lons[0] + (mid_x - box_extent_m / 2) / math.cos(math.radians(lat0))
+        box_max_lon = lons[0] + (mid_x + box_extent_m / 2) / math.cos(math.radians(lat0))
+        box_min_lat = lats[0] + (mid_y - box_extent_m / 2)
+        box_max_lat = lats[0] + (mid_y + box_extent_m / 2)
+
+        basemap_img = fetch_basemap_image(box_min_lat, box_min_lon, box_max_lat, box_max_lon)
+        if basemap_img is not None:
+            ax.imshow(
+                basemap_img, extent=[box_x0_frac, box_x0_frac + box_w_frac, box_y0_frac, box_y0_frac + box_h_frac],
+                transform=ax.transAxes, aspect='auto', zorder=1,
+            )
+
+        ax.add_patch(plt.Rectangle(
+            (box_x0_frac, box_y0_frac), box_w_frac, box_h_frac,
+            transform=ax.transAxes, facecolor='none', edgecolor='#FFFFFF', linewidth=1.2, zorder=2,
+        ))
+
+        path_color = get_altitude_color(alt_ft)
+        ax.plot(
+            xs_frac, ys_frac, color=path_color, linewidth=1.8, transform=ax.transAxes, zorder=3,
+            path_effects=[pe.Stroke(linewidth=3.4, foreground='#000000', alpha=0.55), pe.Normal()],
+        )
 
         ax.text(box_x0_frac + box_w_frac / 2, box_y0_frac - 0.07, "flight path",
                 color='#AAAAAA',
@@ -1710,7 +1818,7 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
         <wpml:useGlobalSpeed>1</wpml:useGlobalSpeed>
         <wpml:useGlobalTurnParam>1</wpml:useGlobalTurnParam>
         <wpml:waypointHeadingParam>
-          <wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode>
+          <wpml:waypointHeadingMode>smoothTransition</wpml:waypointHeadingMode>
           <wpml:waypointHeadingAngle>{current_yaw}</wpml:waypointHeadingAngle>
           <wpml:waypointPoiPoint>0.000000,0.000000,0.000000</wpml:waypointPoiPoint>
           <wpml:waypointHeadingPathMode>followBadArc</wpml:waypointHeadingPathMode>
@@ -1725,7 +1833,7 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
         <wpml:executeHeight>{alt_m:.1f}</wpml:executeHeight>
         <wpml:waypointSpeed>{speed_m:.2f}</wpml:waypointSpeed>
         <wpml:waypointHeadingParam>
-          <wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode>
+          <wpml:waypointHeadingMode>smoothTransition</wpml:waypointHeadingMode>
           <wpml:waypointHeadingAngle>{current_yaw}</wpml:waypointHeadingAngle>
           <wpml:waypointPoiPoint>0.000000,0.000000,0.000000</wpml:waypointPoiPoint>
           <wpml:waypointHeadingAngleEnable>1</wpml:waypointHeadingAngleEnable>
