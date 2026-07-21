@@ -4,6 +4,7 @@ Plans can be made for both DJI Pilot 2 (Enterprise) and DJI Fly (Commercial) app
 
 ## Running the Planner Steps
 1. Download this repository.
+- Create a new enviroment. The code uses specific versions of libraries and doesn't work with newer library versions. Python 3.11 and 3.12 is confirmed to work. 
 
 2. Install the dependencies with the following code.
 ```
