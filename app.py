@@ -347,6 +347,307 @@ except Exception:
     MTP_BRIDGE_AVAILABLE = False
 
 # ==========================================
+# WPD BRIDGE (Windows Portable Devices - native Windows MTP access)
+# ==========================================
+# libmtp needs raw USB access to the controller, which on Windows means
+# replacing its driver with WinUSB via Zadig - and that breaks normal
+# Explorer/MTP access to the controller until the driver is swapped back.
+# Windows Portable Devices (WPD) is Windows' own driver stack for MTP
+# devices - the same one Explorer and Android File Transfer already use -
+# so talking to the controller through it needs no driver replacement at
+# all. This mirrors MTPSession's small interface (list_children/
+# find_child/resolve_path/pull_file/delete_object/send_disguised_file) so
+# fetch_controller_nests_and_previews/push_mission_to_nest don't need to
+# know which backend is active.
+#
+# The WPD PROPERTYKEY/GUID constants below (WPD_OBJECT_NAME, WPD_OBJECT_
+# FORMAT, WPD_CONTENT_TYPE_FOLDER, etc.) come from the Windows SDK's
+# PortableDevice.h. They're C-header DEFINE_PROPERTYKEY/DEFINE_GUID
+# constants, not COM interface members, so comtypes can't generate them
+# the way it generates the interfaces themselves - they have to be
+# transcribed by hand.
+#
+# A handful of WPD interface methods are marked plain 'in' in the shipped
+# typelib where the real C++ headers declare '[out]'/'[in,out]'
+# (IPortableDeviceKeyCollection.GetCount/GetAt among them) - a known quirk
+# of WPD's typelib metadata - so those calls below pass an explicit ctypes
+# byref() output slot instead of relying on comtypes' usual automatic
+# in/out marshalling.
+try:
+    import comtypes
+    import comtypes.client as _wpd_cc
+    from ctypes import byref, c_ulong, c_ubyte, c_wchar_p
+
+    _wpd_cc.GetModule("PortableDeviceApi.dll")
+    _wpd_cc.GetModule("PortableDeviceTypes.dll")
+    import comtypes.gen.PortableDeviceApiLib as _WpdApi
+    import comtypes.gen.PortableDeviceTypesLib as _WpdTypes
+    from comtypes.gen._1F001332_1A57_4934_BE31_AFFC99F4EE0A_0_1_0 import (
+        _tagpropertykey as _WPD_PROPERTYKEY,
+        tag_inner_PROPVARIANT as _WPD_PROPVARIANT,
+    )
+
+    def _wpd_key(fmtid, pid):
+        return _WPD_PROPERTYKEY(comtypes.GUID(fmtid), pid)
+
+    _FMTID_WPD_OBJECT = "{EF6B490D-5CD8-437A-AFFC-DA8B60EE4A3C}"
+    _FMTID_WPD_CLIENT = "{204D9F0C-2292-4080-9F42-40664E70F859}"
+    _FMTID_WPD_RESOURCE = "{E81E79BE-34F0-41BF-B53F-F1A06AE87842}"
+
+    WPD_OBJECT_PARENT_ID = _wpd_key(_FMTID_WPD_OBJECT, 3)
+    WPD_OBJECT_NAME = _wpd_key(_FMTID_WPD_OBJECT, 4)
+    WPD_OBJECT_FORMAT = _wpd_key(_FMTID_WPD_OBJECT, 6)
+    WPD_OBJECT_CONTENT_TYPE = _wpd_key(_FMTID_WPD_OBJECT, 7)
+    WPD_OBJECT_SIZE = _wpd_key(_FMTID_WPD_OBJECT, 11)
+    WPD_OBJECT_ORIGINAL_FILE_NAME = _wpd_key(_FMTID_WPD_OBJECT, 12)
+    WPD_CLIENT_NAME_KEY = _wpd_key(_FMTID_WPD_CLIENT, 2)
+    WPD_CLIENT_MAJOR_VERSION = _wpd_key(_FMTID_WPD_CLIENT, 3)
+    WPD_CLIENT_MINOR_VERSION = _wpd_key(_FMTID_WPD_CLIENT, 4)
+    WPD_CLIENT_REVISION = _wpd_key(_FMTID_WPD_CLIENT, 5)
+    WPD_CLIENT_SECURITY_QUALITY_OF_SERVICE = _wpd_key(_FMTID_WPD_CLIENT, 8)
+    WPD_RESOURCE_DEFAULT = _wpd_key(_FMTID_WPD_RESOURCE, 0)
+
+    WPD_CONTENT_TYPE_FOLDER = comtypes.GUID("{27E2E392-A111-48E0-AB0C-E17705A05F85}")
+    # PTP/MTP object-format code 0x3801 ("EXIF/JPEG") - the same format
+    # LIBMTP_FILETYPE_JPEG (used above for the macOS/Linux path) maps to.
+    # Used to disguise the .kmz as a photo so the controller's own MTP
+    # responder accepts it instead of rejecting an unrecognized format.
+    WPD_OBJECT_FORMAT_EXIF = comtypes.GUID("{38010000-AE6C-4804-98BA-C57B46965FE7}")
+    WPD_DEVICE_OBJECT_ID = "DEVICE"
+    _VT_LPWSTR = 31
+    _STGM_READ = 0x00000000
+
+    def _wpd_make_key_collection(keys):
+        coll = _wpd_cc.CreateObject(_WpdTypes.PortableDeviceKeyCollection, interface=_WpdApi.IPortableDeviceKeyCollection)
+        for k in keys:
+            coll.Add(byref(k))
+        return coll
+
+    def _wpd_make_values():
+        return _wpd_cc.CreateObject(_WpdTypes.PortableDeviceValues, interface=_WpdApi.IPortableDeviceValues)
+
+    def _wpd_propvariant_str(value):
+        """Builds a VT_LPWSTR PROPVARIANT wrapping `value`. Returns (propvariant,
+        buffer) - the caller must keep `buffer` alive for as long as the
+        propvariant is in use, since ctypes does not otherwise keep the
+        underlying string alive on its own."""
+        buf = c_wchar_p(value)
+        pv = _WPD_PROPVARIANT()
+        pv.vt = _VT_LPWSTR
+        pv.__MIDL____MIDL_itf_PortableDeviceApi_0001_00000001.pwszVal = buf
+        return pv, buf
+
+    def _wpd_get_string(values, key, default=""):
+        try:
+            return values.GetStringValue(byref(key)) or default
+        except Exception:
+            return default
+
+    def _wpd_get_guid_str(values, key):
+        try:
+            return str(values.GetGuidValue(byref(key)))
+        except Exception:
+            return None
+
+    def _wpd_get_u64(values, key, default=0):
+        try:
+            return values.GetUnsignedLargeIntegerValue(byref(key))
+        except Exception:
+            return default
+
+    class WPDSession:
+        """
+        Windows-native equivalent of MTPSession, built on the Windows
+        Portable Devices COM API instead of libmtp. See the WPD bridge
+        comment above for why this exists as a separate backend.
+
+        Use as a context manager, exactly like MTPSession:
+            with WPDSession() as session:
+                waypoint_id = session.resolve_path(WAYPOINT_PATH)
+                children = session.list_children(waypoint_id)
+        """
+
+        def __init__(self):
+            self.device = None
+            self.content = None
+            self._props = None
+            self._resources = None
+            self._com_initialized = False
+
+        def __enter__(self):
+            try:
+                comtypes.CoInitialize()
+                self._com_initialized = True
+            except OSError:
+                pass  # already initialized on this thread
+
+            mgr = _wpd_cc.CreateObject(_WpdApi.PortableDeviceManager, interface=_WpdApi.IPortableDeviceManager)
+            _, count = mgr.GetDevices(None, 0)
+            if not count:
+                raise MTPBridgeError("No MTP device detected.")
+            arr = (c_wchar_p * count)()
+            arr, count = mgr.GetDevices(arr, count)
+            device_id = arr[0]
+
+            client_info = _wpd_make_values()
+            client_info.SetStringValue(byref(WPD_CLIENT_NAME_KEY), "DJI Flight Planner")
+            client_info.SetUnsignedIntegerValue(byref(WPD_CLIENT_MAJOR_VERSION), 1)
+            client_info.SetUnsignedIntegerValue(byref(WPD_CLIENT_MINOR_VERSION), 0)
+            client_info.SetUnsignedIntegerValue(byref(WPD_CLIENT_REVISION), 0)
+            # SECURITY_IMPERSONATION - the value Microsoft's own WPD samples use.
+            client_info.SetUnsignedIntegerValue(byref(WPD_CLIENT_SECURITY_QUALITY_OF_SERVICE), 2)
+
+            try:
+                self.device = _wpd_cc.CreateObject(_WpdApi.PortableDevice, interface=_WpdApi.IPortableDevice)
+                self.device.Open(device_id, client_info)
+            except Exception as e:
+                raise MTPBridgeError(f"Failed to open WPD device session: {e}")
+            self.content = self.device.Content()
+            self._props = self.content.Properties()
+            self._resources = self.content.Transfer()
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            if self.device:
+                try:
+                    self.device.Close()
+                except Exception:
+                    pass
+                self.device = None
+            if self._com_initialized:
+                comtypes.CoUninitialize()
+            return False
+
+        def list_children(self, parent_id):
+            """Returns the DIRECT children of `parent_id` as a list of dicts
+            with keys id/name/is_folder/size - same shape as MTPSession's."""
+            keys = _wpd_make_key_collection([
+                WPD_OBJECT_NAME, WPD_OBJECT_ORIGINAL_FILE_NAME,
+                WPD_OBJECT_CONTENT_TYPE, WPD_OBJECT_SIZE,
+            ])
+            items = []
+            for object_id in self.content.EnumObjects(0, parent_id, None):
+                values = self._props.GetValues(object_id, keys)
+                name = _wpd_get_string(values, WPD_OBJECT_ORIGINAL_FILE_NAME) or _wpd_get_string(values, WPD_OBJECT_NAME)
+                is_folder = _wpd_get_guid_str(values, WPD_OBJECT_CONTENT_TYPE) == str(WPD_CONTENT_TYPE_FOLDER)
+                items.append({
+                    "id": object_id, "name": name, "is_folder": is_folder,
+                    "size": _wpd_get_u64(values, WPD_OBJECT_SIZE),
+                })
+            return items
+
+        def find_child(self, parent_id, name):
+            """Returns the id of the direct child of `parent_id` named `name`, or None."""
+            for item in self.list_children(parent_id):
+                if item["name"] == name:
+                    return item["id"]
+            return None
+
+        def resolve_path(self, names, start_id=WPD_DEVICE_OBJECT_ID):
+            """Walks a chain of folder names, returning the final folder's id, or None if any segment is missing."""
+            current = start_id
+            for name in names:
+                current = self.find_child(current, name)
+                if current is None:
+                    return None
+            return current
+
+        def pull_file(self, file_id, local_path):
+            try:
+                buf_size, stream = self._resources.GetStream(file_id, byref(WPD_RESOURCE_DEFAULT), _STGM_READ, 0)
+                chunk = max(buf_size, 65536)
+                with open(local_path, "wb") as out:
+                    while True:
+                        data, read = stream.RemoteRead(chunk)
+                        if not read:
+                            break
+                        out.write(bytes(data)[:read])
+                        if read < chunk:
+                            break
+                return True
+            except Exception:
+                return False
+
+        def delete_object(self, object_id):
+            try:
+                pv, _buf = _wpd_propvariant_str(object_id)
+                coll = _wpd_cc.CreateObject(
+                    _WpdTypes.PortableDevicePropVariantCollection,
+                    interface=_WpdApi.IPortableDevicePropVariantCollection,
+                )
+                coll.Add(byref(pv))
+                self.content.Delete(0, coll, None)
+                return True
+            except Exception:
+                return False
+
+        def send_disguised_file(self, local_path, remote_filename, parent_folder_id,
+                                 disguise_filetype=None, storage_id=0):
+            """
+            Pushes the bytes of `local_path`, landing inside
+            `parent_folder_id` and named exactly `remote_filename`, with
+            WPD_OBJECT_FORMAT set to `disguise_filetype` (default: the
+            EXIF/JPEG format code) rather than left to whatever WPD would
+            infer from the extension - matches MTPSession's disguise
+            behavior for non-media files like .kmz. `storage_id` is
+            accepted for call-signature compatibility with MTPSession but
+            unused here (the destination is fully implied by
+            `parent_folder_id`). Returns (success: bool, message: str).
+            """
+            if not os.path.exists(local_path):
+                return False, f"Local file not found: {local_path}"
+            disguise_format = disguise_filetype if disguise_filetype is not None else WPD_OBJECT_FORMAT_EXIF
+
+            values = _wpd_make_values()
+            values.SetStringValue(byref(WPD_OBJECT_PARENT_ID), parent_folder_id)
+            values.SetStringValue(byref(WPD_OBJECT_NAME), remote_filename)
+            values.SetStringValue(byref(WPD_OBJECT_ORIGINAL_FILE_NAME), remote_filename)
+            values.SetUnsignedLargeIntegerValue(byref(WPD_OBJECT_SIZE), os.path.getsize(local_path))
+            values.SetGuidValue(byref(WPD_OBJECT_FORMAT), disguise_format)
+
+            try:
+                stream, buf_size, _cookie = self.content.CreateObjectWithPropertiesAndData(values, 0, None)
+            except Exception as e:
+                return False, f"Send failed: {e}"
+
+            chunk = max(buf_size, 65536)
+            try:
+                with open(local_path, "rb") as f:
+                    while True:
+                        data = f.read(chunk)
+                        if not data:
+                            break
+                        written = 0
+                        while written < len(data):
+                            buf = (c_ubyte * (len(data) - written)).from_buffer_copy(data[written:])
+                            n = stream.RemoteWrite(buf, len(buf))
+                            if not n:
+                                raise MTPBridgeError("Write stalled (0 bytes written)")
+                            written += n
+                stream.Commit(0)
+                return True, f"Sent as '{remote_filename}'"
+            except Exception as e:
+                return False, f"Send failed: {e}"
+
+    WPD_BRIDGE_AVAILABLE = True
+except Exception:
+    WPD_BRIDGE_AVAILABLE = False
+
+
+def get_mtp_session_class():
+    """
+    Picks the MTP backend for the current OS: WPDSession (native Windows
+    Portable Devices - no driver replacement needed) on Windows, MTPSession
+    (libmtp) elsewhere. Returns None if the platform's backend isn't
+    available, in which case the DJI Fly Transfer tab's MTP features are
+    disabled but the rest of the app is unaffected.
+    """
+    if platform.system() == "Windows":
+        return WPDSession if WPD_BRIDGE_AVAILABLE else None
+    return MTPSession if MTP_BRIDGE_AVAILABLE else None
+
+
+# ==========================================
 # CONSTANTS & SETUP
 # ==========================================
 FT_TO_M = 0.3048
@@ -399,7 +700,9 @@ HARDWARE_MAP = {
 # ==========================================
 
 def kill_macos_hijackers():
-    """Kills macOS background apps that lock the MTP port."""
+    """Kills macOS background apps that lock the MTP port. No-op on other platforms."""
+    if platform.system() != "Darwin":
+        return
     subprocess.run("killall -9 PTPCamera", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     subprocess.run("killall -9 'Image Capture Extension'", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     time.sleep(1)
@@ -421,11 +724,12 @@ def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbn
     kill_macos_hijackers()
     os.makedirs(cache_dir, exist_ok=True)
 
-    if not MTP_BRIDGE_AVAILABLE:
+    SessionClass = get_mtp_session_class()
+    if SessionClass is None:
         return {}, None
 
     try:
-        with MTPSession() as session:
+        with SessionClass() as session:
             waypoint_id = session.resolve_path(WAYPOINT_PATH)
             if waypoint_id is None:
                 return {}, None
@@ -499,11 +803,12 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
     """
     kill_macos_hijackers()
 
-    if not MTP_BRIDGE_AVAILABLE:
-        return False, "MTP bridge unavailable (is libmtp installed?)."
+    SessionClass = get_mtp_session_class()
+    if SessionClass is None:
+        return False, "MTP bridge unavailable (Windows: is comtypes installed? Other platforms: is libmtp installed?)."
 
     try:
-        with MTPSession() as session:
+        with SessionClass() as session:
             waypoint_id = session.resolve_path(WAYPOINT_PATH)
             if waypoint_id is None:
                 return False, "Could not locate the 'waypoint' folder on the controller."
@@ -573,12 +878,14 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
             # on-device filename AND the PTP object-format code from the LOCAL
             # file's name/extension, ignoring the desired remote name entirely,
             # and this controller's MTP responder rejects the generic/unknown
-            # format code that .kmz files fall into. MTPSession talks to
-            # libmtp directly so the destination filename and format code
-            # can be set independently (the KMZ is sent disguised as a
+            # format code that .kmz files fall into. Both session backends
+            # (MTPSession/libmtp on macOS/Linux, WPDSession on Windows) talk
+            # to the device directly so the destination filename and format
+            # code can be set independently (the KMZ is sent disguised as a
             # JPEG to get past the rejection; the JPG thumbnail is already
             # a real JPEG so no disguise is needed).
-            subprocess.run(f'xattr -c {shlex.quote(local_kmz_path)}', shell=True)
+            if platform.system() == "Darwin":
+                subprocess.run(f'xattr -c {shlex.quote(local_kmz_path)}', shell=True)
             remote_kmz = f"{target_uuid}.kmz"
             ok_kmz, msg_kmz = session.send_disguised_file(local_kmz_path, remote_kmz, target_folder_id)
             if not ok_kmz:
@@ -586,7 +893,8 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
 
             local_jpg_path = local_kmz_path.replace('.kmz', '.jpg')
             if os.path.exists(local_jpg_path):
-                subprocess.run(f'xattr -c {shlex.quote(local_jpg_path)}', shell=True)
+                if platform.system() == "Darwin":
+                    subprocess.run(f'xattr -c {shlex.quote(local_jpg_path)}', shell=True)
                 remote_jpg = f"{target_uuid}.jpg"
 
                 session.send_disguised_file(local_jpg_path, remote_jpg, target_folder_id)

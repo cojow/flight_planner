@@ -9,6 +9,7 @@ launch.json
 .claude
 *__pycache__
 *diagnostic_tests
+*.venv
 
 #Ignore generated missions
 missions/
