@@ -30,7 +30,7 @@ Once the app is running, the map will be centered at BYU in Provo, Utah.
 From here, you can scroll out, click, and drag the map to your desired location. 
 You may also use the search bar to jump to a specific address or latitude and longitude. 
 
-On the leftside of the map, select the "Draw a Polyline" icon at the top of the shapes.
+In the top left corner of the map, select the "Draw a Polyline" icon (line button).
 Use the tool to draw your flight plan.
 Clicking will create a waypoint. 
 Once you have your route finished, click on the last waypoint to finish the line. 
@@ -43,6 +43,7 @@ The app will give you the option to make more, but doing so will mess with the f
 #### Setting Parameters 
 Before or after the line is created, the parameters need to be set. 
 These are divided into 5 categories: Hardware, Global Config, waypoint settings, triggers and speed, and visuals. 
+All parameters can be found in the scrollable sidebar to the left of the map.
 Each is explained in the following sections.
 
 ##### Hardware & Payload
@@ -52,7 +53,7 @@ This option allows for very complicated flight plans with hundreds of photos.
 DJI Fly is the stripped-back version used in the commercial series which doesn't easily support flight plans. 
 It is limited to 99 photos per flight plan due to each photo having to be a waypoint. 
 *Know which program your drone takes before planning your flight*
-* Sensor mode (RGB, Multispectral, or both for 3M - DJI Pilot 2 only)
+* **Sensor mode**: Only applies to Multispectral/enterprise drones. Allows for you to choose between taking RGB, Multispectral, or both kinds of photos per shot. Disabled for DJI Fly flights. 
 
 ##### Global Config
 * **File name**: Assign a memorable name. It will also dynamically append the altitude, gimbal pitch, and overlap to the final saved filename as "_HxxAxxOLxx", as well as whether the mission is designed for DJI Pilot 2 or DJI Fly.

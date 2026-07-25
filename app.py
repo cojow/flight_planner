@@ -1783,6 +1783,89 @@ def strip_flight_suffix(name):
     """
     return re.sub(r'(?:_(?:Fly|Pilot))?_H\d+A\d+OL\d+(?:SO\d+)?$', '', name)
 
+def line_intersection_local(p_a, bearing_a, p_b, bearing_b):
+    """
+    Intersects two infinite lines - each given as a point plus a compass
+    bearing - using a local-planar approximation valid for small areas.
+    Returns None if the lines are within ~15 degrees of parallel: the true
+    crossing point races toward infinity as two lines approach parallel,
+    so ordinary coordinate rounding noise (KMZ coordinates are serialized
+    to 8 decimal places) gets amplified by orders of magnitude there.
+    """
+    lat0, lon0 = p_a
+    lon_scale = 111320.0 * math.cos(math.radians(lat0)) or 1e-9
+
+    def to_local(lat, lon):
+        return ((lon - lon0) * lon_scale, (lat - lat0) * 110540.0)
+
+    def from_local(x, y):
+        return (lat0 + y / 110540.0, lon0 + x / lon_scale)
+
+    a1 = to_local(*p_a)
+    d1 = (math.sin(math.radians(bearing_a)), math.cos(math.radians(bearing_a)))
+    a2 = to_local(*p_b)
+    d2 = (math.sin(math.radians(bearing_b)), math.cos(math.radians(bearing_b)))
+
+    denom = d1[0] * d2[1] - d1[1] * d2[0]
+    if abs(denom) < 0.26:
+        return None
+
+    t = ((a2[0] - a1[0]) * d2[1] - (a2[1] - a1[1]) * d2[0]) / denom
+    return from_local(a1[0] + t * d1[0], a1[1] + t * d1[1])
+
+def recover_corners(coords, cluster_start, cluster_end):
+    """
+    Recovers the true original waypoint(s) hidden inside one bend cluster
+    of a DJI Fly-densified path, as a list of 1 or 2 points to splice in
+    where the cluster was - far more precise than approximating with
+    whichever nearby dense sample happens to be closest (samples land at
+    fixed cumulative-distance steps from the path's start, not reset at
+    each corner, so the nearest one can be off by up to half a photo
+    interval). This matters because a mission opened for editing and
+    re-saved with only a parameter changed (e.g. altitude) re-derives its
+    dense waypoints from whatever gets recovered here.
+
+    Most turns - including shallow ones, and regardless of how many dense
+    samples happen to land in the transition zone - are a single true
+    vertex, so the direct intersection of the incoming and outgoing legs
+    is tried first and used whenever numerically stable (see
+    line_intersection_local).
+
+    That direct intersection is only unstable for a near U-turn, where
+    the two legs nearly reverse each other - which is also exactly the
+    case where a "there and back" survey leg genuinely does turn via two
+    close but distinct waypoints (the true end of the outbound run and
+    true start of the inbound run), not one sharp vertex. When the
+    cluster spans 2+ flagged points, it captures the short connecting
+    chord between those two points, with its own clean bearing distinct
+    from both legs; recovering each true corner as the (stable)
+    intersection of that chord with its neighboring leg handles this case
+    both accurately and precisely.
+
+    Returns None if there isn't a clean straight run of at least 2 points
+    on both sides (a corner too close to the path's very start/end).
+    """
+    if cluster_start - 2 < 0 or cluster_end + 2 >= len(coords):
+        return None
+
+    leg_in_bearing = get_bearing(coords[cluster_start - 2], coords[cluster_start - 1])
+    leg_out_bearing = get_bearing(coords[cluster_end + 1], coords[cluster_end + 2])
+
+    corner = line_intersection_local(coords[cluster_start - 1], leg_in_bearing, coords[cluster_end + 1], leg_out_bearing)
+    if corner is not None:
+        return [corner]
+
+    if cluster_end > cluster_start:
+        chord_bearing = get_bearing(coords[cluster_start], coords[cluster_end])
+        corner_a = line_intersection_local(coords[cluster_start - 1], leg_in_bearing, coords[cluster_start], chord_bearing)
+        corner_b = line_intersection_local(coords[cluster_end], chord_bearing, coords[cluster_end + 1], leg_out_bearing)
+        if corner_a is not None and corner_b is not None:
+            return [corner_a, corner_b]
+
+    lat0, lon0 = coords[cluster_start - 1]
+    lat1, lon1 = coords[cluster_end + 1]
+    return [((lat0 + lat1) / 2, (lon0 + lon1) / 2)]
+
 def dedensify_coords(coords, angle_tol_deg=1.0):
     """
     Collapses a DJI Fly-densified polyline (extra waypoints inserted at even
@@ -1796,7 +1879,8 @@ def dedensify_coords(coords, angle_tol_deg=1.0):
     at fixed cumulative-distance steps from the start, not reset at each
     corner), so the single "cut" segment that crosses it shows a bearing
     change at both its ends - two adjacent flagged points for one corner.
-    Adjacent flags are merged and represented by one point from the run.
+    Adjacent flags are merged into one cluster, and each cluster's true
+    waypoint(s) are recovered via recover_corners.
     """
     if len(coords) <= 2:
         return list(coords)
@@ -1808,15 +1892,20 @@ def dedensify_coords(coords, angle_tol_deg=1.0):
         if diff > angle_tol_deg:
             bend_idxs.append(i)
 
-    corners = [coords[0]]
+    clusters = []
     cluster = []
     for idx in bend_idxs:
         if cluster and idx != cluster[-1] + 1:
-            corners.append(coords[cluster[len(cluster) // 2]])
+            clusters.append(cluster)
             cluster = []
         cluster.append(idx)
     if cluster:
-        corners.append(coords[cluster[len(cluster) // 2]])
+        clusters.append(cluster)
+
+    corners = [coords[0]]
+    for cluster in clusters:
+        recovered = recover_corners(coords, cluster[0], cluster[-1])
+        corners.extend(recovered if recovered is not None else [coords[cluster[len(cluster) // 2]]])
     corners.append(coords[-1])
     return corners
 
@@ -3025,6 +3114,19 @@ elif page == 'Editor':
                         safe_get_float('e_overlap_pct', 70.0), thumbnail_path, coords=final_coords, photo_count=est_photos
                     )
 
+                    # "Make new file?" unchecked means overwrite, not "keep both" -
+                    # since the suffix is re-derived from the current alt/pitch/
+                    # overlap (and the name is freely editable), the save path
+                    # very often differs from the source file even when the user
+                    # never intended to keep a second copy. Remove the original
+                    # (and its paired thumbnail) once the new save has succeeded.
+                    if not make_new_file and final_filepath != full_path:
+                        if os.path.exists(full_path):
+                            os.remove(full_path)
+                        old_thumbnail = full_path.replace('.kmz', '.jpg')
+                        if os.path.exists(old_thumbnail):
+                            os.remove(old_thumbnail)
+
                 st.success(f"Successfully updated and saved as {final_filename}.kmz in {dir_label}!")
             st.divider()
 
@@ -3413,6 +3515,7 @@ elif page == 'DJI Fly Transfer':
             st.success(f"Found {len(st.session_state.rc_nests)} authorized mission slots.")
         else:
             st.warning("No controller connected, or no dummy missions found.")
+            st.warning("If controller is connected, make sure preview app is closed.")
 
     st.write("---")
     
