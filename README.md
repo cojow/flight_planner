@@ -1,6 +1,7 @@
 # Flight_planner
 An open-source flight planning software for DJI drones. 
 Plans can be made for both DJI Pilot 2 (Enterprise) and DJI Fly (Commercial) apps.
+Works on both Windows and Mac OS.
 
 ## Running the Planner Steps
 1. Download this repository.
