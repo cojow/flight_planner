@@ -27,6 +27,17 @@ import ctypes
 import ctypes.util
 import platform
 import io
+import logging
+
+# DJI Fly Transfer diagnostics: fetch_controller_nests_and_previews() and
+# push_mission_to_nest() used to swallow every exception and fall back to a
+# generic "no controller found" message, which made a real bug (wrong
+# device, a broken MTP/WPD call, etc.) indistinguishable from the user
+# simply not having the controller plugged in. This logger prints the real
+# exception - with traceback - to the terminal streamlit was launched from,
+# so a genuine failure is diagnosable instead of silently disabled.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger("dji_fly_transfer")
 
 
 # --- RASTERIO SAFELOAD ---
@@ -344,6 +355,12 @@ try:
 
     MTP_BRIDGE_AVAILABLE = True
 except Exception:
+    # DEBUG, not a warning: this bridge is expected to fail to load on
+    # Windows (no libmtp there) and on any Mac/Linux box without libmtp
+    # installed - by design, WPDSession covers Windows instead. Only worth
+    # surfacing loudly if it turns out to be the platform's only option;
+    # get_mtp_session_class() does that check and logs accordingly.
+    logger.debug("libmtp MTP bridge unavailable", exc_info=True)
     MTP_BRIDGE_AVAILABLE = False
 
 # ==========================================
@@ -455,6 +472,86 @@ try:
         except Exception:
             return default
 
+    # IPortableDeviceManager::GetDevices() - the "normal" way to list WPD
+    # devices - has been observed to report zero devices for controllers
+    # that Explorer can browse into just fine over the same WPD stack (seen
+    # live against an RC 2: Explorer opens and lists its folders normally
+    # while GetDevices() returns an empty list moments later, even after
+    # RefreshDeviceList() and a re-plug). Enumerating the WPD device
+    # interface directly via SetupAPI - the same low-level mechanism the
+    # shell itself relies on to notice a portable device's arrival - finds
+    # the device reliably where GetDevices() doesn't, so that's used here
+    # instead. GetDevices() is kept as a fallback in case some other
+    # machine/device combination hits the reverse case.
+    _GUID_DEVINTERFACE_WPD = "{6AC27878-A6FA-4155-BA85-F98F491D4F33}"
+    _DIGCF_PRESENT = 0x2
+    _DIGCF_DEVICEINTERFACE = 0x10
+    from ctypes import wintypes as _wintypes
+
+    class _WPD_GUID(ctypes.Structure):
+        _fields_ = [("Data1", _wintypes.DWORD), ("Data2", _wintypes.WORD), ("Data3", _wintypes.WORD),
+                    ("Data4", _wintypes.BYTE * 8)]
+
+    class _SP_DEVICE_INTERFACE_DATA(ctypes.Structure):
+        _fields_ = [("cbSize", _wintypes.DWORD), ("InterfaceClassGuid", _WPD_GUID),
+                    ("Flags", _wintypes.DWORD), ("Reserved", ctypes.POINTER(_wintypes.ULONG))]
+
+    def _wpd_load_setupapi():
+        """
+        Loads setupapi.dll as its own independent handle rather than via the
+        process-wide, name-cached `ctypes.windll.setupapi` proxy. Streamlit
+        re-execs this whole module on every rerun (every widget interaction,
+        not just app startup), which redefines the ctypes Structure types
+        below fresh each time and re-points argtypes/restype at them - fine
+        on its own, but `ctypes.windll.setupapi` is a single object shared
+        process-wide, so a rerun's thread reassigning its argtypes while a
+        still-finishing previous rerun's thread is mid-call on the same
+        function is a genuine data race (observed as a hard segfault, not a
+        Python exception, when driven through the live Streamlit app - a
+        standalone single-threaded reproduction of the same calls didn't
+        crash, which pointed at cross-rerun/thread shared state rather than
+        the calls themselves). A fresh WinDLL instance per call keeps each
+        rerun's argtypes/restype configuration local to that call.
+        """
+        dll = ctypes.WinDLL("setupapi.dll")
+        dll.SetupDiGetClassDevsW.restype = _wintypes.HANDLE
+        dll.SetupDiGetClassDevsW.argtypes = [ctypes.POINTER(_WPD_GUID), _wintypes.LPCWSTR, _wintypes.HANDLE, _wintypes.DWORD]
+        dll.SetupDiEnumDeviceInterfaces.restype = _wintypes.BOOL
+        dll.SetupDiEnumDeviceInterfaces.argtypes = [_wintypes.HANDLE, ctypes.c_void_p, ctypes.POINTER(_WPD_GUID), _wintypes.DWORD, ctypes.POINTER(_SP_DEVICE_INTERFACE_DATA)]
+        dll.SetupDiGetDeviceInterfaceDetailW.restype = _wintypes.BOOL
+        dll.SetupDiGetDeviceInterfaceDetailW.argtypes = [_wintypes.HANDLE, ctypes.POINTER(_SP_DEVICE_INTERFACE_DATA), ctypes.c_void_p, _wintypes.DWORD, ctypes.POINTER(_wintypes.DWORD), ctypes.c_void_p]
+        dll.SetupDiDestroyDeviceInfoList.restype = _wintypes.BOOL
+        dll.SetupDiDestroyDeviceInfoList.argtypes = [_wintypes.HANDLE]
+        return dll
+
+    def _wpd_enumerate_device_paths():
+        """Returns the device paths of all present WPD-class device interfaces,
+        found via SetupAPI directly rather than IPortableDeviceManager."""
+        _setupapi = _wpd_load_setupapi()
+        guid = _WPD_GUID()
+        ctypes.memmove(byref(guid), byref(comtypes.GUID(_GUID_DEVINTERFACE_WPD)), ctypes.sizeof(_WPD_GUID))
+        h_dev_info = _setupapi.SetupDiGetClassDevsW(byref(guid), None, None, _DIGCF_PRESENT | _DIGCF_DEVICEINTERFACE)
+        if not h_dev_info or h_dev_info == _wintypes.HANDLE(-1).value:
+            return []
+        paths = []
+        try:
+            index = 0
+            while True:
+                if_data = _SP_DEVICE_INTERFACE_DATA()
+                if_data.cbSize = ctypes.sizeof(_SP_DEVICE_INTERFACE_DATA)
+                if not _setupapi.SetupDiEnumDeviceInterfaces(h_dev_info, None, byref(guid), index, byref(if_data)):
+                    break
+                required = _wintypes.DWORD(0)
+                _setupapi.SetupDiGetDeviceInterfaceDetailW(h_dev_info, byref(if_data), None, 0, byref(required), None)
+                buf = ctypes.create_string_buffer(required.value)
+                ctypes.cast(buf, ctypes.POINTER(_wintypes.DWORD))[0] = 8  # cbSize of the detail struct header
+                if _setupapi.SetupDiGetDeviceInterfaceDetailW(h_dev_info, byref(if_data), buf, required, byref(required), None):
+                    paths.append(ctypes.wstring_at(ctypes.addressof(buf) + 4))
+                index += 1
+        finally:
+            _setupapi.SetupDiDestroyDeviceInfoList(h_dev_info)
+        return paths
+
     class WPDSession:
         """
         Windows-native equivalent of MTPSession, built on the Windows
@@ -481,13 +578,20 @@ try:
             except OSError:
                 pass  # already initialized on this thread
 
-            mgr = _wpd_cc.CreateObject(_WpdApi.PortableDeviceManager, interface=_WpdApi.IPortableDeviceManager)
-            _, count = mgr.GetDevices(None, 0)
-            if not count:
+            device_paths = _wpd_enumerate_device_paths()
+            if not device_paths:
+                # Fall back to IPortableDeviceManager in case some other
+                # machine/device combination needs it instead (see the
+                # comment above _wpd_enumerate_device_paths).
+                mgr = _wpd_cc.CreateObject(_WpdApi.PortableDeviceManager, interface=_WpdApi.IPortableDeviceManager)
+                _, count = mgr.GetDevices(None, 0)
+                if count:
+                    arr = (c_wchar_p * count)()
+                    arr, count = mgr.GetDevices(arr, count)
+                    device_paths = [arr[0]]
+            if not device_paths:
                 raise MTPBridgeError("No MTP device detected.")
-            arr = (c_wchar_p * count)()
-            arr, count = mgr.GetDevices(arr, count)
-            device_id = arr[0]
+            device_id = device_paths[0]
 
             client_info = _wpd_make_values()
             client_info.SetStringValue(byref(WPD_CLIENT_NAME_KEY), "DJI Flight Planner")
@@ -514,6 +618,22 @@ try:
                 except Exception:
                     pass
                 self.device = None
+            # self.content/_props/_resources hold comtypes COM interface
+            # pointers whose Release() calls fire from Python's refcounting
+            # GC whenever these attributes are dropped - which, left to
+            # attribute lookup + normal `with` block teardown, happens AFTER
+            # this method returns and the WPDSession instance itself goes
+            # out of scope. That's after CoUninitialize() below has already
+            # torn down this thread's COM apartment, and releasing a COM
+            # pointer post-uninitialize is undefined behavior - reproduced
+            # live as a hard segfault when driven through Streamlit (whose
+            # script-runner thread model made the GC timing land squarely in
+            # that window; a plain single-threaded reproduction didn't hit
+            # it). Clearing them here forces those Release() calls while the
+            # apartment is still valid, before CoUninitialize() runs.
+            self._resources = None
+            self._props = None
+            self.content = None
             if self._com_initialized:
                 comtypes.CoUninitialize()
             return False
@@ -544,12 +664,34 @@ try:
             return None
 
         def resolve_path(self, names, start_id=WPD_DEVICE_OBJECT_ID):
-            """Walks a chain of folder names, returning the final folder's id, or None if any segment is missing."""
+            """
+            Walks a chain of folder names, returning the final folder's id,
+            or None if any segment is missing.
+
+            WPD inserts an extra storage node (e.g. "Internal shared
+            storage") between the device root and its actual filesystem
+            root that MTP/libmtp doesn't surface as a real folder - the
+            same WAYPOINT_PATH that resolves directly against MTPSession's
+            root would 404 on its very first segment ("Android") here.
+            This storage node's WPD_OBJECT_CONTENT_TYPE is
+            WPD_CONTENT_TYPE_STORAGE_CONTAINER, not WPD_CONTENT_TYPE_FOLDER,
+            so it comes back from list_children() with is_folder=False even
+            though it enumerates children exactly like a folder does - so
+            this can't filter on is_folder to find it. If a segment isn't
+            found as a direct child but the current level holds exactly one
+            object overall, that's this storage node - transparently
+            descend into it and retry the same segment once.
+            """
             current = start_id
             for name in names:
-                current = self.find_child(current, name)
-                if current is None:
+                found = self.find_child(current, name)
+                if found is None:
+                    siblings = self.list_children(current)
+                    if len(siblings) == 1:
+                        found = self.find_child(siblings[0]["id"], name)
+                if found is None:
                     return None
+                current = found
             return current
 
         def pull_file(self, file_id, local_path):
@@ -631,6 +773,10 @@ try:
 
     WPD_BRIDGE_AVAILABLE = True
 except Exception:
+    # DEBUG, not a warning: expected to fail on Mac/Linux (no comtypes
+    # there) - by design, MTPSession covers those instead. See the same
+    # note on the MTP bridge's except block above.
+    logger.debug("WPD bridge unavailable", exc_info=True)
     WPD_BRIDGE_AVAILABLE = False
 
 
@@ -643,7 +789,11 @@ def get_mtp_session_class():
     disabled but the rest of the app is unaffected.
     """
     if platform.system() == "Windows":
+        if not WPD_BRIDGE_AVAILABLE:
+            logger.warning("WPD bridge unavailable on Windows - DJI Fly Transfer's MTP features are disabled. Run with logging.DEBUG (or see the WPD bridge's except block) for the underlying import/setup error.")
         return WPDSession if WPD_BRIDGE_AVAILABLE else None
+    if not MTP_BRIDGE_AVAILABLE:
+        logger.warning("libmtp MTP bridge unavailable on %s - DJI Fly Transfer's MTP features are disabled. Is libmtp installed?", platform.system())
     return MTPSession if MTP_BRIDGE_AVAILABLE else None
 
 
@@ -720,19 +870,29 @@ def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbn
     Scans the RC 2 for dummy missions and caches our custom hijacked
     thumbnails, using targeted per-folder libmtp queries instead of a
     full-device file enumeration.
+
+    Returns (nests, preview_id, error). error is None for the everyday
+    "nothing to report" cases (no bridge on this platform's install, no
+    device plugged in, DJI Fly's folder layout not found) - those aren't
+    bugs and the caller's existing "no controller connected" messaging
+    already covers them. It's a message string only when something
+    unexpected happened, so the caller can show specifically what broke
+    instead of the same generic message for both cases; either way, the
+    real exception (if any) is always logged with a traceback so it's
+    visible in the terminal streamlit was launched from.
     """
     kill_macos_hijackers()
     os.makedirs(cache_dir, exist_ok=True)
 
     SessionClass = get_mtp_session_class()
     if SessionClass is None:
-        return {}, None
+        return {}, None, "MTP bridge unavailable on this platform (Windows: is comtypes installed? Other platforms: is libmtp installed? - see the terminal log for the underlying error)."
 
     try:
         with SessionClass() as session:
             waypoint_id = session.resolve_path(WAYPOINT_PATH)
             if waypoint_id is None:
-                return {}, None
+                return {}, None, None
 
             waypoint_children = session.list_children(waypoint_id)
             nests = {}
@@ -746,7 +906,7 @@ def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbn
                     nests[item["name"].upper()] = item["id"]
 
             if not pull_thumbnails or not preview_id:
-                return nests, preview_id
+                return nests, preview_id, None
 
             preview_children = session.list_children(preview_id)
 
@@ -779,11 +939,20 @@ def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbn
                 if file_id_to_pull is not None:
                     session.pull_file(file_id_to_pull, cache_path)
 
-            return nests, preview_id
-    except MTPBridgeError:
-        return {}, None
-    except Exception:
-        return {}, None
+            return nests, preview_id, None
+    except MTPBridgeError as e:
+        # "No MTP device detected" is the everyday case (nothing plugged
+        # in, or not yet recognized) - not worth alarming the user with.
+        # Anything else from this exception type (e.g. a device WAS found
+        # but opening a session with it failed) is unexpected.
+        message = str(e)
+        if "No MTP device detected" in message:
+            return {}, None, None
+        logger.warning("MTP/WPD bridge error while scanning controller: %s", message)
+        return {}, None, message
+    except Exception as e:
+        logger.exception("Unexpected error while scanning controller for DJI Fly missions")
+        return {}, None, f"{type(e).__name__}: {e}"
 
 def push_mission_to_nest(local_kmz_path, target_uuid):
     """
@@ -905,7 +1074,17 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
 
             return True, "Success. (Reminder: Ensure DJI Fly is closed on the RC 2 before opening!)"
     except MTPBridgeError as e:
+        logger.warning("MTP/WPD bridge error while pushing %s to nest %s: %s", local_kmz_path, target_uuid, e)
         return False, str(e)
+    except Exception as e:
+        # Previously uncaught here - any exception besides MTPBridgeError
+        # (a COM error mid-transfer, a bad file path, etc.) would propagate
+        # out of this function and crash the whole Streamlit script run,
+        # aborting a batch transfer with no clean error for the remaining
+        # missions in the batch. Logged with a traceback and reported back
+        # as a normal failure instead.
+        logger.exception("Unexpected error while pushing %s to nest %s", local_kmz_path, target_uuid)
+        return False, f"Unexpected error: {type(e).__name__}: {e}"
 
 def export_mission_kmz_from_strings(template_kml_str, waylines_wpml_str, output_kmz_path, is_dji_fly):
     """
@@ -3460,6 +3639,7 @@ elif page == 'DJI Fly Transfer':
     if 'rc_nests' not in st.session_state:
         st.session_state.rc_nests = {}
         st.session_state.preview_id = None
+        st.session_state.rc_scan_error = None
 
     col1, col2 = st.columns(2)
     
@@ -3509,10 +3689,13 @@ elif page == 'DJI Fly Transfer':
         st.write("Connect the RC 2 via USB, power on, and close Preview and Android File Transfer.")
         if st.button("🔄 Scan RC 2 & Pull Previews", use_container_width=True):
             with st.spinner("Scanning MTP and downloading thumbnails... (This takes a few seconds)"):
-                st.session_state.rc_nests, st.session_state.preview_id = fetch_controller_nests_and_previews()
-                
+                st.session_state.rc_nests, st.session_state.preview_id, st.session_state.rc_scan_error = fetch_controller_nests_and_previews()
+
         if st.session_state.rc_nests:
             st.success(f"Found {len(st.session_state.rc_nests)} authorized mission slots.")
+        elif st.session_state.rc_scan_error:
+            st.error(f"Scan failed: {st.session_state.rc_scan_error}")
+            st.caption("Full details (with traceback) were printed to the terminal streamlit was launched from.")
         else:
             st.warning("No controller connected, or no dummy missions found.")
             st.warning("If controller is connected, make sure preview app is closed.")
