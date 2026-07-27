@@ -5,18 +5,21 @@ Works on both Windows and Mac OS.
 
 ## Running the Planner Steps
 1. Download this repository.
-- Create a new enviroment. The code uses specific versions of libraries and doesn't work with newer library versions. Python 3.11 and 3.12 is confirmed to work. 
+- Create a new environment. The code uses specific library versions and doesn't work with newer ones. Python 3.11 and 3.12 is confirmed to work. 
 
 2. Install the dependencies with the following code.
 ```
-pip install -r requirements.txt
+pip install -r path/to/requirements.txt
 ```
+> **Note**: Update path/to/requirements.txt
+> with the relative path to the folder.
 
 3. Launch the app by running the following in the terminal. 
 The app will open in your web browser using a local host.
 ```
-streamlit run app.py
+streamlit run path/to/app.py
 ```
+
 
 ## Using the Flight Planner
 The mission planner is split into three creation tabs: the *Creator*, the *Editor*, and the *Viewer*. 
@@ -71,7 +74,7 @@ This is very important if your flight plan is not over a flat surface.
 * **Side**: The aircraft takes pictures to the left or right side of the path.
 
 ##### Trigger & Speed
-* **Start Photos at Waypoint Index** :Delays the camera trigger until a designated waypoint is reached. 
+* **Start Photos at Waypoint Index**: Delays the camera trigger until a designated waypoint is reached. 
 0 defaults to the first waypoint.
 * **Type of photo interval**: By distance or time. Unless you have a specific reason to choose one or the other, use distance. 
 * **Interval length (ft/sec)**: Space/time between photoes.

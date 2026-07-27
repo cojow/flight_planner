@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import os
 import json
@@ -2505,8 +2506,194 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
 # UI NAVIGATION & LOGIC
 # ==========================================
 st.set_page_config(layout="wide", page_title="Flight Planner")
-st.title("DJI Flight Planner")
-page = st.radio("Navigation", ["Creator", "Editor", "Viewer  |", "Photo Sorter", "DJI Fly Transfer"], horizontal=True, label_visibility="collapsed")
+
+
+# Streamlit's default expanded sidebar is ~300px; used to align the map area
+# to start right where it ends. Locked below (not user-resizable) so this
+# stays accurate.
+SIDEBAR_W = "300px"
+# Rendered height of the merged title+tabs header bar below - kept as a
+# constant (rather than measured) so the main content's padding-top and the
+# map area's fixed top offset always agree with each other.
+HEADER_H = "72px"
+
+st.markdown(f"""
+<style>
+html, body {{ overflow: hidden !important; }}
+[data-testid="stAppViewContainer"] {{ overflow: hidden !important; }}
+[data-testid="stHeader"] {{ background: transparent !important; height: 2.2rem !important; }}
+[data-testid="stMainBlockContainer"] {{ padding: 0 !important; padding-top: {HEADER_H} !important; margin: 0 !important; max-width: 100% !important; }}
+[data-testid="stMain"] {{ overflow-y: auto !important; height: 100vh !important; }}
+[data-testid="stMainBlockContainer"] > div:first-child {{ gap: 0 !important; }}
+footer {{ display: none !important; }}
+
+/* Lock the sidebar to a fixed width - no user resize handle. */
+[data-testid="stSidebar"] {{ width: {SIDEBAR_W} !important; min-width: {SIDEBAR_W} !important; max-width: {SIDEBAR_W} !important; }}
+[data-testid="stSidebarResizeHandle"] {{ display: none !important; pointer-events: none !important; }}
+[data-testid="stSidebar"] div[style*="cursor: col-resize"] {{ display: none !important; pointer-events: none !important; }}
+
+/* Single unified header bar: title + tabs together, spanning the full
+   width (over both the sidebar and the content area) so there's no seam. */
+.st-key-app_header {{
+    position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important;
+    z-index: 1000010 !important; display: flex !important; align-items: center !important;
+    gap: 16px !important; padding: 10px 16px !important;
+    background: rgba(255,255,255,0.96) !important; backdrop-filter: blur(6px);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.18) !important;
+}}
+.st-key-app_header [data-testid="stHorizontalBlock"] {{ width: 100% !important; align-items: center !important; }}
+.st-key-app_header h1 {{ font-size: 1.6rem !important; margin: 0 !important; white-space: nowrap !important; }}
+
+/* Map area: the region below the header and right of the sidebar. Its top
+   bar (folder/save selectors + flight summary) and the map itself are flex
+   children so the map always exactly fills whatever space the top bar
+   doesn't use - bounded by the sidebar (left), header (top), and the
+   screen edges (right/bottom). */
+.st-key-map_area {{
+    position: fixed !important; top: {HEADER_H} !important; left: {SIDEBAR_W} !important; right: 0 !important; bottom: 0 !important;
+    width: auto !important; height: auto !important;
+    display: flex !important; flex-direction: column !important; overflow: hidden !important;
+}}
+/* Streamlit inserts an extra stLayoutWrapper div between map_area and each
+   keyed container below it - that wrapper, not top_bar/map_layer directly,
+   is the actual flex item, so the grow/shrink rules must target it via
+   :has() rather than the .st-key-* class itself. */
+.st-key-map_area > div:has(> .st-key-top_bar) {{ flex: 0 0 auto !important; width: 100% !important; }}
+.st-key-map_area > div:has(> .st-key-map_layer) {{ flex: 1 1 auto !important; min-height: 0 !important; height: auto !important; width: 100% !important; overflow: hidden !important; }}
+
+.st-key-map_area .st-key-top_bar {{
+    position: static !important; width: 100% !important;
+    display: flex !important; align-items: flex-start !important;
+    gap: 24px !important; flex-wrap: wrap !important; padding: 12px 16px !important;
+    background: rgba(255,255,255,0.95) !important; backdrop-filter: blur(6px);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.18) !important;
+    z-index: 1 !important;
+}}
+.st-key-map_area .st-key-top_bar [data-testid="stHorizontalBlock"] {{ flex: 1 1 auto !important; }}
+
+/* Cascade a definite height down through every wrapper div between
+   map_layer and the actual map iframe, so `height: 100%` resolves at each
+   level instead of the iframe falling back to its 150px UA default. */
+.st-key-map_area .st-key-map_layer {{ position: relative !important; height: 100% !important; width: 100% !important; display: flex !important; flex-direction: column !important; }}
+.st-key-map_area .st-key-map_layer [data-testid="stElementContainer"]:has(iframe) {{ flex: 1 1 auto !important; min-height: 0 !important; height: auto !important; }}
+.st-key-map_area .st-key-map_layer [data-testid="stElementContainer"]:has(iframe) > div {{ height: 100% !important; }}
+.st-key-map_area .st-key-map_layer iframe {{ width: 100% !important; height: 100% !important; display: block !important; }}
+
+/* Notices (warnings/info/captions/status text) float over the top of the
+   map, translucent, and never affect the map's size - taken out of the flex
+   flow and anchored to map_layer's own top edge, which the flex layout
+   above already positions correctly below top_bar regardless of its
+   height. */
+.st-key-map_area .st-key-map_layer > div:has(> .st-key-notices) {{
+    position: absolute !important; top: 0 !important; left: 0 !important; right: 0 !important;
+    height: auto !important; width: auto !important; z-index: 5 !important; pointer-events: none !important;
+}}
+.st-key-notices {{
+    background: rgba(255,255,255,0.82) !important; backdrop-filter: blur(3px);
+    padding: 4px 16px !important; width: 100% !important; box-sizing: border-box !important;
+}}
+.st-key-notices > div {{ width: 100% !important; }}
+.st-key-notices [data-testid="stElementContainer"] {{ margin-bottom: 2px !important; width: 100% !important; }}
+.st-key-notices [data-testid="stMarkdownContainer"] {{ width: 100% !important; }}
+.st-key-notices .stAlert {{ padding: 4px 12px !important; width: 100% !important; box-sizing: border-box !important; }}
+
+/* Small floating badge, bottom-right of the screen, for the map's current
+   center coordinates - out of the way of both the search toggle (bottom
+   left) and the notices banner (top of map). */
+.st-key-screen_center {{
+    position: fixed !important; bottom: 16px !important; right: 16px !important; z-index: 1000006 !important;
+    width: fit-content !important; max-width: calc(100vw - {SIDEBAR_W} - 32px) !important;
+    background: rgba(255,255,255,0.82) !important; backdrop-filter: blur(3px);
+    padding: 4px 12px !important; border-radius: 8px !important; box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+}}
+.st-key-screen_center [data-testid="stMarkdownContainer"] div {{ font-size: 0.8rem !important; color: #31333F !important; white-space: nowrap !important; }}
+
+/* Floating side panel for secondary content (e.g. the Editor's coordinate
+   table) - right-aligned so it never collides with the sidebar. */
+.st-key-side_panel {{
+    position: fixed !important; top: 245px !important; right: 16px !important; z-index: 1000004 !important;
+    width: 400px !important; max-height: calc(100vh - 265px) !important; overflow-y: auto !important;
+    background: rgba(255,255,255,0.95) !important; backdrop-filter: blur(6px);
+    border-radius: 12px !important; padding: 14px 16px !important;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.22) !important;
+}}
+
+/* Small "jump to address" toggle button, bottom-left of the map, next to
+   the sidebar. */
+.st-key-search_toggle {{
+    position: fixed !important; bottom: 16px !important; left: calc({SIDEBAR_W} + 16px) !important;
+    z-index: 1000006 !important;
+}}
+
+/* The address-search bar itself, opened by that button - spans the bottom
+   of the screen (over the map, not the sidebar). */
+.st-key-search_bar {{
+    position: fixed !important; bottom: 0 !important; left: {SIDEBAR_W} !important; right: 0 !important;
+    width: auto !important;
+    z-index: 1000007 !important; padding: 14px 16px !important;
+    background: rgba(255,255,255,0.96) !important; backdrop-filter: blur(6px);
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.18) !important;
+}}
+
+/* Photo Sorter / DJI Fly Transfer have no map, so they scroll normally, but
+   without any of the above panels' compact sizing their headings read as
+   noticeably larger than the rest of the app - this brings them in line. */
+.st-key-page_body {{ padding: 16px 24px !important; }}
+.st-key-page_body h1 {{ font-size: 1.5rem !important; }}
+.st-key-page_body h2, .st-key-page_body h3 {{ font-size: 1.15rem !important; }}
+</style>
+""", unsafe_allow_html=True)
+
+# Auto-close the address search bar on an outside click. st.markdown() can't
+# run <script> tags (React strips them from dangerouslySetInnerHTML), so this
+# goes through components.html's iframe instead, reaching back into the main
+# page via window.parent.document - a same-origin, well-established pattern
+# for this exact limitation. Guarded so the (page-persistent) listener is
+# only ever bound once, no matter how many times Streamlit reruns the script.
+components.html("""
+<script>
+(function() {
+    const doc = window.parent.document;
+    const win = window.parent;
+    if (doc.__searchOutsideClickBound) return;
+    doc.__searchOutsideClickBound = true;
+
+    function closeIfOpen() {
+        const bar = doc.querySelector('.st-key-search_bar');
+        if (!bar) return;
+        const toggle = doc.querySelector('.st-key-search_toggle');
+        const btn = toggle ? toggle.querySelector('button') : null;
+        if (btn) btn.click();
+    }
+
+    doc.addEventListener('click', function(e) {
+        const bar = doc.querySelector('.st-key-search_bar');
+        if (!bar) return;
+        const toggle = doc.querySelector('.st-key-search_toggle');
+        if (bar.contains(e.target) || (toggle && toggle.contains(e.target))) return;
+        closeIfOpen();
+    }, true);
+
+    // A click on the map lands inside its iframe, which never bubbles a
+    // click event out to this parent document - the only signal the parent
+    // gets is that focus moved into an <iframe>, surfaced as a window blur.
+    win.addEventListener('blur', function() {
+        setTimeout(function() {
+            if (doc.activeElement && doc.activeElement.tagName === 'IFRAME') {
+                closeIfOpen();
+            }
+        }, 0);
+    });
+})();
+</script>
+""", height=0)
+
+with st.container(key="app_header"):
+    header_title_col, header_tabs_col = st.columns([1, 4], gap="medium")
+    with header_title_col:
+        st.markdown("# DJI Flight Planner")
+    with header_tabs_col:
+        page = st.radio("Navigation", ["Creator", "Editor", "Viewer  |", "Photo Sorter", "DJI Fly Transfer"], horizontal=True, label_visibility="collapsed")
 
 # --- CREATOR MODE ---
 if page == 'Creator':
@@ -2664,6 +2851,13 @@ if page == 'Creator':
                 st.session_state.locked_creator_center = st.session_state.creator_center
                 st.rerun()
 
+    map_area = st.container(key="map_area")
+    top_bar = map_area.container(key="top_bar")
+    map_layer = map_area.container(key="map_layer")
+    notices = map_layer.container(key="notices")
+    if "c_show_search" not in st.session_state:
+        st.session_state.c_show_search = False
+
     # --- SAVE DESTINATION (always visible; does not reset when the drawn line changes) ---
     if "c_browsed_dir" not in st.session_state:
         st.session_state.c_browsed_dir = None
@@ -2682,127 +2876,140 @@ if page == 'Creator':
             else:
                 st.warning("Enter a folder name.")
 
-    existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
-    save_col1, save_col2, save_col3, save_col4 = st.columns([3, 3, 0.6, 0.6])
-    with save_col1:
-        save_option = st.selectbox(
-            "Save Destination", ["Root (missions/)"] + existing_dirs,
-            key="c_save_option", on_change=_clear_c_browsed_dir
-        )
-    with save_col2:
-        new_dir_name = st.text_input("New Folder Name", "New_Project", key="c_new_dir_name") if save_option == "Create New Folder..." else ""
-    with save_col3:
-        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        if st.button("📂", key="c_btn_browse_dir", help="Browse for a save directory", use_container_width=True):
-            picked = pick_folder_dialog("Select Save Directory")
-            if picked:
-                st.session_state.c_browsed_dir = picked
-                st.rerun()
-    with save_col4:
-        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        if st.button("＋", key="c_btn_new_folder_popup", help="Create a new empty folder", use_container_width=True):
-            _c_new_folder_dialog()
-
-    if st.session_state.c_browsed_dir:
-        st.caption(f"📁 Saving to custom path: {st.session_state.c_browsed_dir}")
-    st.write("---")
-
-    top_hud = st.container()
-    m = folium.Map(location=st.session_state.locked_creator_center, zoom_start=17, tiles=None)
-    folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m)
-
-    if c_elev_source == "Local GeoTIFF" and c_tif_path and c_show_bounds:
-        bounds = get_tif_bounds_wgs84(c_tif_path)
-        if bounds:
-            folium.Rectangle(
-                bounds=bounds, color="#ff8800", weight=3, fill=True, fill_opacity=0.1,
-                tooltip="Active GeoTIFF Boundary"
-            ).add_to(m)
-
-    if show_faa_airspace:
-        uasfm_data = fetch_uasfm_data(st.session_state.locked_creator_center[0], st.session_state.locked_creator_center[1])
-        if uasfm_data and uasfm_data.get("features"):
-            folium.GeoJson(
-                uasfm_data, name="FAA UASFM Grids",
-                style_function=lambda x: {'fillColor': 'red' if x['properties'].get('CEILING', x['properties'].get('ceiling', -1)) == 0 else 'green', 'color': 'black', 'weight': 1, 'fillOpacity': 0.15},
-                tooltip=folium.GeoJsonTooltip(fields=['CEILING'], aliases=['Max LAANC Altitude (ft):'])
-            ).add_to(m)
-        elif uasfm_data: 
-            folium.Marker(st.session_state.locked_creator_center, icon=DivIcon(html='<div style="font-size: 12px; color: grey;">No FAA restrictions at this location</div>')).add_to(m)
-
-    if mapping_mode:
-        # Area-drawing tools only; the flight line is computed, not drawn.
-        Draw(export=False, draw_options={
-            'polyline': False,
-            'polygon': {'shapeOptions': {'color': '#00ffff', 'weight': 3}},
-            'rectangle': {'shapeOptions': {'color': '#00ffff', 'weight': 3}},
-            'circle': False, 'circlemarker': False, 'marker': False,
-        }).add_to(m)
-
-        # Overlay the stored boundary and its computed serpentine path. The
-        # boundary lives in our own session key (not just the Draw layer)
-        # because re-rendering the map wipes client-side drawings.
-        if st.session_state.map_boundary:
-            try:
-                preview_path, _preview_info = generate_mapping_flight_path(
-                    st.session_state.map_boundary,
-                    safe_get_float('map_alt_ft', 100.0), safe_get_float('map_pitch', -90.0),
-                    safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0),
-                    side
-                )
-                folium.Polygon(
-                    locations=st.session_state.map_boundary, color="#00ffff", weight=3,
-                    fill=True, fill_opacity=0.08, tooltip="Area to map"
-                ).add_to(m)
-                if preview_path:
-                    path_line = folium.PolyLine(preview_path, color="#ff8800", weight=3, tooltip="Computed flight path").add_to(m)
-                    PolyLineTextPath(path_line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '18', 'fill-opacity': '0.4'}).add_to(m)
-            except Exception:
-                pass
-    else:
-        # Polyline only - a corridor mission is a single flight line, so the
-        # area/point tools are disabled to avoid drawing shapes this mode
-        # can't consume.
-        Draw(export=False, draw_options={
-            'polyline': {'shapeOptions': {'color': '#00ffff', 'weight': 5}},
-            'polygon': False, 'rectangle': False,
-            'circle': False, 'circlemarker': False, 'marker': False,
-        }).add_to(m)
-
-    map_data = st_folium(m, width=1200, height=600, key="creator_map")
-
-    if mapping_mode:
-        detected_boundary = extract_polygon_from_map_data(map_data)
-        if detected_boundary and detected_boundary != st.session_state.map_boundary:
-            st.session_state.map_boundary = detected_boundary
-            st.rerun()  # re-render immediately so the computed path overlay appears
-
-    if map_data and map_data.get("center"):
-        st.session_state.creator_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
-        st.session_state.creator_zoom = map_data["zoom"]
-        c_lat, c_lon = st.session_state.creator_center
-        st.info(f"Current Screen Center: {c_lat:.6f}, {c_lon:.6f} (Click 'Update' in sidebar to update restrictions in this area)")
-
-    search_col1, search_col2 = st.columns([3, 1])
-    with search_col1:
-        c_search_query = st.text_input("Jump to Address or Lat/Lon", key="c_search_input", placeholder="e.g. 1600 Pennsylvania Ave or 40.25, -111.64")
-    with search_col2:
-        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        if st.button("Search Location", key="c_btn_search", use_container_width=True):
-            with st.spinner("Searching..."):
-                new_coords = get_coords_from_search(c_search_query)
-                if new_coords:
-                    st.session_state.locked_creator_center = new_coords
-                    st.session_state.creator_center = new_coords
+    save_half, hud_half = top_bar.columns([2, 3])
+    with save_half:
+        existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
+        save_col1, save_col2, save_col3 = st.columns([5, 0.7, 0.7])
+        with save_col1:
+            save_option = st.selectbox(
+                "Save Destination", ["Root (missions/)"] + existing_dirs,
+                key="c_save_option", on_change=_clear_c_browsed_dir
+            )
+        with save_col2:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("📂", key="c_btn_browse_dir", help="Browse for a save directory", use_container_width=True):
+                picked = pick_folder_dialog("Select Save Directory")
+                if picked:
+                    st.session_state.c_browsed_dir = picked
                     st.rerun()
-                else:
-                    st.error("Location not found. Try a different query.")
-    st.write("---")
+        with save_col3:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("＋", key="c_btn_new_folder_popup", help="Create a new empty folder", use_container_width=True):
+                _c_new_folder_dialog()
+
+        # Vestigial: "Create New Folder..." isn't an actual option in the
+        # selectbox above (new folders go through the popup dialog instead),
+        # so this never renders - kept only because final_dir below still
+        # references new_dir_name for that dead branch.
+        new_dir_name = st.text_input("New Folder Name", "New_Project", key="c_new_dir_name") if save_option == "Create New Folder..." else ""
+
+        if st.session_state.c_browsed_dir:
+            notices.caption(f"📁 Saving to custom path: {st.session_state.c_browsed_dir}")
+
+    top_hud = hud_half.container()
+    with map_layer:
+        m = folium.Map(location=st.session_state.locked_creator_center, zoom_start=17, tiles=None)
+        folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m)
+
+        if c_elev_source == "Local GeoTIFF" and c_tif_path and c_show_bounds:
+            bounds = get_tif_bounds_wgs84(c_tif_path)
+            if bounds:
+                folium.Rectangle(
+                    bounds=bounds, color="#ff8800", weight=3, fill=True, fill_opacity=0.1,
+                    tooltip="Active GeoTIFF Boundary"
+                ).add_to(m)
+
+        if show_faa_airspace:
+            uasfm_data = fetch_uasfm_data(st.session_state.locked_creator_center[0], st.session_state.locked_creator_center[1])
+            if uasfm_data and uasfm_data.get("features"):
+                folium.GeoJson(
+                    uasfm_data, name="FAA UASFM Grids",
+                    style_function=lambda x: {'fillColor': 'red' if x['properties'].get('CEILING', x['properties'].get('ceiling', -1)) == 0 else 'green', 'color': 'black', 'weight': 1, 'fillOpacity': 0.15},
+                    tooltip=folium.GeoJsonTooltip(fields=['CEILING'], aliases=['Max LAANC Altitude (ft):'])
+                ).add_to(m)
+            elif uasfm_data: 
+                folium.Marker(st.session_state.locked_creator_center, icon=DivIcon(html='<div style="font-size: 12px; color: grey;">No FAA restrictions at this location</div>')).add_to(m)
+
+        if mapping_mode:
+            # Area-drawing tools only; the flight line is computed, not drawn.
+            Draw(export=False, draw_options={
+                'polyline': False,
+                'polygon': {'shapeOptions': {'color': '#00ffff', 'weight': 3}},
+                'rectangle': {'shapeOptions': {'color': '#00ffff', 'weight': 3}},
+                'circle': False, 'circlemarker': False, 'marker': False,
+            }).add_to(m)
+
+            # Overlay the stored boundary and its computed serpentine path. The
+            # boundary lives in our own session key (not just the Draw layer)
+            # because re-rendering the map wipes client-side drawings.
+            if st.session_state.map_boundary:
+                try:
+                    preview_path, _preview_info = generate_mapping_flight_path(
+                        st.session_state.map_boundary,
+                        safe_get_float('map_alt_ft', 100.0), safe_get_float('map_pitch', -90.0),
+                        safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0),
+                        side
+                    )
+                    folium.Polygon(
+                        locations=st.session_state.map_boundary, color="#00ffff", weight=3,
+                        fill=True, fill_opacity=0.08, tooltip="Area to map"
+                    ).add_to(m)
+                    if preview_path:
+                        path_line = folium.PolyLine(preview_path, color="#ff8800", weight=3, tooltip="Computed flight path").add_to(m)
+                        PolyLineTextPath(path_line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '18', 'fill-opacity': '0.4'}).add_to(m)
+                except Exception:
+                    pass
+        else:
+            # Polyline only - a corridor mission is a single flight line, so the
+            # area/point tools are disabled to avoid drawing shapes this mode
+            # can't consume.
+            Draw(export=False, draw_options={
+                'polyline': {'shapeOptions': {'color': '#00ffff', 'weight': 5}},
+                'polygon': False, 'rectangle': False,
+                'circle': False, 'circlemarker': False, 'marker': False,
+            }).add_to(m)
+
+        map_data = st_folium(m, use_container_width=True, height=1000, key="creator_map")
+
+        if mapping_mode:
+            detected_boundary = extract_polygon_from_map_data(map_data)
+            if detected_boundary and detected_boundary != st.session_state.map_boundary:
+                st.session_state.map_boundary = detected_boundary
+                st.rerun()  # re-render immediately so the computed path overlay appears
+
+        if map_data and map_data.get("center"):
+            st.session_state.creator_center = [map_data["center"]["lat"], map_data["center"]["lng"]]
+            st.session_state.creator_zoom = map_data["zoom"]
+            c_lat, c_lon = st.session_state.creator_center
+            with st.container(key="screen_center"):
+                st.markdown(f"<div>Current Screen Center: {c_lat:.6f}, {c_lon:.6f} (Click 'Update' in sidebar to update restrictions in this area)</div>", unsafe_allow_html=True)
+
+    with st.container(key="search_toggle"):
+        if st.button("📍 Jump to Address", key="c_search_toggle_btn"):
+            st.session_state.c_show_search = not st.session_state.c_show_search
+
+    if st.session_state.c_show_search:
+        with st.container(key="search_bar"):
+            search_col1, search_col2 = st.columns([5, 1])
+            with search_col1:
+                c_search_query = st.text_input("Jump to Address or Lat/Lon", key="c_search_input", placeholder="e.g. 1600 Pennsylvania Ave or 40.25, -111.64")
+            with search_col2:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("Search Location", key="c_btn_search", use_container_width=True):
+                    with st.spinner("Searching..."):
+                        new_coords = get_coords_from_search(c_search_query)
+                        if new_coords:
+                            st.session_state.locked_creator_center = new_coords
+                            st.session_state.creator_center = new_coords
+                            st.session_state.c_show_search = False
+                            st.rerun()
+                        else:
+                            st.error("Location not found. Try a different query.")
 
     if mapping_mode:
         boundary = st.session_state.map_boundary
         if not boundary:
-            st.info("Draw the area you want to map using the polygon or rectangle tool on the map. "
+            notices.info("Draw the area you want to map using the polygon or rectangle tool on the map. "
                     "The flight path will be calculated automatically and may extend outside the boundary.")
         else:
             map_alt = safe_get_float('map_alt_ft', 100.0)
@@ -2821,7 +3028,7 @@ if page == 'Creator':
 
                 save_disabled = False
                 if est_photos > 99:
-                    st.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please shrink the area, raise the altitude, or reduce the overlaps.")
+                    notices.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please shrink the area, raise the altitude, or reduce the overlaps.")
                     save_disabled = True
 
                 with top_hud:
@@ -2835,10 +3042,9 @@ if page == 'Creator':
                         if st.button("🗑 Clear boundary", use_container_width=True, key="btn_clear_boundary"):
                             st.session_state.map_boundary = None
                             st.rerun()
-                    st.write("---")
 
                     if save_clicked:
-                        with st.spinner("Calculating terrain elevations and generating KMZ..."):
+                        with notices.spinner("Calculating terrain elevations and generating KMZ..."):
                             cfg = {
                                 "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_mph": trans_speed_mph,
                                 "alt_ft": map_alt, "pitch": map_pitch_val, "side": side,
@@ -2876,8 +3082,7 @@ if page == 'Creator':
                                 map_front_ol, thumbnail_path, coords=path_coords, photo_count=est_photos
                             )
 
-                        st.success(f"Saved {final_filename}.kmz to {final_dir}/")
-                    st.divider()
+                        notices.success(f"Saved {final_filename}.kmz to {final_dir}/")
 
     elif map_data.get("all_drawings") and any(
         d.get('geometry', {}).get('type') == 'LineString' for d in map_data["all_drawings"]
@@ -2898,7 +3103,7 @@ if page == 'Creator':
 
         save_disabled = False
         if is_dji_fly and est_photos > 99:
-            st.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please reduce your distance or increase the interval.")
+            notices.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please reduce your distance or increase the interval.")
             save_disabled = True
 
         with top_hud:
@@ -2908,10 +3113,9 @@ if page == 'Creator':
             with c3:
                 st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
                 save_clicked = st.button("Save & Generate KMZ", use_container_width=True, disabled=save_disabled)
-            st.write("---")
 
             if save_clicked:
-                with st.spinner("Calculating terrain elevations and generating KMZ..."):
+                with notices.spinner("Calculating terrain elevations and generating KMZ..."):
                     cfg = {
                         "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_mph": trans_speed_mph,
                         "alt_ft": safe_get_float('alt_ft', 50.0), "pitch": safe_get_float('pitch', -60.0), "side": side,
@@ -2950,8 +3154,7 @@ if page == 'Creator':
                         safe_get_float('overlap_pct', 70.0), thumbnail_path, coords=coords, photo_count=est_photos
                     )
 
-                st.success(f"Saved {final_filename}.kmz to {final_dir}/")
-            st.divider()
+                notices.success(f"Saved {final_filename}.kmz to {final_dir}/")
 
 # --- EDITOR MODE ---
 elif page == 'Editor':
@@ -2961,11 +3164,20 @@ elif page == 'Editor':
     def _clear_e_browsed_dir():
         st.session_state.e_browsed_dir = None
 
+    map_area = st.container(key="map_area")
+    top_bar = map_area.container(key="top_bar")
+    map_layer = map_area.container(key="map_layer")
+    notices = map_layer.container(key="notices")
+    side_panel = st.container(key="side_panel")
+    if "e_show_search" not in st.session_state:
+        st.session_state.e_show_search = False
+
+    select_half, hud_half = top_bar.columns(2)
     existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
-    col_dir, col_browse, col_file, col_new = st.columns([2, 0.6, 3, 1])
-    with col_dir:
+    row1 = select_half.columns([3, 0.7, 3, 1.6])
+    with row1[0]:
         selected_dir_name = st.selectbox("Select Folder", ["Root (missions/)"] + existing_dirs, key="edit_dir", on_change=_clear_e_browsed_dir)
-    with col_browse:
+    with row1[1]:
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
         if st.button("📂", key="e_btn_browse_dir", help="Browse for a mission directory outside missions/"):
             picked = pick_folder_dialog("Select Mission Directory")
@@ -2976,7 +3188,7 @@ elif page == 'Editor':
     if st.session_state.e_browsed_dir:
         active_dir = st.session_state.e_browsed_dir
         dir_label = active_dir
-        st.caption(f"📁 Browsing: {active_dir}")
+        notices.caption(f"📁 Browsing: {active_dir}")
     else:
         active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
         dir_label = selected_dir_name
@@ -2984,11 +3196,12 @@ elif page == 'Editor':
     kmz_files = [f for f in os.listdir(active_dir) if f.endswith(".kmz")]
 
     if not kmz_files:
-        st.warning(f"No missions found in {dir_label}.")
+        notices.warning(f"No missions found in {dir_label}.")
     else:
-        with col_file: selected_kmz = st.selectbox("Select Mission to Edit", kmz_files)
-        with col_new:
-            st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+        with row1[2]:
+            selected_kmz = st.selectbox("Select Mission to Edit", kmz_files)
+        with row1[3]:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
             make_new_file = st.checkbox("Make new file?", value=False)
 
         full_path = os.path.join(active_dir, selected_kmz)
@@ -3120,125 +3333,133 @@ elif page == 'Editor':
                     st.session_state.locked_editor_center = st.session_state.editor_center
                     st.rerun()
 
-        top_hud = st.container()
-        st.write("### Fine-Tune Flight Path Coordinates")
-        
+        top_hud = hud_half.container()
+        side_panel.write("### Fine-Tune Flight Path Coordinates")
+
         df = pd.DataFrame(meta['coords'], columns=['Latitude', 'Longitude'])
-        edited_df = st.data_editor(df, num_rows="dynamic", key=st.session_state.editor_key, use_container_width=True)
+        edited_df = side_panel.data_editor(df, num_rows="dynamic", key=st.session_state.editor_key, use_container_width=True)
         current_coords = [(row['Latitude'], row['Longitude']) for _, row in edited_df.iterrows()]
 
-        m_edit = folium.Map(location=st.session_state.locked_editor_center, zoom_start=18, tiles=None)
-        folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_edit)
+        with map_layer:
+            m_edit = folium.Map(location=st.session_state.locked_editor_center, zoom_start=18, tiles=None)
+            folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_edit)
         
-        if e_elev_source == "Local GeoTIFF" and e_tif_path and e_show_bounds:
-            bounds = get_tif_bounds_wgs84(e_tif_path)
-            if bounds:
-                folium.Rectangle(bounds=bounds, color="#ff8800", weight=3, fill=True, fill_opacity=0.1, tooltip="Active GeoTIFF Boundary").add_to(m_edit)
+            if e_elev_source == "Local GeoTIFF" and e_tif_path and e_show_bounds:
+                bounds = get_tif_bounds_wgs84(e_tif_path)
+                if bounds:
+                    folium.Rectangle(bounds=bounds, color="#ff8800", weight=3, fill=True, fill_opacity=0.1, tooltip="Active GeoTIFF Boundary").add_to(m_edit)
 
-        if show_faa_airspace:
-            uasfm_data = fetch_uasfm_data(st.session_state.locked_editor_center[0], st.session_state.locked_editor_center[1])
-            if uasfm_data and uasfm_data.get("features"):
-                folium.GeoJson(
-                    uasfm_data, name="FAA UASFM Grids",
-                    style_function=lambda x: {'fillColor': 'red' if x['properties'].get('CEILING', x['properties'].get('ceiling', -1)) == 0 else 'green', 'color': 'black', 'weight': 1, 'fillOpacity': 0.15},
-                    tooltip=folium.GeoJsonTooltip(fields=['CEILING'], aliases=['Max LAANC Altitude (ft):'])
+            if show_faa_airspace:
+                uasfm_data = fetch_uasfm_data(st.session_state.locked_editor_center[0], st.session_state.locked_editor_center[1])
+                if uasfm_data and uasfm_data.get("features"):
+                    folium.GeoJson(
+                        uasfm_data, name="FAA UASFM Grids",
+                        style_function=lambda x: {'fillColor': 'red' if x['properties'].get('CEILING', x['properties'].get('ceiling', -1)) == 0 else 'green', 'color': 'black', 'weight': 1, 'fillOpacity': 0.15},
+                        tooltip=folium.GeoJsonTooltip(fields=['CEILING'], aliases=['Max LAANC Altitude (ft):'])
+                    ).add_to(m_edit)
+                elif uasfm_data:
+                    folium.Marker(st.session_state.locked_editor_center, icon=DivIcon(html='<div style="font-size: 10px; color: grey; width: 150px;">No FAA restrictions at this location</div>')).add_to(m_edit)
+
+            Draw(export=False, draw_options={
+                'polyline': {'shapeOptions': {'color': '#00ffff', 'weight': 5}},
+                'polygon': False, 'rectangle': False,
+                'circle': False, 'circlemarker': False, 'marker': False,
+            }).add_to(m_edit)
+            line = folium.PolyLine(current_coords, color="#00ffff", weight=5).add_to(m_edit)
+            PolyLineTextPath(line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '24', 'fill-opacity': '0.3'}).add_to(m_edit)
+        
+            gap_ft_preview = max(1.0, safe_get_float('e_t_dist_val', 9.0) ) if st.session_state.get('e_trigger_type', 'distance') == "distance" else e_speed_m * safe_get_float('e_t_time_val', 2.0) * M_TO_FT#* M_TO_FT
+
+            yaws = []
+            for i in range(len(current_coords) - 1):
+                ref_bearing = get_bearing(current_coords[i], current_coords[i+1])
+                yaws.append((ref_bearing + 90) % 360 if e_side == "right" else (ref_bearing - 90) % 360)
+
+            cum_dist = [0.0]
+            total_dist_ft = 0.0
+        
+            elevations = get_elevations_batch(current_coords, e_elev_source, e_tif_path)
+            start_elev = elevations[0] if elevations else 0
+            target_agl_ft = safe_get_float('e_alt_ft', 50.0)
+        
+            for i in range(len(current_coords) - 1):
+                dist = get_haversine_dist(current_coords[i], current_coords[i+1]) * M_TO_FT
+                total_dist_ft += dist
+                cum_dist.append(total_dist_ft)
+            
+                elev_diff_ft = (elevations[i+1] - elevations[i]) * M_TO_FT if elevations else 0.0
+                mid_lat = (current_coords[i][0] + current_coords[i+1][0]) / 2
+                mid_lon = (current_coords[i][1] + current_coords[i+1][1]) / 2
+            
+                folium.Marker(
+                    location=[mid_lat, mid_lon],
+                    icon=DivIcon(
+                        icon_size=(120, 40), icon_anchor=(60, 20),
+                        html=f'<div style="font-size: 12pt; color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-weight: bold; text-align: center; line-height: 1.2;">{dist:.1f} ft<br><span style="font-size: 10pt; color: #00ffff;">Elev Dif: {elev_diff_ft:+.1f} ft</span></div>'
+                    )
                 ).add_to(m_edit)
-            elif uasfm_data:
-                folium.Marker(st.session_state.locked_editor_center, icon=DivIcon(html='<div style="font-size: 10px; color: grey; width: 150px;">No FAA restrictions at this location</div>')).add_to(m_edit)
 
-        Draw(export=False, draw_options={
-            'polyline': {'shapeOptions': {'color': '#00ffff', 'weight': 5}},
-            'polygon': False, 'rectangle': False,
-            'circle': False, 'circlemarker': False, 'marker': False,
-        }).add_to(m_edit)
-        line = folium.PolyLine(current_coords, color="#00ffff", weight=5).add_to(m_edit)
-        PolyLineTextPath(line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '24', 'fill-opacity': '0.3'}).add_to(m_edit)
-        
-        gap_ft_preview = max(1.0, safe_get_float('e_t_dist_val', 9.0) ) if st.session_state.get('e_trigger_type', 'distance') == "distance" else e_speed_m * safe_get_float('e_t_time_val', 2.0) * M_TO_FT#* M_TO_FT
-
-        yaws = []
-        for i in range(len(current_coords) - 1):
-            ref_bearing = get_bearing(current_coords[i], current_coords[i+1])
-            yaws.append((ref_bearing + 90) % 360 if e_side == "right" else (ref_bearing - 90) % 360)
-
-        cum_dist = [0.0]
-        total_dist_ft = 0.0
-        
-        elevations = get_elevations_batch(current_coords, e_elev_source, e_tif_path)
-        start_elev = elevations[0] if elevations else 0
-        target_agl_ft = safe_get_float('e_alt_ft', 50.0)
-        
-        for i in range(len(current_coords) - 1):
-            dist = get_haversine_dist(current_coords[i], current_coords[i+1]) * M_TO_FT
-            total_dist_ft += dist
-            cum_dist.append(total_dist_ft)
+            for i, c in enumerate(current_coords):
+                pt_elev = elevations[i] if elevations else 0
+                pt_alt_ft = target_agl_ft + ((pt_elev - start_elev) * M_TO_FT)
+                folium.Marker(
+                    location=c,
+                    tooltip=f"<b>Waypoint {i}</b><br>Lat: {c[0]:.6f}<br>Lon: {c[1]:.6f}<br>Alt: {pt_alt_ft:.1f} ft",
+                    icon=DivIcon(icon_size=(24,24), icon_anchor=(12,12), html=f'<div style="font-size: 11pt; color: black; background: white; border-radius: 50%; text-align: center; border: 2px solid black; font-weight: bold; width: 24px; height: 24px; line-height: 20px;">{i}</div>')
+                ).add_to(m_edit)
             
-            elev_diff_ft = (elevations[i+1] - elevations[i]) * M_TO_FT if elevations else 0.0
-            mid_lat = (current_coords[i][0] + current_coords[i+1][0]) / 2
-            mid_lon = (current_coords[i][1] + current_coords[i+1][1]) / 2
-            
-            folium.Marker(
-                location=[mid_lat, mid_lon],
-                icon=DivIcon(
-                    icon_size=(120, 40), icon_anchor=(60, 20),
-                    html=f'<div style="font-size: 12pt; color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-weight: bold; text-align: center; line-height: 1.2;">{dist:.1f} ft<br><span style="font-size: 10pt; color: #00ffff;">Elev Dif: {elev_diff_ft:+.1f} ft</span></div>'
-                )
-            ).add_to(m_edit)
-
-        for i, c in enumerate(current_coords):
-            pt_elev = elevations[i] if elevations else 0
-            pt_alt_ft = target_agl_ft + ((pt_elev - start_elev) * M_TO_FT)
-            folium.Marker(
-                location=c,
-                tooltip=f"<b>Waypoint {i}</b><br>Lat: {c[0]:.6f}<br>Lon: {c[1]:.6f}<br>Alt: {pt_alt_ft:.1f} ft",
-                icon=DivIcon(icon_size=(24,24), icon_anchor=(12,12), html=f'<div style="font-size: 11pt; color: black; background: white; border-radius: 50%; text-align: center; border: 2px solid black; font-weight: bold; width: 24px; height: 24px; line-height: 20px;">{i}</div>')
-            ).add_to(m_edit)
-            
-        if show_footprints and gap_ft_preview > 0 and e_start_wp < len(current_coords):
-            current_dist = cum_dist[int(e_start_wp)]
-            while current_dist <= total_dist_ft + 0.01:
-                for i in range(len(cum_dist) - 1):
-                    if cum_dist[i] <= current_dist <= cum_dist[i+1] + 0.001:
-                        seg_len = cum_dist[i+1] - cum_dist[i]
-                        if seg_len > 0:
-                            frac = (current_dist - cum_dist[i]) / seg_len
-                            lat = current_coords[i][0] + (current_coords[i+1][0] - current_coords[i][0]) * frac
-                            lon = current_coords[i][1] + (current_coords[i+1][1] - current_coords[i][1]) * frac
-                        else:
-                            lat, lon = current_coords[i][0], current_coords[i][1]
+            if show_footprints and gap_ft_preview > 0 and e_start_wp < len(current_coords):
+                current_dist = cum_dist[int(e_start_wp)]
+                while current_dist <= total_dist_ft + 0.01:
+                    for i in range(len(cum_dist) - 1):
+                        if cum_dist[i] <= current_dist <= cum_dist[i+1] + 0.001:
+                            seg_len = cum_dist[i+1] - cum_dist[i]
+                            if seg_len > 0:
+                                frac = (current_dist - cum_dist[i]) / seg_len
+                                lat = current_coords[i][0] + (current_coords[i+1][0] - current_coords[i][0]) * frac
+                                lon = current_coords[i][1] + (current_coords[i+1][1] - current_coords[i][1]) * frac
+                            else:
+                                lat, lon = current_coords[i][0], current_coords[i][1]
                         
-                        footprint = get_photo_footprint(lat, lon, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0), yaws[i])
-                        folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_edit)
-                        folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_edit)
-                        break
-                current_dist += gap_ft_preview
+                            footprint = get_photo_footprint(lat, lon, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0), yaws[i])
+                            folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_edit)
+                            folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_edit)
+                            break
+                    current_dist += gap_ft_preview
 
-        map_data_edit = st_folium(m_edit, width=1200, height=600, key="editor_map")
+            map_data_edit = st_folium(m_edit, use_container_width=True, height=1000, key="editor_map")
 
         if map_data_edit and map_data_edit.get("center"):
             st.session_state.editor_center = [map_data_edit["center"]["lat"], map_data_edit["center"]["lng"]]
             st.session_state.editor_zoom = map_data_edit["zoom"]
             c_lat, c_lon = st.session_state.editor_center
-            st.info(f"Current Screen Center: {c_lat:.6f}, {c_lon:.6f}")
+            with st.container(key="screen_center"):
+                st.markdown(f"<div>Current Screen Center: {c_lat:.6f}, {c_lon:.6f}</div>", unsafe_allow_html=True)
 
-        e_search_col1, e_search_col2 = st.columns([3, 1])
-        with e_search_col1:
-            e_search_query = st.text_input("Jump to Address or Lat/Lon", key="e_search_input", placeholder="e.g. 1600 Pennsylvania Ave or 40.25, -111.64")
-        with e_search_col2:
-            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            if st.button("Search Location", key="e_btn_search", use_container_width=True):
-                with st.spinner("Searching..."):
-                    new_coords = get_coords_from_search(e_search_query)
-                    if new_coords:
-                        st.session_state.locked_editor_center = new_coords
-                        st.session_state.editor_center = new_coords
-                        st.rerun()
-                    else:
-                        st.error("Location not found. Try a different query.")
-        st.write("---")
+        with st.container(key="search_toggle"):
+            if st.button("📍 Jump to Address", key="e_search_toggle_btn"):
+                st.session_state.e_show_search = not st.session_state.e_show_search
+
+        if st.session_state.e_show_search:
+            with st.container(key="search_bar"):
+                e_search_col1, e_search_col2 = st.columns([5, 1])
+                with e_search_col1:
+                    e_search_query = st.text_input("Jump to Address or Lat/Lon", key="e_search_input", placeholder="e.g. 1600 Pennsylvania Ave or 40.25, -111.64")
+                with e_search_col2:
+                    st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                    if st.button("Search Location", key="e_btn_search", use_container_width=True):
+                        with st.spinner("Searching..."):
+                            new_coords = get_coords_from_search(e_search_query)
+                            if new_coords:
+                                st.session_state.locked_editor_center = new_coords
+                                st.session_state.editor_center = new_coords
+                                st.session_state.e_show_search = False
+                                st.rerun()
+                            else:
+                                st.error("Location not found. Try a different query.")
 
         final_coords = [(c[1], c[0]) for c in map_data_edit["all_drawings"][-1]['geometry']['coordinates']] if map_data_edit.get("all_drawings") and len(map_data_edit["all_drawings"]) > 0 else current_coords
-        if map_data_edit.get("all_drawings") and len(map_data_edit["all_drawings"]) > 0: st.info("Using newly drawn line from the map.")
+        if map_data_edit.get("all_drawings") and len(map_data_edit["all_drawings"]) > 0: notices.caption("Using newly drawn line from the map.")
 
         with top_hud:
             total_dist_ft = sum(get_haversine_dist(final_coords[i], final_coords[i+1]) for i in range(len(final_coords)-1)) * M_TO_FT
@@ -3257,11 +3478,11 @@ elif page == 'Editor':
 
             save_disabled = False
             if e_is_dji_fly and est_photos > 99:
-                st.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please reduce your distance or increase the interval.")
+                notices.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please reduce your distance or increase the interval.")
                 save_disabled = True
 
             if st.button("Save & Update Mission", disabled=save_disabled):
-                with st.spinner("Calculating terrain elevations and generating KMZ..."):
+                with notices.spinner("Calculating terrain elevations and generating KMZ..."):
                     new_cfg = {
                         "safe_takeoff_ft": e_safe, "trans_speed_mph": e_trans, "alt_ft": safe_get_float('e_alt_ft', 50.0),
                         "pitch": safe_get_float('e_pitch', -60.0), "side": e_side, "trigger_type": st.session_state.get('e_trigger_type', 'distance'),
@@ -3306,8 +3527,7 @@ elif page == 'Editor':
                         if os.path.exists(old_thumbnail):
                             os.remove(old_thumbnail)
 
-                st.success(f"Successfully updated and saved as {final_filename}.kmz in {dir_label}!")
-            st.divider()
+                notices.success(f"Successfully updated and saved as {final_filename}.kmz in {dir_label}!")
 
 # ==========================================
 # VIEWER MODE
@@ -3319,8 +3539,13 @@ elif page == 'Viewer  |':
     def _clear_v_browsed_dir():
         st.session_state.v_browsed_dir = None
 
+    map_area = st.container(key="map_area")
+    top_bar = map_area.container(key="top_bar")
+    map_layer = map_area.container(key="map_layer")
+    notices = map_layer.container(key="notices")
+
     existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
-    col_dir, col_browse, col_file, col_multi = st.columns([2, 0.6, 3, 1])
+    col_dir, col_browse = top_bar.columns([4, 1])
     with col_dir:
         selected_dir_name = st.selectbox("Select Folder", ["Root (missions/)"] + existing_dirs, key="view_dir", on_change=_clear_v_browsed_dir)
     with col_browse:
@@ -3334,7 +3559,7 @@ elif page == 'Viewer  |':
     if st.session_state.v_browsed_dir:
         active_dir = st.session_state.v_browsed_dir
         dir_label = active_dir
-        st.caption(f"📁 Browsing: {active_dir}")
+        notices.caption(f"📁 Browsing: {active_dir}")
     else:
         active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
         dir_label = selected_dir_name
@@ -3342,17 +3567,14 @@ elif page == 'Viewer  |':
     kmz_files = [f for f in os.listdir(active_dir) if f.endswith(".kmz")]
 
     if not kmz_files:
-        st.warning(f"No missions found in {dir_label}.")
+        notices.warning(f"No missions found in {dir_label}.")
     else:
-        with col_multi:
-            st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
-            view_multiple = st.checkbox("View multiple?", value=False)
-            
-        with col_file:
-            if view_multiple: selected_kmzs = st.multiselect("Select Missions", kmz_files, default=[kmz_files[0]] if kmz_files else [])
-            else:
-                sel = st.selectbox("Select Mission", kmz_files)
-                selected_kmzs = [sel] if sel else []
+        view_multiple = top_bar.checkbox("View multiple?", value=False)
+        if view_multiple:
+            selected_kmzs = top_bar.multiselect("Select Missions", kmz_files, default=[kmz_files[0]] if kmz_files else [])
+        else:
+            sel = top_bar.selectbox("Select Mission", kmz_files)
+            selected_kmzs = [sel] if sel else []
         
         with st.sidebar:
             show_footprints = st.checkbox("Show Image Footprints", value=True)
@@ -3363,500 +3585,503 @@ elif page == 'Viewer  |':
                     st.session_state.locked_viewer_center = st.session_state.viewer_center
                     st.rerun()
 
-        if selected_kmzs:
-            m_view = None
-            grand_total_dist_ft = 0.0
-            grand_total_photos = 0
-            colors = ["#00ffff", "#ff00ff", "#00ff00", "#ffff00", "#ff8800"]
+        with map_layer:
+            if selected_kmzs:
+                m_view = None
+                grand_total_dist_ft = 0.0
+                grand_total_photos = 0
+                colors = ["#00ffff", "#ff00ff", "#00ff00", "#ffff00", "#ff8800"]
             
-            for kmz_idx, current_kmz in enumerate(selected_kmzs):
-                line_color = colors[kmz_idx % len(colors)]
-                full_path = os.path.join(active_dir, current_kmz)
+                for kmz_idx, current_kmz in enumerate(selected_kmzs):
+                    line_color = colors[kmz_idx % len(colors)]
+                    full_path = os.path.join(active_dir, current_kmz)
 
-                try:
-                    with zipfile.ZipFile(full_path, 'r') as kmz:
-                        waylines_file = [name for name in kmz.namelist() if name.endswith('waylines.wpml')][0]
-                        template_file = [name for name in kmz.namelist() if name.endswith('template.kml')][0]
-                        root = ET.fromstring(kmz.read(waylines_file))
-                        root_t = ET.fromstring(kmz.read(template_file))
-                except Exception as e:
-                    st.error(f"Could not read KMZ file: {e}")
-                    continue
+                    try:
+                        with zipfile.ZipFile(full_path, 'r') as kmz:
+                            waylines_file = [name for name in kmz.namelist() if name.endswith('waylines.wpml')][0]
+                            template_file = [name for name in kmz.namelist() if name.endswith('template.kml')][0]
+                            root = ET.fromstring(kmz.read(waylines_file))
+                            root_t = ET.fromstring(kmz.read(template_file))
+                    except Exception as e:
+                        st.error(f"Could not read KMZ file: {e}")
+                        continue
                 
-                meta = {"speed": 0, "pitch": -60, "mode": "None", "t_val": 0, "alt": 50.0, "safe_alt": 0, "start_idx": 0, "camera_type": "visible"}
+                    meta = {"speed": 0, "pitch": -60, "mode": "None", "t_val": 0, "alt": 50.0, "safe_alt": 0, "start_idx": 0, "camera_type": "visible"}
 
-                p_node = root.find('.//{*}waypointGimbalHeadingParam/{*}waypointGimbalPitchAngle')
-                if p_node is not None: meta['pitch'] = float(p_node.text)
-                speed_node = root.find('.//{*}autoFlightSpeed')
-                if speed_node is not None: meta['speed'] = float(speed_node.text)
+                    p_node = root.find('.//{*}waypointGimbalHeadingParam/{*}waypointGimbalPitchAngle')
+                    if p_node is not None: meta['pitch'] = float(p_node.text)
+                    speed_node = root.find('.//{*}autoFlightSpeed')
+                    if speed_node is not None: meta['speed'] = float(speed_node.text)
 
-                wp_data = []
-                for pm in root.findall('.//{*}Placemark'):
-                    idx_node = pm.find('.//{*}index')
-                    idx = int(idx_node.text) if idx_node is not None else len(wp_data)
-                    c_node = pm.find('.//{*}coordinates')
-                    if c_node is None: continue
-                    c_raw = c_node.text.strip().split(',')
-                    yaw_node = pm.find('.//{*}waypointHeadingAngle')
-                    yaw = float(yaw_node.text) if yaw_node is not None else 0.0
-                    alt_node = pm.find('.//{*}executeHeight')
-                    alt = float(alt_node.text) * M_TO_FT if alt_node is not None else 0.0
+                    wp_data = []
+                    for pm in root.findall('.//{*}Placemark'):
+                        idx_node = pm.find('.//{*}index')
+                        idx = int(idx_node.text) if idx_node is not None else len(wp_data)
+                        c_node = pm.find('.//{*}coordinates')
+                        if c_node is None: continue
+                        c_raw = c_node.text.strip().split(',')
+                        yaw_node = pm.find('.//{*}waypointHeadingAngle')
+                        yaw = float(yaw_node.text) if yaw_node is not None else 0.0
+                        alt_node = pm.find('.//{*}executeHeight')
+                        alt = float(alt_node.text) * M_TO_FT if alt_node is not None else 0.0
                     
-                    target_yaw = yaw
-                    for action_group in pm.findall('.//{*}actionGroup'):
-                        t_type = action_group.find('.//{*}actionTriggerType')
-                        if t_type is not None:
-                            if 'multiple' in t_type.text:
-                                meta['mode'] = "Distance" if "Distance" in t_type.text else "Time"
-                                t_param = action_group.find('.//{*}actionTriggerParam')
-                                if t_param is not None: meta['t_val'] = float(t_param.text)
-                                start_idx = action_group.find('.//{*}actionGroupStartIndex')
-                                if start_idx is not None: meta['start_idx'] = int(start_idx.text)
-                            elif 'reachPoint' in t_type.text:
-                                pass
+                        target_yaw = yaw
+                        for action_group in pm.findall('.//{*}actionGroup'):
+                            t_type = action_group.find('.//{*}actionTriggerType')
+                            if t_type is not None:
+                                if 'multiple' in t_type.text:
+                                    meta['mode'] = "Distance" if "Distance" in t_type.text else "Time"
+                                    t_param = action_group.find('.//{*}actionTriggerParam')
+                                    if t_param is not None: meta['t_val'] = float(t_param.text)
+                                    start_idx = action_group.find('.//{*}actionGroupStartIndex')
+                                    if start_idx is not None: meta['start_idx'] = int(start_idx.text)
+                                elif 'reachPoint' in t_type.text:
+                                    pass
                         
-                        for a in action_group.findall('.//{*}action'):
-                            func = a.find('.//{*}actionActuatorFunc')
-                            if func is not None:
-                                if func.text == 'takePhoto':
-                                    params = a.find('.//{*}actionActuatorFuncParam')
-                                    if params is not None:
-                                        lens = params.find('.//{*}payloadLensIndex')
-                                        if lens is not None: meta['camera_type'] = lens.text
-                                elif func.text == 'rotateYaw':
-                                    params = a.find('.//{*}actionActuatorFuncParam')
-                                    if params is not None:
-                                        heading = params.find('.//{*}aircraftHeading')
-                                        if heading is not None: target_yaw = float(heading.text)
+                            for a in action_group.findall('.//{*}action'):
+                                func = a.find('.//{*}actionActuatorFunc')
+                                if func is not None:
+                                    if func.text == 'takePhoto':
+                                        params = a.find('.//{*}actionActuatorFuncParam')
+                                        if params is not None:
+                                            lens = params.find('.//{*}payloadLensIndex')
+                                            if lens is not None: meta['camera_type'] = lens.text
+                                    elif func.text == 'rotateYaw':
+                                        params = a.find('.//{*}actionActuatorFuncParam')
+                                        if params is not None:
+                                            heading = params.find('.//{*}aircraftHeading')
+                                            if heading is not None: target_yaw = float(heading.text)
 
-                    wp_data.append({'lat': float(c_raw[1]), 'lon': float(c_raw[0]), 'yaw': yaw, 'target_yaw': target_yaw, 'alt': alt, 'index': idx})
+                        wp_data.append({'lat': float(c_raw[1]), 'lon': float(c_raw[0]), 'yaw': yaw, 'target_yaw': target_yaw, 'alt': alt, 'index': idx})
 
-                if wp_data:
-                    if m_view is None:
-                        if 'current_viewer_file' not in st.session_state or st.session_state.current_viewer_file != selected_kmzs[0]:
-                            st.session_state.current_viewer_file = selected_kmzs[0]
-                            st.session_state.locked_viewer_center = [wp_data[0]['lat'], wp_data[0]['lon']]
+                    if wp_data:
+                        if m_view is None:
+                            if 'current_viewer_file' not in st.session_state or st.session_state.current_viewer_file != selected_kmzs[0]:
+                                st.session_state.current_viewer_file = selected_kmzs[0]
+                                st.session_state.locked_viewer_center = [wp_data[0]['lat'], wp_data[0]['lon']]
                         
-                        m_view = folium.Map(location=st.session_state.locked_viewer_center, zoom_start=19, tiles=None)
-                        folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_view)
+                            m_view = folium.Map(location=st.session_state.locked_viewer_center, zoom_start=19, tiles=None)
+                            folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_view)
                         
-                        if show_faa_airspace:
-                            uasfm_data = fetch_uasfm_data(st.session_state.locked_viewer_center[0], st.session_state.locked_viewer_center[1])
-                            if uasfm_data and uasfm_data.get("features"):
-                                    folium.GeoJson(
-                                        uasfm_data, name="FAA UASFM Grids",
-                                        style_function=lambda x: {'fillColor': 'red' if x['properties'].get('CEILING', x['properties'].get('ceiling', -1)) == 0 else 'green', 'color': 'black', 'weight': 1, 'fillOpacity': 0.15},
-                                        tooltip=folium.GeoJsonTooltip(fields=['CEILING'], aliases=['Max LAANC Altitude (ft):'])
-                                    ).add_to(m_view)
-                            elif uasfm_data:
-                                folium.Marker(st.session_state.locked_viewer_center, icon=DivIcon(html='<div style="font-size: 10px; color: grey; width: 150px;">No FAA restrictions at this location</div>')).add_to(m_view)
+                            if show_faa_airspace:
+                                uasfm_data = fetch_uasfm_data(st.session_state.locked_viewer_center[0], st.session_state.locked_viewer_center[1])
+                                if uasfm_data and uasfm_data.get("features"):
+                                        folium.GeoJson(
+                                            uasfm_data, name="FAA UASFM Grids",
+                                            style_function=lambda x: {'fillColor': 'red' if x['properties'].get('CEILING', x['properties'].get('ceiling', -1)) == 0 else 'green', 'color': 'black', 'weight': 1, 'fillOpacity': 0.15},
+                                            tooltip=folium.GeoJsonTooltip(fields=['CEILING'], aliases=['Max LAANC Altitude (ft):'])
+                                        ).add_to(m_view)
+                                elif uasfm_data:
+                                    folium.Marker(st.session_state.locked_viewer_center, icon=DivIcon(html='<div style="font-size: 10px; color: grey; width: 150px;">No FAA restrictions at this location</div>')).add_to(m_view)
                     
-                    line_coords = [[w['lat'], w['lon']] for w in wp_data]
-                    line = folium.PolyLine(line_coords, color=line_color, weight=5).add_to(m_view)
-                    PolyLineTextPath(line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '24', 'fill-opacity': '0.3'}).add_to(m_view)
+                        line_coords = [[w['lat'], w['lon']] for w in wp_data]
+                        line = folium.PolyLine(line_coords, color=line_color, weight=5).add_to(m_view)
+                        PolyLineTextPath(line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '24', 'fill-opacity': '0.3'}).add_to(m_view)
                     
-                    cum_dist = [0.0]
-                    total_dist_m = 0.0
-                    for i in range(len(wp_data) - 1):
-                        p1 = (wp_data[i]['lat'], wp_data[i]['lon'])
-                        p2 = (wp_data[i+1]['lat'], wp_data[i+1]['lon'])
-                        d = get_haversine_dist(p1, p2)
-                        total_dist_m += d
-                        cum_dist.append(total_dist_m)
+                        cum_dist = [0.0]
+                        total_dist_m = 0.0
+                        for i in range(len(wp_data) - 1):
+                            p1 = (wp_data[i]['lat'], wp_data[i]['lon'])
+                            p2 = (wp_data[i+1]['lat'], wp_data[i+1]['lon'])
+                            d = get_haversine_dist(p1, p2)
+                            total_dist_m += d
+                            cum_dist.append(total_dist_m)
                         
-                        elev_diff_ft = wp_data[i+1]['alt'] - wp_data[i]['alt']
-                        mid_lat = (p1[0] + p2[0]) / 2
-                        mid_lon = (p1[1] + p2[1]) / 2
-                        folium.Marker(
-                            location=[mid_lat, mid_lon],
-                            icon=DivIcon(icon_size=(120, 40), icon_anchor=(60, 20), html=f'<div style="font-size: 12pt; color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-weight: bold; text-align: center; line-height: 1.2;">{d * M_TO_FT:.1f} ft<br><span style="font-size: 10pt; color: #00ffff;">Elev Dif: {elev_diff_ft:+.1f} ft</span></div>')
-                        ).add_to(m_view)
+                            elev_diff_ft = wp_data[i+1]['alt'] - wp_data[i]['alt']
+                            mid_lat = (p1[0] + p2[0]) / 2
+                            mid_lon = (p1[1] + p2[1]) / 2
+                            folium.Marker(
+                                location=[mid_lat, mid_lon],
+                                icon=DivIcon(icon_size=(120, 40), icon_anchor=(60, 20), html=f'<div style="font-size: 12pt; color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-weight: bold; text-align: center; line-height: 1.2;">{d * M_TO_FT:.1f} ft<br><span style="font-size: 10pt; color: #00ffff;">Elev Dif: {elev_diff_ft:+.1f} ft</span></div>')
+                            ).add_to(m_view)
                     
-                    grand_total_dist_ft += (total_dist_m * M_TO_FT)
-                    gap = max(1.0, float(meta['t_val'])) if meta['mode'] == "Distance" else (meta['speed'] * meta['t_val'])
+                        grand_total_dist_ft += (total_dist_m * M_TO_FT)
+                        gap = max(1.0, float(meta['t_val'])) if meta['mode'] == "Distance" else (meta['speed'] * meta['t_val'])
                     
-                    for w in wp_data:
-                        i = w['index']
-                        length = 0.00012
-                        end_lat = w['lat'] + length * math.cos(math.radians(w['target_yaw']))
-                        end_lon = w['lon'] + length * math.sin(math.radians(w['target_yaw']))
-                        folium.PolyLine([[w['lat'], w['lon']], [end_lat, end_lon]], color="#ff0000", weight=4).add_to(m_view)
-                        
-                        folium.Marker(
-                            location=[w['lat'], w['lon']],
-                            tooltip=f"<b>Waypoint {i}</b><br>Lat: {w['lat']:.6f}<br>Lon: {w['lon']:.6f}<br>Alt: {w['alt']:.1f} ft",
-                            icon=DivIcon(icon_size=(24,24), icon_anchor=(12,12), html=f'<div style="font-size: 11pt; color: black; background: white; border-radius: 50%; text-align: center; border: 2px solid black; font-weight: bold; width: 24px; height: 24px; line-height: 20px;">{i}</div>')
-                        ).add_to(m_view)
-                    
-                    photo_count = 0
-                    is_dense_mission = (len(wp_data) > 4 and meta['mode'] == "None")
-                    
-                    if is_dense_mission:
                         for w in wp_data:
-                            if show_footprints:
-                                yaw = w['target_yaw']
-                                footprint = get_photo_footprint(w['lat'], w['lon'], w['alt'], meta['pitch'], yaw)
-                                folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_view)
-                            folium.CircleMarker([w['lat'], w['lon']], radius=2.5, color="yellow", fill=True).add_to(m_view)
-                            photo_count += 1
-                    elif gap > 0 and meta['start_idx'] < len(wp_data):
-                        current_dist = cum_dist[meta['start_idx']]
-                        while current_dist <= total_dist_m + 0.01:
-                            for i in range(len(cum_dist) - 1):
-                                if cum_dist[i] <= current_dist <= cum_dist[i+1] + 0.001:
-                                    seg_len = cum_dist[i+1] - cum_dist[i]
-                                    if seg_len > 0:
-                                        frac = (current_dist - cum_dist[i]) / seg_len
-                                        lat = wp_data[i]['lat'] + (wp_data[i+1]['lat'] - wp_data[i]['lat']) * frac
-                                        lon = wp_data[i]['lon'] + (wp_data[i+1]['lon'] - wp_data[i]['lon']) * frac
-                                    else:
-                                        lat, lon = wp_data[i]['lat'], wp_data[i]['lon']
-                                    
-                                    if show_footprints:
-                                        yaw = wp_data[i]['target_yaw']
-                                        footprint = get_photo_footprint(lat, lon, meta['alt']*M_TO_FT, meta['pitch'], yaw)
-                                        folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_view)
-                                        
-                                    folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_view)
-                                    photo_count += 1
-                                    break
-                            current_dist += gap
+                            i = w['index']
+                            length = 0.00012
+                            end_lat = w['lat'] + length * math.cos(math.radians(w['target_yaw']))
+                            end_lon = w['lon'] + length * math.sin(math.radians(w['target_yaw']))
+                            folium.PolyLine([[w['lat'], w['lon']], [end_lat, end_lon]], color="#ff0000", weight=4).add_to(m_view)
+                        
+                            folium.Marker(
+                                location=[w['lat'], w['lon']],
+                                tooltip=f"<b>Waypoint {i}</b><br>Lat: {w['lat']:.6f}<br>Lon: {w['lon']:.6f}<br>Alt: {w['alt']:.1f} ft",
+                                icon=DivIcon(icon_size=(24,24), icon_anchor=(12,12), html=f'<div style="font-size: 11pt; color: black; background: white; border-radius: 50%; text-align: center; border: 2px solid black; font-weight: bold; width: 24px; height: 24px; line-height: 20px;">{i}</div>')
+                            ).add_to(m_view)
                     
-                    grand_total_photos += photo_count
+                        photo_count = 0
+                        is_dense_mission = (len(wp_data) > 4 and meta['mode'] == "None")
+                    
+                        if is_dense_mission:
+                            for w in wp_data:
+                                if show_footprints:
+                                    yaw = w['target_yaw']
+                                    footprint = get_photo_footprint(w['lat'], w['lon'], w['alt'], meta['pitch'], yaw)
+                                    folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_view)
+                                folium.CircleMarker([w['lat'], w['lon']], radius=2.5, color="yellow", fill=True).add_to(m_view)
+                                photo_count += 1
+                        elif gap > 0 and meta['start_idx'] < len(wp_data):
+                            current_dist = cum_dist[meta['start_idx']]
+                            while current_dist <= total_dist_m + 0.01:
+                                for i in range(len(cum_dist) - 1):
+                                    if cum_dist[i] <= current_dist <= cum_dist[i+1] + 0.001:
+                                        seg_len = cum_dist[i+1] - cum_dist[i]
+                                        if seg_len > 0:
+                                            frac = (current_dist - cum_dist[i]) / seg_len
+                                            lat = wp_data[i]['lat'] + (wp_data[i+1]['lat'] - wp_data[i]['lat']) * frac
+                                            lon = wp_data[i]['lon'] + (wp_data[i+1]['lon'] - wp_data[i]['lon']) * frac
+                                        else:
+                                            lat, lon = wp_data[i]['lat'], wp_data[i]['lon']
+                                    
+                                        if show_footprints:
+                                            yaw = wp_data[i]['target_yaw']
+                                            footprint = get_photo_footprint(lat, lon, meta['alt']*M_TO_FT, meta['pitch'], yaw)
+                                            folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_view)
+                                        
+                                        folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_view)
+                                        photo_count += 1
+                                        break
+                                current_dist += gap
+                    
+                        grand_total_photos += photo_count
 
-            if m_view is not None:
-                st.sidebar.header("Mission Metadata")
-                if len(selected_kmzs) == 1:
-                    cam_type = meta.get('camera_type', 'visible')
-                    cam_display = CAM_DISPLAY_MAP.get(cam_type, "RGB Only")
-                    hw_key = "Unknown Configuration"
-                    for k, v in HARDWARE_MAP.items():
-                        if v["drone_sub"] == meta.get('drone_sub', '') and v["payload_sub"] == meta.get('payload_sub', ''):
-                            hw_key = k
+                if m_view is not None:
+                    st.sidebar.header("Mission Metadata")
+                    if len(selected_kmzs) == 1:
+                        cam_type = meta.get('camera_type', 'visible')
+                        cam_display = CAM_DISPLAY_MAP.get(cam_type, "RGB Only")
+                        hw_key = "Unknown Configuration"
+                        for k, v in HARDWARE_MAP.items():
+                            if v["drone_sub"] == meta.get('drone_sub', '') and v["payload_sub"] == meta.get('payload_sub', ''):
+                                hw_key = k
 
-                    st.sidebar.write(f"Hardware Platform: {hw_key}")
-                    st.sidebar.write(f"Camera Sensor: {cam_display}")
-                    st.sidebar.write(f"Gimbal Pitch: {meta['pitch']}°")
-                    st.sidebar.write(f"Safe Takeoff: {meta['safe_alt']*M_TO_FT:.1f} ft")
-                    st.sidebar.write(f"Waypoint Alt: {meta['alt']*M_TO_FT:.1f} ft")
-                    st.sidebar.write(f"Trigger: {'Dense Waypoints (DJI Fly)' if meta['mode'] == 'None' else meta['mode']} ({meta['t_val']*M_TO_FT if meta['mode']=='Distance' else meta['t_val']:.1f})")
-                    st.sidebar.write(f"Calculated Photos: {grand_total_photos}")
-                else:
-                    st.sidebar.success(f"Viewing {len(selected_kmzs)} combined missions.")
-                    st.sidebar.write(f"Total Aggregated Distance: {grand_total_dist_ft:.1f} ft")
-                    st.sidebar.write(f"Total Aggregated Photos: {grand_total_photos}")
+                        st.sidebar.write(f"Hardware Platform: {hw_key}")
+                        st.sidebar.write(f"Camera Sensor: {cam_display}")
+                        st.sidebar.write(f"Gimbal Pitch: {meta['pitch']}°")
+                        st.sidebar.write(f"Safe Takeoff: {meta['safe_alt']*M_TO_FT:.1f} ft")
+                        st.sidebar.write(f"Waypoint Alt: {meta['alt']*M_TO_FT:.1f} ft")
+                        st.sidebar.write(f"Trigger: {'Dense Waypoints (DJI Fly)' if meta['mode'] == 'None' else meta['mode']} ({meta['t_val']*M_TO_FT if meta['mode']=='Distance' else meta['t_val']:.1f})")
+                        st.sidebar.write(f"Calculated Photos: {grand_total_photos}")
+                    else:
+                        st.sidebar.success(f"Viewing {len(selected_kmzs)} combined missions.")
+                        st.sidebar.write(f"Total Aggregated Distance: {grand_total_dist_ft:.1f} ft")
+                        st.sidebar.write(f"Total Aggregated Photos: {grand_total_photos}")
 
-                hud_html = f'''
-                    <div style="position: fixed; bottom: 40px; left: 40px; width: 240px; background-color: rgba(255,255,255,0.9); border:2px solid #333; z-index:9999; padding: 15px; border-radius: 8px; font-family: sans-serif;">
-                        <h4 style="margin:0 0 10px 0;">Mission Stats</h4>
-                        <b>Total Distance:</b> {grand_total_dist_ft:.1f} ft<br>
-                        <b>Total Photos:</b> {grand_total_photos}<br>
-                        <p style="font-size: 11px; margin: 10px 0 0 0;">
-                            <span style="color: #00ffff;">■</span> Path 
-                            <span style="color: #ff0000;">■</span> Camera Yaw <br>
-                            <span style="color: #ffff00;">●</span> Photo Spot
-                            <span style="color: darkorange;">■</span> Photo Footprint
-                        </p>
-                    </div>
-                '''
-                m_view.get_root().html.add_child(Element(hud_html))
-                map_data_view = st_folium(m_view, width=1200, height=600, key="viewer_map")
+                    hud_html = f'''
+                        <div style="position: fixed; bottom: 40px; left: 40px; width: 240px; background-color: rgba(255,255,255,0.9); border:2px solid #333; z-index:9999; padding: 15px; border-radius: 8px; font-family: sans-serif;">
+                            <h4 style="margin:0 0 10px 0;">Mission Stats</h4>
+                            <b>Total Distance:</b> {grand_total_dist_ft:.1f} ft<br>
+                            <b>Total Photos:</b> {grand_total_photos}<br>
+                            <p style="font-size: 11px; margin: 10px 0 0 0;">
+                                <span style="color: #00ffff;">■</span> Path 
+                                <span style="color: #ff0000;">■</span> Camera Yaw <br>
+                                <span style="color: #ffff00;">●</span> Photo Spot
+                                <span style="color: darkorange;">■</span> Photo Footprint
+                            </p>
+                        </div>
+                    '''
+                    m_view.get_root().html.add_child(Element(hud_html))
+                    map_data_view = st_folium(m_view, use_container_width=True, height=1000, key="viewer_map")
             
-                if map_data_view and map_data_view.get("center"):
-                    st.session_state.viewer_center = [map_data_view["center"]["lat"], map_data_view["center"]["lng"]]
-                    st.session_state.viewer_zoom = map_data_view["zoom"]
-                    c_lat, c_lon = st.session_state.viewer_center
-                    st.sidebar.info(f"Current Screen Center: {c_lat:.6f}, {c_lon:.6f} (Click 'Update' in sidebar to update restrictions in this area)")
+                    if map_data_view and map_data_view.get("center"):
+                        st.session_state.viewer_center = [map_data_view["center"]["lat"], map_data_view["center"]["lng"]]
+                        st.session_state.viewer_zoom = map_data_view["zoom"]
+                        c_lat, c_lon = st.session_state.viewer_center
+                        st.sidebar.info(f"Current Screen Center: {c_lat:.6f}, {c_lon:.6f} (Click 'Update' in sidebar to update restrictions in this area)")
 
 # ==========================================
 # PHOTO SORTER MODE
 # ==========================================
 elif page == 'Photo Sorter':
-    st.header("Photo Sorter")
-    st.write("Automatically group drone photos into separate folders based on the time they were taken.")
-    st.write("This is for specifically for drones the use DJI Fly.")
+    with st.container(key="page_body"):
+        st.header("Photo Sorter")
+        st.write("Automatically group drone photos into separate folders based on the time they were taken.")
+        st.write("This is for specifically for drones the use DJI Fly.")
 
-    # Initialize default paths in session state so they don't reset
-    if "sorter_source" not in st.session_state:
-        st.session_state.sorter_source = os.path.expanduser("~")
-    if "sorter_output" not in st.session_state:
-        st.session_state.sorter_output = os.path.join(os.path.expanduser("~"), "Output")
+        # Initialize default paths in session state so they don't reset
+        if "sorter_source" not in st.session_state:
+            st.session_state.sorter_source = os.path.expanduser("~")
+        if "sorter_output" not in st.session_state:
+            st.session_state.sorter_output = os.path.join(os.path.expanduser("~"), "Output")
 
-    def pick_source_folder():
-        folder_path = pick_folder_dialog("Select Source Directory")
-        if folder_path:
-            st.session_state.sorter_source = folder_path
+        def pick_source_folder():
+            folder_path = pick_folder_dialog("Select Source Directory")
+            if folder_path:
+                st.session_state.sorter_source = folder_path
 
-    def pick_output_folder():
-        folder_path = pick_folder_dialog("Select Output Directory")
-        if folder_path:
-            st.session_state.sorter_output = folder_path
+        def pick_output_folder():
+            folder_path = pick_folder_dialog("Select Output Directory")
+            if folder_path:
+                st.session_state.sorter_output = folder_path
 
-    col1, col2 = st.columns(2)
+        col1, col2 = st.columns(2)
     
-    with col1:
-        c1_text, c1_btn = st.columns([5, 1])
-        with c1_text:
-            st.text_input("Source Directory (Where the photos are currently)", key="sorter_source")
-        with c1_btn:
-            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            st.button("📂", key="btn_pick_source", on_click=pick_source_folder, help="Browse for Source Directory")
+        with col1:
+            c1_text, c1_btn = st.columns([5, 1])
+            with c1_text:
+                st.text_input("Source Directory (Where the photos are currently)", key="sorter_source")
+            with c1_btn:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                st.button("📂", key="btn_pick_source", on_click=pick_source_folder, help="Browse for Source Directory")
             
-        target_date = st.date_input("Target Date")
+            target_date = st.date_input("Target Date")
 
-    with col2:
-        c2_text, c2_btn = st.columns([5, 1])
-        with c2_text:
-            st.text_input("Output Directory (Where to create the group folders)", key="sorter_output")
-        with c2_btn:
-            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            st.button("📂", key="btn_pick_output", on_click=pick_output_folder, help="Browse for Output Directory")
+        with col2:
+            c2_text, c2_btn = st.columns([5, 1])
+            with c2_text:
+                st.text_input("Output Directory (Where to create the group folders)", key="sorter_output")
+            with c2_btn:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                st.button("📂", key="btn_pick_output", on_click=pick_output_folder, help="Browse for Output Directory")
             
-        gap_minutes = st.number_input("Time Gap (minutes)", min_value=1, value=5, step=1, help="If the time between two sequential photos exceeds this gap, a new folder is created.")
+            gap_minutes = st.number_input("Time Gap (minutes)", min_value=1, value=5, step=1, help="If the time between two sequential photos exceeds this gap, a new folder is created.")
         
-    st.write("---")
-    submit_btn = st.button("🚀 Sort Photos", use_container_width=True)
+        st.write("---")
+        submit_btn = st.button("🚀 Sort Photos", use_container_width=True)
     
-    if submit_btn:
-        source_dir = st.session_state.sorter_source
-        output_dir = st.session_state.sorter_output
+        if submit_btn:
+            source_dir = st.session_state.sorter_source
+            output_dir = st.session_state.sorter_output
         
-        if not source_dir or not os.path.exists(source_dir):
-            st.error("The source directory does not exist or is invalid.")
-        elif not output_dir:
-            st.error("Please provide an output directory.")
-        else:
-            with st.spinner("Processing images..."):
-                st_group_images_by_time(source_dir, output_dir, target_date, gap_minutes)
-
-# ==========================================
-# BATCH TRANSFER MODE
-# ==========================================
-elif page == 'DJI Fly Transfer':
-    st.header("DJI Fly Batch Mission Transfer")
-    st.write("Assign local flight plans (left) to overwrite existing missions on the RC 2 (right).")
-    
-    if 'rc_nests' not in st.session_state:
-        st.session_state.rc_nests = {}
-        st.session_state.preview_id = None
-        st.session_state.rc_scan_error = None
-
-    col1, col2 = st.columns(2)
-    
-    if "batch_browsed_dir" not in st.session_state:
-        st.session_state.batch_browsed_dir = None
-
-    def _clear_batch_browsed_dir():
-        st.session_state.batch_browsed_dir = None
-
-    with col1:
-        st.subheader("1. Source Missions")
-        existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
-        dir_col, browse_col = st.columns([5, 1])
-        with dir_col:
-            selected_dir_name = st.selectbox("Select Local Folder", ["Root (missions/)"] + existing_dirs, key="batch_dir", on_change=_clear_batch_browsed_dir)
-        with browse_col:
-            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            if st.button("📂", key="batch_btn_browse_dir", help="Browse for a mission directory outside missions/"):
-                picked = pick_folder_dialog("Select Mission Directory")
-                if picked:
-                    st.session_state.batch_browsed_dir = picked
-                    st.rerun()
-
-        if st.session_state.batch_browsed_dir:
-            active_dir = st.session_state.batch_browsed_dir
-            dir_label = active_dir
-            st.caption(f"📁 Browsing: {active_dir}")
-        else:
-            active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
-            dir_label = selected_dir_name
-
-        # This page is DJI Fly-only (MTP transfer to the RC 2's dummy mission
-        # slots doesn't apply to DJI Pilot missions), so Pilot-format .kmz
-        # files are filtered out rather than just listed alongside Fly ones.
-        kmz_files = [
-            f for f in os.listdir(active_dir)
-            if f.endswith(".kmz") and is_dji_fly_kmz(os.path.join(active_dir, f))
-        ]
-
-        if not kmz_files:
-            st.warning(f"No DJI Fly missions found in {dir_label}.")
-        else:
-            st.info(f"Found {len(kmz_files)} missions ready for transfer.")
-            
-    with col2:
-        st.subheader("2. Controller Nests")
-        st.write("Connect the RC 2 via USB, power on, and close Preview and Android File Transfer.")
-        if st.button("🔄 Scan RC 2 & Pull Previews", use_container_width=True):
-            with st.spinner("Scanning MTP and downloading thumbnails... (This takes a few seconds)"):
-                st.session_state.rc_nests, st.session_state.preview_id, st.session_state.rc_scan_error = fetch_controller_nests_and_previews()
-
-        if st.session_state.rc_nests:
-            st.success(f"Found {len(st.session_state.rc_nests)} authorized mission slots.")
-        elif st.session_state.rc_scan_error:
-            st.error(f"Scan failed: {st.session_state.rc_scan_error}")
-            st.caption("Full details (with traceback) were printed to the terminal streamlit was launched from.")
-        else:
-            st.warning("No controller connected, or no dummy missions found.")
-            st.warning("If controller is connected, make sure preview app is closed.")
-
-    st.write("---")
-    
-    # --- The Visual Mapping UI ---
-    if kmz_files and st.session_state.rc_nests:
-        st.subheader("3. Assign & Transfer")
-        
-        max_rows = max(len(kmz_files), len(st.session_state.rc_nests))
-        num_rows = st.number_input("Number of missions to assign", min_value=1, max_value=max_rows, value=min(3, max_rows))
-        
-        transfer_map = {}
-
-        # Header formatting
-        h1, h2, h3 = st.columns([4, 1, 4])
-        h1.markdown("**Local Mission** (What to push)")
-        h3.markdown("**Controller Target** (What will be overwritten)")
-
-        # Dynamic Visual Rows
-        # Once a local mission or nest is picked in one row, it's excluded from
-        # the other rows' dropdowns - keeps the lists shrinking as you assign,
-        # instead of showing already-used options, so it's easier to work
-        # through what's left.
-        #
-        # This is done in two passes: first resolve what each row's value
-        # will be (keeping any value the user already explicitly set, and
-        # picking sensible non-overlapping defaults for the rest against a
-        # shrinking pool), then render each row's dropdown with exclusions
-        # computed from that fully-resolved picture. Reading st.session_state
-        # naively mid-loop instead would mix fresh values (for rows already
-        # rendered this run) with stale, previous-run values (for rows not
-        # yet reached) - and on first load, before any row has a value at
-        # all, would produce no exclusions whatsoever.
-        def _resolve_row_values(all_options, session_key_prefix, placeholder):
-            remaining = list(all_options)
-            resolved = {}
-            for j in range(int(num_rows)):
-                state_key = f"{session_key_prefix}{j}"
-                if state_key in st.session_state:
-                    # This row has already been rendered before, even if the
-                    # user has since cleared it back to the placeholder -
-                    # respect that as an intentional "nothing assigned here"
-                    # rather than auto-filling it from the remaining pool,
-                    # which would keep it (and whatever got auto-filled)
-                    # wrongly excluded from every other row's options.
-                    existing = st.session_state[state_key]
-                    resolved[j] = existing if (existing == placeholder or existing in remaining) else placeholder
-                elif remaining:
-                    resolved[j] = remaining[0]
-                else:
-                    resolved[j] = placeholder
-                if resolved[j] in remaining:
-                    remaining.remove(resolved[j])
-            return resolved
-
-        resolved_locs = _resolve_row_values(kmz_files, "loc_", "--- Select Local Mission ---")
-        resolved_nests = _resolve_row_values(list(st.session_state.rc_nests.keys()), "nest_", "--- Select Target Nest ---")
-
-        for i in range(int(num_rows)):
-            st.markdown(f"**Assignment {i+1}**")
-            row_c1, row_c2, row_c3 = st.columns([4, 1, 4])
-
-            chosen_locs_elsewhere = {v for j, v in resolved_locs.items() if j != i} - {"--- Select Local Mission ---"}
-            chosen_nests_elsewhere = {v for j, v in resolved_nests.items() if j != i} - {"--- Select Target Nest ---"}
-
-            row_local_options = ["--- Select Local Mission ---"] + [
-                k for k in kmz_files if k not in chosen_locs_elsewhere
-            ]
-            row_nest_options = ["--- Select Target Nest ---"] + [
-                n for n in st.session_state.rc_nests.keys() if n not in chosen_nests_elsewhere
-            ]
-
-            with row_c1:
-                default_loc = row_local_options.index(resolved_locs[i]) if resolved_locs[i] in row_local_options else 0
-                loc_choice = st.selectbox(f"Local {i}", row_local_options, index=default_loc, key=f"loc_{i}", label_visibility="collapsed")
-
-                # Show Local Preview Image
-                if loc_choice != "--- Select Local Mission ---":
-                    local_jpg = os.path.join(active_dir, loc_choice.replace('.kmz', '.jpg'))
-                    if os.path.exists(local_jpg):
-                        st.image(local_jpg, use_container_width=True)
-                    else:
-                        st.info("No custom title card generated.")
-
-            with row_c2:
-                # Add a visual arrow pointing from local to remote
-                st.markdown("<h1 style='text-align: center; color: gray; margin-top: 40px;'>➔</h1>", unsafe_allow_html=True)
-
-            with row_c3:
-                default_nest = row_nest_options.index(resolved_nests[i]) if resolved_nests[i] in row_nest_options else 0
-                nest_choice = st.selectbox(f"Nest {i}", row_nest_options, index=default_nest, key=f"nest_{i}", label_visibility="collapsed")
-                
-                # Show Cached Controller Preview Image
-                if nest_choice != "--- Select Target Nest ---":
-                    cached_jpg = os.path.join("missions/.cache", f"{nest_choice}.jpg")
-                    if os.path.exists(cached_jpg):
-                        st.image(cached_jpg, use_container_width=True, caption=f"Current: {nest_choice[-8:]}")
-                    else:
-                        st.info("Native Dummy Mission\n\n*(Preview unreadable over USB until overridden)*")
-                
-            if loc_choice != "--- Select Local Mission ---" and nest_choice != "--- Select Target Nest ---":
-                transfer_map[loc_choice] = nest_choice
-            
-            st.write("---")
-                    
-        if st.button("🚀 Execute Visual Transfer", use_container_width=True):
-            if not transfer_map:
-                st.warning("No valid pairs assigned! Select a local mission and a target nest.")
+            if not source_dir or not os.path.exists(source_dir):
+                st.error("The source directory does not exist or is invalid.")
+            elif not output_dir:
+                st.error("Please provide an output directory.")
             else:
-                st.session_state.last_transfer_checklist = []  # reset for this batch
+                with st.spinner("Processing images..."):
+                    st_group_images_by_time(source_dir, output_dir, target_date, gap_minutes)
 
-                progress_bar = st.progress(0, text="Initializing transfer...")
-                total_tasks = len(transfer_map)
-                completed = 0
+    # ==========================================
+    # BATCH TRANSFER MODE
+    # ==========================================
+elif page == 'DJI Fly Transfer':
+    with st.container(key="page_body"):
+        st.header("DJI Fly Batch Mission Transfer")
+        st.write("Assign local flight plans (left) to overwrite existing missions on the RC 2 (right).")
+    
+        if 'rc_nests' not in st.session_state:
+            st.session_state.rc_nests = {}
+            st.session_state.preview_id = None
+            st.session_state.rc_scan_error = None
 
-                for kmz_name, target_uuid in transfer_map.items():
-                    local_path = os.path.join(active_dir, kmz_name)
-                    target_folder_id = st.session_state.rc_nests[target_uuid]
+        col1, col2 = st.columns(2)
+    
+        if "batch_browsed_dir" not in st.session_state:
+            st.session_state.batch_browsed_dir = None
 
-                    progress_bar.progress(completed / total_tasks, text=f"Transferring {kmz_name}...")
+        def _clear_batch_browsed_dir():
+            st.session_state.batch_browsed_dir = None
 
-                    # Call the MTP helper we updated earlier
-                    success, error_msg = push_mission_to_nest(local_path, target_uuid)
+        with col1:
+            st.subheader("1. Source Missions")
+            existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
+            dir_col, browse_col = st.columns([5, 1])
+            with dir_col:
+                selected_dir_name = st.selectbox("Select Local Folder", ["Root (missions/)"] + existing_dirs, key="batch_dir", on_change=_clear_batch_browsed_dir)
+            with browse_col:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("📂", key="batch_btn_browse_dir", help="Browse for a mission directory outside missions/"):
+                    picked = pick_folder_dialog("Select Mission Directory")
+                    if picked:
+                        st.session_state.batch_browsed_dir = picked
+                        st.rerun()
 
-                    if success:
-                        st.success(f"✅ Transferred **{kmz_name}** into slot `{target_uuid}`")
-                        st.session_state.last_transfer_checklist.append((kmz_name, target_uuid))
+            if st.session_state.batch_browsed_dir:
+                active_dir = st.session_state.batch_browsed_dir
+                dir_label = active_dir
+                st.caption(f"📁 Browsing: {active_dir}")
+            else:
+                active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
+                dir_label = selected_dir_name
+
+            # This page is DJI Fly-only (MTP transfer to the RC 2's dummy mission
+            # slots doesn't apply to DJI Pilot missions), so Pilot-format .kmz
+            # files are filtered out rather than just listed alongside Fly ones.
+            kmz_files = [
+                f for f in os.listdir(active_dir)
+                if f.endswith(".kmz") and is_dji_fly_kmz(os.path.join(active_dir, f))
+            ]
+
+            if not kmz_files:
+                st.warning(f"No DJI Fly missions found in {dir_label}.")
+            else:
+                st.info(f"Found {len(kmz_files)} missions ready for transfer.")
+            
+        with col2:
+            st.subheader("2. Controller Nests")
+            st.write("Connect the RC 2 via USB, power on, and close Preview and Android File Transfer.")
+            if st.button("🔄 Scan RC 2 & Pull Previews", use_container_width=True):
+                with st.spinner("Scanning MTP and downloading thumbnails... (This takes a few seconds)"):
+                    st.session_state.rc_nests, st.session_state.preview_id, st.session_state.rc_scan_error = fetch_controller_nests_and_previews()
+
+            if st.session_state.rc_nests:
+                st.success(f"Found {len(st.session_state.rc_nests)} authorized mission slots.")
+            elif st.session_state.rc_scan_error:
+                st.error(f"Scan failed: {st.session_state.rc_scan_error}")
+                st.caption("Full details (with traceback) were printed to the terminal streamlit was launched from.")
+            else:
+                st.warning("No controller connected, or no dummy missions found.")
+                st.warning("If controller is connected, make sure preview app is closed.")
+
+        st.write("---")
+    
+        # --- The Visual Mapping UI ---
+        if kmz_files and st.session_state.rc_nests:
+            st.subheader("3. Assign & Transfer")
+        
+            max_rows = max(len(kmz_files), len(st.session_state.rc_nests))
+            num_rows = st.number_input("Number of missions to assign", min_value=1, max_value=max_rows, value=min(3, max_rows))
+        
+            transfer_map = {}
+
+            # Header formatting
+            h1, h2, h3 = st.columns([4, 1, 4])
+            h1.markdown("**Local Mission** (What to push)")
+            h3.markdown("**Controller Target** (What will be overwritten)")
+
+            # Dynamic Visual Rows
+            # Once a local mission or nest is picked in one row, it's excluded from
+            # the other rows' dropdowns - keeps the lists shrinking as you assign,
+            # instead of showing already-used options, so it's easier to work
+            # through what's left.
+            #
+            # This is done in two passes: first resolve what each row's value
+            # will be (keeping any value the user already explicitly set, and
+            # picking sensible non-overlapping defaults for the rest against a
+            # shrinking pool), then render each row's dropdown with exclusions
+            # computed from that fully-resolved picture. Reading st.session_state
+            # naively mid-loop instead would mix fresh values (for rows already
+            # rendered this run) with stale, previous-run values (for rows not
+            # yet reached) - and on first load, before any row has a value at
+            # all, would produce no exclusions whatsoever.
+            def _resolve_row_values(all_options, session_key_prefix, placeholder):
+                remaining = list(all_options)
+                resolved = {}
+                for j in range(int(num_rows)):
+                    state_key = f"{session_key_prefix}{j}"
+                    if state_key in st.session_state:
+                        # This row has already been rendered before, even if the
+                        # user has since cleared it back to the placeholder -
+                        # respect that as an intentional "nothing assigned here"
+                        # rather than auto-filling it from the remaining pool,
+                        # which would keep it (and whatever got auto-filled)
+                        # wrongly excluded from every other row's options.
+                        existing = st.session_state[state_key]
+                        resolved[j] = existing if (existing == placeholder or existing in remaining) else placeholder
+                    elif remaining:
+                        resolved[j] = remaining[0]
                     else:
-                        st.error(f"❌ Failed to transfer **{kmz_name}**: {error_msg}")
+                        resolved[j] = placeholder
+                    if resolved[j] in remaining:
+                        remaining.remove(resolved[j])
+                return resolved
 
-                    completed += 1
-                    time.sleep(1.5) # Let the Android File System breathe
+            resolved_locs = _resolve_row_values(kmz_files, "loc_", "--- Select Local Mission ---")
+            resolved_nests = _resolve_row_values(list(st.session_state.rc_nests.keys()), "nest_", "--- Select Target Nest ---")
 
-                progress_bar.progress(1.0, text="Batch transfer complete!")
+            for i in range(int(num_rows)):
+                st.markdown(f"**Assignment {i+1}**")
+                row_c1, row_c2, row_c3 = st.columns([4, 1, 4])
 
-        # DJI Fly caches each mission's thumbnail privately and won't pick up a
-        # newly-pushed one on its own - not even after a full power cycle (see
-        # session notes). Opening a mission in DJI Fly and saving it once is
-        # the only thing that's been found to force a refresh, so surface a
-        # checklist of exactly what was just transferred rather than leaving
-        # the user to remember on their own.
-        if st.session_state.get("last_transfer_checklist"):
-            st.write("---")
-            st.subheader("📋 Manual Thumbnail Refresh Checklist")
-            st.info(
-                "DJI Fly caches each mission's thumbnail privately and won't pick up "
-                "the new one automatically - not even after a full power cycle. Open "
-                "each mission below in DJI Fly and save it once to force its "
-                "thumbnail to refresh on the controller. The picture shown is what that "
-                "mission currently still looks like on the controller's screen (the UUID "
-                "itself isn't visible there), so you can spot the right one in DJI Fly's list."
-            )
-            for kmz_name, target_uuid in st.session_state.last_transfer_checklist:
-                check_col1, check_col2 = st.columns([1, 5])
-                with check_col1:
-                    cached_jpg = os.path.join("missions/.cache", f"{target_uuid}.jpg")
-                    if os.path.exists(cached_jpg):
-                        st.image(cached_jpg, width=1600)
-                    else:
-                        st.caption("(no preview cached - scan the RC 2 to fetch one)")
-                with check_col2:
-                    st.checkbox(f"{kmz_name} → `{target_uuid}`", key=f"refresh_check_{target_uuid}")
+                chosen_locs_elsewhere = {v for j, v in resolved_locs.items() if j != i} - {"--- Select Local Mission ---"}
+                chosen_nests_elsewhere = {v for j, v in resolved_nests.items() if j != i} - {"--- Select Target Nest ---"}
+
+                row_local_options = ["--- Select Local Mission ---"] + [
+                    k for k in kmz_files if k not in chosen_locs_elsewhere
+                ]
+                row_nest_options = ["--- Select Target Nest ---"] + [
+                    n for n in st.session_state.rc_nests.keys() if n not in chosen_nests_elsewhere
+                ]
+
+                with row_c1:
+                    default_loc = row_local_options.index(resolved_locs[i]) if resolved_locs[i] in row_local_options else 0
+                    loc_choice = st.selectbox(f"Local {i}", row_local_options, index=default_loc, key=f"loc_{i}", label_visibility="collapsed")
+
+                    # Show Local Preview Image
+                    if loc_choice != "--- Select Local Mission ---":
+                        local_jpg = os.path.join(active_dir, loc_choice.replace('.kmz', '.jpg'))
+                        if os.path.exists(local_jpg):
+                            st.image(local_jpg, use_container_width=True)
+                        else:
+                            st.info("No custom title card generated.")
+
+                with row_c2:
+                    # Add a visual arrow pointing from local to remote
+                    st.markdown("<h1 style='text-align: center; color: gray; margin-top: 40px;'>➔</h1>", unsafe_allow_html=True)
+
+                with row_c3:
+                    default_nest = row_nest_options.index(resolved_nests[i]) if resolved_nests[i] in row_nest_options else 0
+                    nest_choice = st.selectbox(f"Nest {i}", row_nest_options, index=default_nest, key=f"nest_{i}", label_visibility="collapsed")
+                
+                    # Show Cached Controller Preview Image
+                    if nest_choice != "--- Select Target Nest ---":
+                        cached_jpg = os.path.join("missions/.cache", f"{nest_choice}.jpg")
+                        if os.path.exists(cached_jpg):
+                            st.image(cached_jpg, use_container_width=True, caption=f"Current: {nest_choice[-8:]}")
+                        else:
+                            st.info("Native Dummy Mission\n\n*(Preview unreadable over USB until overridden)*")
+                
+                if loc_choice != "--- Select Local Mission ---" and nest_choice != "--- Select Target Nest ---":
+                    transfer_map[loc_choice] = nest_choice
+            
+                st.write("---")
+                    
+            if st.button("🚀 Execute Visual Transfer", use_container_width=True):
+                if not transfer_map:
+                    st.warning("No valid pairs assigned! Select a local mission and a target nest.")
+                else:
+                    st.session_state.last_transfer_checklist = []  # reset for this batch
+
+                    progress_bar = st.progress(0, text="Initializing transfer...")
+                    total_tasks = len(transfer_map)
+                    completed = 0
+
+                    for kmz_name, target_uuid in transfer_map.items():
+                        local_path = os.path.join(active_dir, kmz_name)
+                        target_folder_id = st.session_state.rc_nests[target_uuid]
+
+                        progress_bar.progress(completed / total_tasks, text=f"Transferring {kmz_name}...")
+
+                        # Call the MTP helper we updated earlier
+                        success, error_msg = push_mission_to_nest(local_path, target_uuid)
+
+                        if success:
+                            st.success(f"✅ Transferred **{kmz_name}** into slot `{target_uuid}`")
+                            st.session_state.last_transfer_checklist.append((kmz_name, target_uuid))
+                        else:
+                            st.error(f"❌ Failed to transfer **{kmz_name}**: {error_msg}")
+
+                        completed += 1
+                        time.sleep(1.5) # Let the Android File System breathe
+
+                    progress_bar.progress(1.0, text="Batch transfer complete!")
+
+            # DJI Fly caches each mission's thumbnail privately and won't pick up a
+            # newly-pushed one on its own - not even after a full power cycle (see
+            # session notes). Opening a mission in DJI Fly and saving it once is
+            # the only thing that's been found to force a refresh, so surface a
+            # checklist of exactly what was just transferred rather than leaving
+            # the user to remember on their own.
+            if st.session_state.get("last_transfer_checklist"):
+                st.write("---")
+                st.subheader("📋 Manual Thumbnail Refresh Checklist")
+                st.info(
+                    "DJI Fly caches each mission's thumbnail privately and won't pick up "
+                    "the new one automatically - not even after a full power cycle. Open "
+                    "each mission below in DJI Fly and save it once to force its "
+                    "thumbnail to refresh on the controller. The picture shown is what that "
+                    "mission currently still looks like on the controller's screen (the UUID "
+                    "itself isn't visible there), so you can spot the right one in DJI Fly's list."
+                )
+                for kmz_name, target_uuid in st.session_state.last_transfer_checklist:
+                    check_col1, check_col2 = st.columns([1, 5])
+                    with check_col1:
+                        cached_jpg = os.path.join("missions/.cache", f"{target_uuid}.jpg")
+                        if os.path.exists(cached_jpg):
+                            st.image(cached_jpg, width=1600)
+                        else:
+                            st.caption("(no preview cached - scan the RC 2 to fetch one)")
+                    with check_col2:
+                        st.checkbox(f"{kmz_name} → `{target_uuid}`", key=f"refresh_check_{target_uuid}")
