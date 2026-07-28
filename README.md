@@ -3,6 +3,14 @@ An open-source flight planning software for DJI drones.
 Plans can be made for both DJI Pilot 2 (Enterprise) and DJI Fly (Commercial) apps.
 Works on both Windows and Mac OS.
 
+## Tabs
+The app is split into 5 tabs. Click a tab to jump to its section below.
+* [Creator](#the-creator)
+* [Editor](#the-editor)
+* [Viewer](#the-viewer)
+* [Photo Sorter](#photo-sorter)
+* [DJI Fly Transfer](#dji-fly-transfer)
+
 ## Running the Planner Steps
 1. Download this repository.
 - Create a new environment. The code uses specific library versions and doesn't work with newer ones. Python 3.11 and 3.12 is confirmed to work. 
@@ -57,11 +65,15 @@ This option allows for very complicated flight plans with hundreds of photos.
 DJI Fly is the stripped-back version used in the commercial series which doesn't easily support flight plans. 
 It is limited to 99 photos per flight plan due to each photo having to be a waypoint. 
 *Know which program your drone takes before planning your flight*
-* **Sensor mode**: Only applies to Multispectral/enterprise drones. Allows for you to choose between taking RGB, Multispectral, or both kinds of photos per shot. Disabled for DJI Fly flights. 
+* **Sensor Mode**: Only applies to Multispectral/enterprise drones. Allows for you to choose between taking RGB, Multispectral, or both kinds of photos per shot. Disabled for DJI Fly flights. 
 
 ##### Global Config
-* **File name**: Assign a memorable name. It will also dynamically append the altitude, gimbal pitch, and overlap to the final saved filename as "_HxxAxxOLxx", as well as whether the mission is designed for DJI Pilot 2 or DJI Fly.
-* **Safe Take-off Altitude (ft) and Take off Speed (mph)**: Most often, the defaults are adequate for these. 
+* **Filename**: Assign a memorable name. It will also dynamically append the altitude, gimbal pitch, and overlap to the final saved filename as "_HxxAxxOLxx", as well as whether the mission is designed for DJI Pilot 2 or DJI Fly.
+* **Parameter Presets**: Save your current parameters (every setting on this sidebar except the Filename) under a name, then reload them later with one click.
+Useful if you regularly switch between a couple of different setups, e.g. one altitude/overlap combination for close-up shots and another for wider survey passes.
+Presets are saved to your computer and will still be there the next time you open the app.
+* **Safe Takeoff Alt (ft)**: The altitude the drone climbs to (relative to takeoff) before flying to the first waypoint. Most often, the default is adequate.
+* **Takeoff Speed (mph)**: How fast the drone climbs and transits to the first waypoint. Most often, the default is adequate.
 
 
 ##### Waypoint Settings
@@ -70,22 +82,28 @@ It is limited to 99 photos per flight plan due to each photo having to be a wayp
 Thus, the drone should take off as close as possible to the first waypoint.
 * **Elevation Source**: Select between Open-Elevation (high error, Global application), USGS 3DEP (Low error, USA only), or Local GeoTIFF files for terrain-following calculations. 
 This is very important if your flight plan is not over a flat surface. 
-* **Gimbal Pitch**: Angle at which the pictures will be taken. 
-* **Side**: The aircraft takes pictures to the left or right side of the path.
+* **Gimbal Pitch (°)**: Angle at which the pictures will be taken. 
+* **Side of flight path**: The aircraft takes pictures to the left or right side of the path.
+* **Camera side of flight path**: Same as Side of flight path, but for mapping missions - the aircraft takes pictures to the left or right side of each pass.
+* **Yaw Side**: Same as Side of flight path, but named for the Editor - the aircraft takes pictures to the left or right side of the path.
 
 ##### Trigger & Speed
 * **Start Photos at Waypoint Index**: Delays the camera trigger until a designated waypoint is reached. 
 0 defaults to the first waypoint.
-* **Type of photo interval**: By distance or time. Unless you have a specific reason to choose one or the other, use distance. 
-* **Interval length (ft/sec)**: Space/time between photoes.
-* **Overlap**: How much of one picture will be in the next one. 
-This and the interval are connected and will changed dynamically based on each other. 
+* **Start Photos at WP**: Same as Start Photos at Waypoint Index, just named for the Editor.
+0 defaults to the first waypoint.
+* **Type**: By distance or time. Unless you have a specific reason to choose one or the other, use distance. 
+* **Interval (ft)**: Distance between photos.
+* **Interval (sec)**: Time between photos.
+* **Forward Overlap (%)**: How much of one picture will be in the next one. 
+This and the interval are connected and will change dynamically based on each other. 
 This is also affected by the altitude, but doesn't edit it.
 * **Flight Speed (mph)**: Includes auto-calculation for time-based intervals and visual warnings if the speed exceeds the sensor's minimum photo interval. 
 4 mph is recommended when following the drone.
+* **Manual Speed (mph)**: Same as Flight Speed (mph), set manually instead of auto-calculated. 4 mph is recommended when following the drone.
 
 ##### Map & Visual Features
-* **FAA Airspace Restrictions**: Toggles a live ArcGIS overlay showing LAANC grid ceilings.
+* **Show FAA Airspace Restrictions**: Toggles a live ArcGIS overlay showing LAANC grid ceilings.
 Use this to know if you need to submit an LAANC report before flying. 
 In app submitting is not available, you must use another app to do so.
 
@@ -106,7 +124,7 @@ Features include:
 * **Mission select**: Inspect individual or multiple combined flight plans in the viewer.
  These are chosen from either the root "missions" folder or other custom folders. 
 * **Flight Path Characteristics**: Arrows displaying the direction of the drone's flight path, the direction of the drone during flight, the distance between waypoints, and the elevation differences between waypoints. 
-* **Image Footprints**: Projects the camera's field of view onto the map based on altitude, pitch, and drone heading. 
+* **Show Image Footprints**: Projects the camera's field of view onto the map based on altitude, pitch, and drone heading. 
 Allows one to get an estimate of the area covered by the drone photos. 
 This may be turned on or off with a toggle to the left.
 * **Mission Metadata**: View aggregated mission statistics, including total distance and total estimated photos. 
@@ -121,8 +139,8 @@ Many parts of the viewer can also be seen.
 
 * **Flight Path**: May be edited using the coordinate data editor table to fine-tune exact latitude and longitude values. 
 You can not click and drag the waypoints
-* **Make new file**:May be checked to create a new mission, preserving the old one. 
-* **File name**: The name of the flight may be edited from the sidebar, just like the other parameters. The suffix for the mission will be reapplied to reflect any changes made to the height, pitch, and overlap. 
+* **Make new file?**: May be checked to create a new mission, preserving the old one. 
+* **Mission Name**: The name of the flight may be edited from the sidebar, just like the other parameters. The suffix for the mission will be reapplied to reflect any changes made to the height, pitch, and overlap. 
 
 
 

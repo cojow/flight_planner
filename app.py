@@ -1891,6 +1891,71 @@ def safe_get_float(key, default_val):
     except (TypeError, ValueError):
         return default_val
 
+CREATOR_PRESETS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".creator_presets.json")
+
+# Every Creator sidebar parameter a preset can capture/restore - deliberately
+# excludes the Filename field, per the user's request. Includes mapping_mode
+# itself, so loading a preset also switches between mapping/line mode.
+CREATOR_PRESET_KEYS = [
+    "mapping_mode", "hw_choice", "cam_choice",
+    "trans_speed_mph", "safe_takeoff_ft",
+    "alt_ft", "map_alt_ft",
+    "c_source", "c_tif", "c_bounds",
+    "pitch", "map_pitch", "side", "map_side",
+    "photo_start_wp", "trigger_type",
+    "t_dist_val", "overlap_pct", "manual_mph_dist",
+    "t_val_sec", "auto_speed", "target_gap_ft", "manual_mph_time",
+    "map_front_ol", "map_side_ol", "map_speed_mph",
+]
+
+
+def load_creator_presets():
+    if os.path.exists(CREATOR_PRESETS_FILE):
+        try:
+            with open(CREATOR_PRESETS_FILE) as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_creator_presets(presets):
+    try:
+        with open(CREATOR_PRESETS_FILE, 'w') as f:
+            json.dump(presets, f, indent=2)
+    except Exception:
+        pass
+
+
+README_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "README.md")
+# Matches README bullets of the form "* **Widget Label**: explanation text",
+# capturing everything up to the next such bullet (or a blank line/EOF).
+README_BULLET_RE = re.compile(r'^\* \*\*(.+?)\*\*:[ \t]*(.+?)(?=\n\*\s*\*\*|\n\n|\Z)', re.DOTALL | re.MULTILINE)
+
+
+def load_param_help():
+    # Re-parsed on every call rather than cached, so editing README.md and
+    # reloading the app picks up the change immediately - the whole point of
+    # sourcing tooltips from the README instead of duplicating them here.
+    help_map = {}
+    try:
+        with open(README_PATH, encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return help_map
+    for m in README_BULLET_RE.finditer(text):
+        label = m.group(1).strip()
+        help_map[label] = ' '.join(m.group(2).split())
+    return help_map
+
+
+PARAM_HELP = load_param_help()
+
+
+def param_help(label):
+    return PARAM_HELP.get(label)
+
+
 def get_center_footprint(pitch, alt):
     # Along-track ground footprint (feet), used to convert between photo
     # interval and forward overlap. Uses the true projected footprint rather
@@ -2688,17 +2753,77 @@ components.html("""
 </script>
 """, height=0)
 
+HEADING_RE = re.compile(r'^(#{1,6})[ \t]+(.+?)[ \t]*$', re.MULTILINE)
+
+
+def _github_slug(heading_text):
+    # Approximates GitHub's own heading-anchor slugs, since the README's
+    # #anchor links are written to match those (and so work unmodified when
+    # read on GitHub) - strip markdown emphasis, lowercase, drop anything
+    # that isn't a word char/space/hyphen, then collapse whitespace to "-".
+    text = re.sub(r'[*_`]', '', heading_text).strip().lower()
+    text = re.sub(r'[^\w\s-]', '', text)
+    return re.sub(r'\s+', '-', text)
+
+
+@st.dialog("README", width="large")
+def _readme_dialog():
+    try:
+        with open(README_PATH, encoding="utf-8") as f:
+            text = f.read()
+    except Exception as e:
+        st.error(f"Could not read README.md: {e}")
+        return
+
+    # st.markdown only auto-generates heading-anchor ids for standalone
+    # st.markdown/st.header calls, not for headings embedded in one big
+    # block like this - so the README's own #anchor links (which target
+    # GitHub's anchors and work fine there) silently go nowhere in-app.
+    # Fix that by injecting a matching <a id="..."> right before each
+    # heading here, without touching the README file itself.
+    def add_anchor(m):
+        return f'<a id="{_github_slug(m.group(2))}"></a>\n\n{m.group(0)}'
+    text = HEADING_RE.sub(add_anchor, text)
+
+    st.markdown(text, unsafe_allow_html=True)
+
+
 with st.container(key="app_header"):
-    header_title_col, header_tabs_col = st.columns([1, 4], gap="medium")
+    header_title_col, header_tabs_col, header_readme_col = st.columns([1, 4, 0.6], gap="medium")
     with header_title_col:
         st.markdown("# DJI Flight Planner")
     with header_tabs_col:
         page = st.radio("Navigation", ["Creator", "Editor", "Viewer  |", "Photo Sorter", "DJI Fly Transfer"], horizontal=True, label_visibility="collapsed")
+    with header_readme_col:
+        if st.button("📖 README", use_container_width=True):
+            _readme_dialog()
 
 # --- CREATOR MODE ---
 if page == 'Creator':
     if "map_boundary" not in st.session_state:
         st.session_state.map_boundary = None
+
+    # Preset values must land in session_state before any of the widgets
+    # below are instantiated this run - Streamlit forbids setting a widget's
+    # session_state key after that widget has already rendered once in the
+    # same script run, so the "Load" button just stashes the preset here and
+    # reruns, and this is where it actually gets applied.
+    if st.session_state.get("_c_pending_preset"):
+        for k, v in st.session_state.pop("_c_pending_preset").items():
+            st.session_state[k] = v
+
+    @st.dialog("Save Preset")
+    def _c_save_preset_dialog(default_name):
+        preset_name_input = st.text_input("Preset Name", value=default_name, key="c_preset_name_input")
+        if st.button("Save", key="c_preset_save_btn"):
+            if preset_name_input.strip():
+                presets = load_creator_presets()
+                presets[preset_name_input.strip()] = {k: st.session_state[k] for k in CREATOR_PRESET_KEYS if k in st.session_state}
+                save_creator_presets(presets)
+                st.success(f"Saved preset '{preset_name_input.strip()}'")
+                st.rerun()
+            else:
+                st.warning("Enter a preset name.")
 
     with st.sidebar:
         mapping_mode = st.checkbox(
@@ -2719,7 +2844,7 @@ if page == 'Creator':
             is_dji_fly = True
             st.warning("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
         else:
-            hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()))
+            hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()), key="hw_choice", help=param_help("Drone Platform"))
             drone_enum = HARDWARE_MAP[hw_choice]["drone_enum"]
             drone_sub_enum = HARDWARE_MAP[hw_choice]["drone_sub"]
             payload_enum = HARDWARE_MAP[hw_choice]["payload_enum"]
@@ -2734,24 +2859,38 @@ if page == 'Creator':
             st.selectbox("Sensor Mode", ["RGB Only"], disabled=True,
                          help="DJI Fly aircraft are RGB only - sensor mode is not applicable.")
         else:
-            cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"])
+            cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"], key="cam_choice", help=param_help("Sensor Mode"))
         camera_type = CAM_VAL_MAP[cam_choice]
         min_photo_interval_sec = 2.0 if "narrow_band" in camera_type else 0.7
 
         st.header("2. Global Config")
-        mission_name = st.text_input("Filename", "Mission_Flight")
-        trans_speed_mph = st.number_input("Takeoff Speed (mph)", value=22.0, step=1.0)
-        safe_takeoff_ft = st.number_input("Safe Takeoff Alt (ft)", value=60.0, step=1.0)
+        mission_name = st.text_input("Filename", "Mission_Flight", help=param_help("Filename"))
+
+        with st.expander("💾 Parameter Presets"):
+            c_presets = load_creator_presets()
+            c_preset_names = sorted(c_presets.keys())
+            c_selected_preset = st.selectbox("Preset", ["Select a preset..."] + c_preset_names, key="c_preset_select", help=param_help("Parameter Presets"))
+            c_pcol1, c_pcol2 = st.columns(2)
+            with c_pcol1:
+                if st.button("📥 Load", use_container_width=True, disabled=(c_selected_preset == "Select a preset...")):
+                    st.session_state["_c_pending_preset"] = c_presets[c_selected_preset]
+                    st.rerun()
+            with c_pcol2:
+                if st.button("💾 Save", use_container_width=True):
+                    _c_save_preset_dialog(c_selected_preset if c_selected_preset != "Select a preset..." else "")
+
+        trans_speed_mph = st.number_input("Takeoff Speed (mph)", value=22.0, step=1.0, key="trans_speed_mph", help=param_help("Takeoff Speed (mph)"))
+        safe_takeoff_ft = st.number_input("Safe Takeoff Alt (ft)", value=60.0, step=1.0, key="safe_takeoff_ft", help=param_help("Safe Takeoff Alt (ft)"))
 
         if mapping_mode:
             st.header("3. Mapping Settings")
-            st.number_input("Relative Altitude (ft)", value=100.0, key="map_alt_ft", step=1.0)
+            st.number_input("Relative Altitude (ft)", value=100.0, key="map_alt_ft", step=1.0, help=param_help("Relative Altitude (ft)"))
         else:
             st.header("3. Waypoint Settings")
-            st.number_input("Relative Altitude (ft)", value=60.0, key="alt_ft", step=1.0, on_change=sync_geometry)
+            st.number_input("Relative Altitude (ft)", value=60.0, key="alt_ft", step=1.0, on_change=sync_geometry, help=param_help("Relative Altitude (ft)"))
         st.info("❗Elevation is relative to the take off point, NOT the mission start point.")
 
-        c_elev_source = st.selectbox("Elevation Source", ["USGS 3DEP (US High-Res)", "Open-Elevation (Global)", "Local GeoTIFF"], key="c_source")
+        c_elev_source = st.selectbox("Elevation Source", ["USGS 3DEP (US High-Res)", "Open-Elevation (Global)", "Local GeoTIFF"], key="c_source", help=param_help("Elevation Source"))
         if c_elev_source == "Open-Elevation (Global)":
             st.warning("Can be off by several dozen feet. Use with caution.")
         elif c_elev_source == "USGS 3DEP (US High-Res)":
@@ -2772,7 +2911,7 @@ if page == 'Creator':
                     st.warning("No .tif files found in the 'surfaces' folder.")
 
         if mapping_mode:
-            st.slider("Gimbal Pitch (°)", -90, -20, value=-90, key="map_pitch")
+            st.slider("Gimbal Pitch (°)", -90, -20, value=-90, key="map_pitch", help=param_help("Gimbal Pitch (°)"))
 
             map_alt = safe_get_float('map_alt_ft', 100.0)
             map_pitch_val = safe_get_float('map_pitch', -90.0)
@@ -2781,7 +2920,7 @@ if page == 'Creator':
             gsd_cm = (D_ft_c * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_c != float('inf') else 0
             st.info(f"Est. Ground GSD: {gsd_cm:.2f} cm/px")
 
-            side = st.selectbox("Camera side of flight path", ["right", "left"], key="map_side")
+            side = st.selectbox("Camera side of flight path", ["right", "left"], key="map_side", help=param_help("Camera side of flight path"))
 
             st.header("4. Coverage & Speed")
             st.number_input("Frontal Overlap (%)", min_value=0.0, max_value=95.0, value=75.0, step=1.0, key="map_front_ol")
@@ -2796,13 +2935,13 @@ if page == 'Creator':
                 f"Flight line spacing: {map_geom['spacing_ft']:.0f} ft"
             )
 
-            manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=4.0, key="map_speed_mph")
+            manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=4.0, key="map_speed_mph", help=param_help("Flight Speed (mph)"))
             speed_m = manual_mph * MPH_TO_MS
             max_speed_m = (map_geom['interval_ft'] * FT_TO_M) / min_photo_interval_sec
             if speed_m > max_speed_m:
                 st.error(f"Speed Too High! Lower your speed to {max_speed_m * MS_TO_MPH:.1f} mph.")
         else:
-            st.slider("Gimbal Pitch (°)", -90, 0, value= -60, key="pitch", on_change=sync_geometry)
+            st.slider("Gimbal Pitch (°)", -90, 0, value= -60, key="pitch", on_change=sync_geometry, help=param_help("Gimbal Pitch (°)"))
 
             current_pitch = safe_get_float('pitch', -60.0)
             pitch_rad = math.radians(abs(current_pitch))
@@ -2811,16 +2950,16 @@ if page == 'Creator':
             gsd_cm = (D_ft_c * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_c != float('inf') else 0
             st.info(f"Est. Ground GSD: {gsd_cm:.2f} cm/px")
 
-            side = st.selectbox("Side of flight path", ["right", "left"])
+            side = st.selectbox("Side of flight path", ["right", "left"], key="side", help=param_help("Side of flight path"))
 
             st.header("4. Trigger & Speed")
-            photo_start_wp = st.number_input("Start Photos at Waypoint Index", min_value=0, value=0, step=1)
-            st.radio("Type", ["distance", "time"], key="trigger_type", on_change=sync_geometry)
+            photo_start_wp = st.number_input("Start Photos at Waypoint Index", min_value=0, value=0, step=1, key="photo_start_wp", help=param_help("Start Photos at Waypoint Index"))
+            st.radio("Type", ["distance", "time"], key="trigger_type", on_change=sync_geometry, help=param_help("Type"))
 
             if st.session_state.get('trigger_type', 'distance') == "distance":
-                st.number_input("Interval (ft)", key="t_dist_val", min_value=1.0, step=1.0, on_change=sync_dist_to_overlap)
-                st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=sync_overlap_to_dist)
-                manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=4.0)
+                st.number_input("Interval (ft)", key="t_dist_val", min_value=1.0, step=1.0, on_change=sync_dist_to_overlap, help=param_help("Interval (ft)"))
+                st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=sync_overlap_to_dist, help=param_help("Forward Overlap (%)"))
+                manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=4.0, key="manual_mph_dist", help=param_help("Flight Speed (mph)"))
                 speed_m = manual_mph * MPH_TO_MS
 
                 gap_m = max(1.0, safe_get_float('t_dist_val', 9.0) * FT_TO_M)
@@ -2828,15 +2967,15 @@ if page == 'Creator':
                 if speed_m > max_speed_m:
                     st.error(f"Speed Too High! Lower your speed to {max_speed_m * MS_TO_MPH:.1f} mph.")
             else:
-                t_val_sec = st.number_input("Interval (sec)", min_value=min_photo_interval_sec, value=max(2.0, min_photo_interval_sec))
-                auto_speed = st.checkbox("Auto-Calc Speed", True)
+                t_val_sec = st.number_input("Interval (sec)", min_value=min_photo_interval_sec, value=max(2.0, min_photo_interval_sec), key="t_val_sec", help=param_help("Interval (sec)"))
+                auto_speed = st.checkbox("Auto-Calc Speed", True, key="auto_speed")
                 if auto_speed:
                     st.number_input("Target Gap (ft)", key="target_gap_ft", min_value=1.0, on_change=sync_gap_to_overlap)
-                    st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=sync_overlap_to_gap)
+                    st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=sync_overlap_to_gap, help=param_help("Forward Overlap (%)"))
                     speed_m = min(max((safe_get_float('target_gap_ft', 26.2) * FT_TO_M) / t_val_sec, 1.0), 10.0)
                     st.info(f"Auto-Calculated Speed: {speed_m * MS_TO_MPH:.1f} mph")
                 else:
-                    manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, value=6.0, step=1.0)
+                    manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, value=6.0, step=1.0, key="manual_mph_time", help=param_help("Manual Speed (mph)"))
                     speed_m = manual_mph * MPH_TO_MS
                     current_gap = speed_m * M_TO_FT * t_val_sec
                     fw = get_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
@@ -2844,7 +2983,7 @@ if page == 'Creator':
                     st.info(f"Current Overlap: {max(0, min(current_overlap, 99.9)):.1f}%")
 
         st.header("5. Visuals")
-        show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="creator_faa_toggle")
+        show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="creator_faa_toggle", help=param_help("Show FAA Airspace Restrictions"))
         if show_faa_airspace:
             st.write("#### Update restrictions of map center")
             if st.button("Update Map Center", key="btn_update_creator"):
@@ -3202,7 +3341,7 @@ elif page == 'Editor':
             selected_kmz = st.selectbox("Select Mission to Edit", kmz_files)
         with row1[3]:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            make_new_file = st.checkbox("Make new file?", value=False)
+            make_new_file = st.checkbox("Make new file?", value=False, help=param_help("Make new file?"))
 
         full_path = os.path.join(active_dir, selected_kmz)
 
@@ -3234,7 +3373,7 @@ elif page == 'Editor':
         
         with st.sidebar:
             st.header("1. Hardware & Payload")
-            e_hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()), index=list(HARDWARE_MAP.keys()).index(meta.get('hardware_key', "DJI Fly (RC2 / Mini / Air Series)")))
+            e_hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()), index=list(HARDWARE_MAP.keys()).index(meta.get('hardware_key', "DJI Fly (RC2 / Mini / Air Series)")), help=param_help("Drone Platform"))
             e_drone_enum = HARDWARE_MAP[e_hw_choice]["drone_enum"]
             e_drone_sub_enum = HARDWARE_MAP[e_hw_choice]["drone_sub"]
             e_payload_enum = HARDWARE_MAP[e_hw_choice]["payload_enum"]
@@ -3250,21 +3389,21 @@ elif page == 'Editor':
                 st.selectbox("Sensor Mode", ["RGB Only"], disabled=True,
                              help="DJI Fly aircraft are RGB only - sensor mode is not applicable.")
             else:
-                e_cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"], index=["RGB Only", "Multispectral Only", "RGB + Multispectral"].index(current_cam_display))
+                e_cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"], index=["RGB Only", "Multispectral Only", "RGB + Multispectral"].index(current_cam_display), help=param_help("Sensor Mode"))
             e_camera_type = CAM_VAL_MAP[e_cam_choice]
             min_photo_interval_sec = 2.0 if "narrow_band" in e_camera_type else 0.7
-            
-            edit_name = st.text_input("Mission Name", key="e_name_input")
+
+            edit_name = st.text_input("Mission Name", key="e_name_input", help=param_help("Mission Name"))
             e_preview_suffix = f"_H{int(safe_get_float('e_alt_ft', 50.0))}A{int(abs(safe_get_float('e_pitch', -60.0)))}OL{int(safe_get_float('e_overlap_pct', 70.0))}"
             e_preview_platform = "Fly" if e_is_dji_fly else "Pilot"
             st.info(f"Will save as: {edit_name}_{e_preview_platform}{e_preview_suffix}.kmz")
             st.header("2. Modify Parameters")
-            e_safe = st.number_input("Safe Takeoff Alt (ft)", value=meta['safe_takeoff_ft'])
-            e_trans = st.number_input("Takeoff Speed (mph)", value=meta['trans_speed_mph'])
-            st.number_input("Relative Altitude (ft)", value=60.0, key="e_alt_ft", step=1.0, on_change=e_sync_geometry)
+            e_safe = st.number_input("Safe Takeoff Alt (ft)", value=meta['safe_takeoff_ft'], help=param_help("Safe Takeoff Alt (ft)"))
+            e_trans = st.number_input("Takeoff Speed (mph)", value=meta['trans_speed_mph'], help=param_help("Takeoff Speed (mph)"))
+            st.number_input("Relative Altitude (ft)", value=60.0, key="e_alt_ft", step=1.0, on_change=e_sync_geometry, help=param_help("Relative Altitude (ft)"))
             st.info("❗Elevation is relative to the take off point, NOT the mission start point.")
 
-            e_elev_source = st.selectbox("Elevation Source", ["Open-Elevation (Global)", "USGS 3DEP (US High-Res)", "Local GeoTIFF"], key="e_source")
+            e_elev_source = st.selectbox("Elevation Source", ["Open-Elevation (Global)", "USGS 3DEP (US High-Res)", "Local GeoTIFF"], key="e_source", help=param_help("Elevation Source"))
             if e_elev_source == "Open-Elevation (Global)":
                 st.warning("Can be off by several dozen feet. Use with caution.")
             elif e_elev_source == "USGS 3DEP (US High-Res)":
@@ -3284,7 +3423,7 @@ elif page == 'Editor':
                     else:
                         st.warning("No .tif files found in the 'surfaces' folder.")
 
-            st.slider("Gimbal Pitch (°)", -90, 0, value= -60, key="e_pitch", on_change=e_sync_geometry)
+            st.slider("Gimbal Pitch (°)", -90, 0, value= -60, key="e_pitch", on_change=e_sync_geometry, help=param_help("Gimbal Pitch (°)"))
 
             current_e_pitch = safe_get_float('e_pitch', -60.0)
             pitch_rad_e = math.radians(abs(current_e_pitch))
@@ -3292,41 +3431,41 @@ elif page == 'Editor':
             D_ft_e = current_e_alt / math.sin(pitch_rad_e) if pitch_rad_e > 0 else float('inf')
             st.info(f"Est. Ground GSD: {(D_ft_e * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_e != float('inf') else 0:.2f} cm/px")
             
-            e_side = st.selectbox("Yaw Side", ["right", "left"])
+            e_side = st.selectbox("Yaw Side", ["right", "left"], help=param_help("Yaw Side"))
 
             st.header("3. Trigger Settings")
-            e_start_wp = st.number_input("Start Photos at WP", min_value=0, value=meta['photo_start_wp'], step=1)
-            e_trigger = st.radio("Type", ["distance", "time"], key="e_trigger_type", on_change=e_sync_geometry)
+            e_start_wp = st.number_input("Start Photos at WP", min_value=0, value=meta['photo_start_wp'], step=1, help=param_help("Start Photos at WP"))
+            e_trigger = st.radio("Type", ["distance", "time"], key="e_trigger_type", on_change=e_sync_geometry, help=param_help("Type"))
             safe_e_speed = max(2.3, float(meta.get('speed_mph', 6.0)))
-            
+
             if st.session_state.get('e_trigger_type', 'distance') == "distance":
-                st.number_input("Interval (ft)", key="e_t_dist_val", min_value=1.0, step=1.0, on_change=e_sync_dist_to_overlap)
-                st.number_input("Forward Overlap (%)", key="e_overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=e_sync_overlap_to_dist)
-                e_speed_m = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=safe_e_speed) * MPH_TO_MS
-                
+                st.number_input("Interval (ft)", key="e_t_dist_val", min_value=1.0, step=1.0, on_change=e_sync_dist_to_overlap, help=param_help("Interval (ft)"))
+                st.number_input("Forward Overlap (%)", key="e_overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=e_sync_overlap_to_dist, help=param_help("Forward Overlap (%)"))
+                e_speed_m = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=safe_e_speed, help=param_help("Flight Speed (mph)")) * MPH_TO_MS
+
                 gap_m = max(1.0, safe_get_float('e_t_dist_val', 9.0) * FT_TO_M)
                 max_speed_m = gap_m / min_photo_interval_sec
                 if e_speed_m > max_speed_m:
                     st.error(f"Speed Too High! Lower your speed to {max_speed_m * MS_TO_MPH:.1f} mph.")
             else:
-                if 'e_t_time_val' not in st.session_state: 
+                if 'e_t_time_val' not in st.session_state:
                     st.session_state.e_t_time_val = meta['t_val'] if meta['trigger_type'] == 'time' else max(2.0, min_photo_interval_sec)
-                e_tval_sec = st.number_input("Interval (sec)", key="e_t_time_val", min_value=min_photo_interval_sec)
+                e_tval_sec = st.number_input("Interval (sec)", key="e_t_time_val", min_value=min_photo_interval_sec, help=param_help("Interval (sec)"))
                 e_auto_speed = st.checkbox("Auto-Calc Speed", True)
                 if e_auto_speed:
                     st.number_input("Target Gap (ft)", key="e_target_gap_ft", min_value=1.0, on_change=e_sync_gap_to_overlap)
-                    st.number_input("Forward Overlap (%)", key="e_overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=e_sync_overlap_to_gap)
+                    st.number_input("Forward Overlap (%)", key="e_overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=e_sync_overlap_to_gap, help=param_help("Forward Overlap (%)"))
                     e_speed_m = min(max((safe_get_float('e_target_gap_ft', 26.2) * FT_TO_M) / e_tval_sec, 1.0), 10.0)
                     st.info(f"Auto-Calculated Speed: {e_speed_m * MS_TO_MPH:.1f} mph")
                 else:
-                    e_speed_m = st.number_input("Manual Speed (mph)", min_value=2.3, value=safe_e_speed, step=1.0) * MPH_TO_MS
+                    e_speed_m = st.number_input("Manual Speed (mph)", min_value=2.3, value=safe_e_speed, step=1.0, help=param_help("Manual Speed (mph)")) * MPH_TO_MS
                     fw = get_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
                     current_overlap = ((fw - (e_speed_m * M_TO_FT * e_tval_sec)) / fw) * 100 if fw > 0 else 0
                     st.info(f"Current Overlap: {max(0, min(current_overlap, 99.9)):.1f}%")
 
             st.header("4. Visuals")
-            show_footprints = st.checkbox("Show Image Footprints", value=True)
-            show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="editor_faa_toggle")
+            show_footprints = st.checkbox("Show Image Footprints", value=True, help=param_help("Show Image Footprints"))
+            show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="editor_faa_toggle", help=param_help("Show FAA Airspace Restrictions"))
             if show_faa_airspace:
                 st.write("#### Update restrictions of map center")
                 if st.button("Update Map Center", key="btn_update_editor"):
@@ -3545,7 +3684,7 @@ elif page == 'Viewer  |':
     notices = map_layer.container(key="notices")
 
     existing_dirs = [d for d in os.listdir(MISSION_DIR) if os.path.isdir(os.path.join(MISSION_DIR, d)) and d != ".cache"]
-    col_dir, col_browse = top_bar.columns([4, 1])
+    col_mission, col_dir, col_browse = top_bar.columns([4, 4, 1])
     with col_dir:
         selected_dir_name = st.selectbox("Select Folder", ["Root (missions/)"] + existing_dirs, key="view_dir", on_change=_clear_v_browsed_dir)
     with col_browse:
@@ -3569,16 +3708,17 @@ elif page == 'Viewer  |':
     if not kmz_files:
         notices.warning(f"No missions found in {dir_label}.")
     else:
-        view_multiple = top_bar.checkbox("View multiple?", value=False)
-        if view_multiple:
-            selected_kmzs = top_bar.multiselect("Select Missions", kmz_files, default=[kmz_files[0]] if kmz_files else [])
-        else:
-            sel = top_bar.selectbox("Select Mission", kmz_files)
-            selected_kmzs = [sel] if sel else []
+        with col_mission:
+            view_multiple = st.checkbox("View multiple?", value=False)
+            if view_multiple:
+                selected_kmzs = st.multiselect("Select Missions", kmz_files, default=[kmz_files[0]] if kmz_files else [])
+            else:
+                sel = st.selectbox("Select Mission", kmz_files)
+                selected_kmzs = [sel] if sel else []
         
         with st.sidebar:
-            show_footprints = st.checkbox("Show Image Footprints", value=True)
-            show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="viewer_faa_toggle")
+            show_footprints = st.checkbox("Show Image Footprints", value=True, help=param_help("Show Image Footprints"))
+            show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="viewer_faa_toggle", help=param_help("Show FAA Airspace Restrictions"))
             if show_faa_airspace:
                 st.write("#### Update restrictions of map center")
                 if st.button("Update Map Center", key="btn_update_viewer"):
@@ -3606,12 +3746,26 @@ elif page == 'Viewer  |':
                         st.error(f"Could not read KMZ file: {e}")
                         continue
                 
-                    meta = {"speed": 0, "pitch": -60, "mode": "None", "t_val": 0, "alt": 50.0, "safe_alt": 0, "start_idx": 0, "camera_type": "visible"}
+                    meta = {
+                        "speed": 0, "pitch": -60, "mode": "None", "t_val": 0, "alt": 50.0, "safe_alt": 0,
+                        "start_idx": 0, "camera_type": "visible", "drone_sub": "0", "payload_sub": "3"
+                    }
 
                     p_node = root.find('.//{*}waypointGimbalHeadingParam/{*}waypointGimbalPitchAngle')
                     if p_node is not None: meta['pitch'] = float(p_node.text)
                     speed_node = root.find('.//{*}autoFlightSpeed')
                     if speed_node is not None: meta['speed'] = float(speed_node.text)
+                    safe_node = root.find('.//{*}takeOffSecurityHeight')
+                    if safe_node is not None: meta['safe_alt'] = float(safe_node.text)
+
+                    drone_info = root_t.find('.//{*}droneInfo')
+                    if drone_info is not None:
+                        d_sub = drone_info.find('.//{*}droneSubEnumValue')
+                        if d_sub is not None and d_sub.text: meta['drone_sub'] = d_sub.text
+                    payload_info = root_t.find('.//{*}payloadInfo')
+                    if payload_info is not None:
+                        p_sub = payload_info.find('.//{*}payloadSubEnumValue')
+                        if p_sub is not None and p_sub.text: meta['payload_sub'] = p_sub.text
 
                     wp_data = []
                     for pm in root.findall('.//{*}Placemark'):
@@ -3624,7 +3778,8 @@ elif page == 'Viewer  |':
                         yaw = float(yaw_node.text) if yaw_node is not None else 0.0
                         alt_node = pm.find('.//{*}executeHeight')
                         alt = float(alt_node.text) * M_TO_FT if alt_node is not None else 0.0
-                    
+                        if not wp_data and alt_node is not None: meta['alt'] = float(alt_node.text)
+
                         target_yaw = yaw
                         for action_group in pm.findall('.//{*}actionGroup'):
                             t_type = action_group.find('.//{*}actionTriggerType')
@@ -3637,7 +3792,7 @@ elif page == 'Viewer  |':
                                     if start_idx is not None: meta['start_idx'] = int(start_idx.text)
                                 elif 'reachPoint' in t_type.text:
                                     pass
-                        
+
                             for a in action_group.findall('.//{*}action'):
                                 func = a.find('.//{*}actionActuatorFunc')
                                 if func is not None:
@@ -3651,6 +3806,16 @@ elif page == 'Viewer  |':
                                         if params is not None:
                                             heading = params.find('.//{*}aircraftHeading')
                                             if heading is not None: target_yaw = float(heading.text)
+                                    elif func.text == 'gimbalRotate' and p_node is None and not wp_data:
+                                        # DJI Fly waypoints never carry
+                                        # waypointGimbalPitchAngle - pitch is
+                                        # instead set once via the first
+                                        # waypoint's gimbalRotate action (see
+                                        # parse_kmz_for_editing).
+                                        params = a.find('.//{*}actionActuatorFuncParam')
+                                        if params is not None:
+                                            p_angle = params.find('.//{*}gimbalPitchRotateAngle')
+                                            if p_angle is not None and p_angle.text: meta['pitch'] = float(p_angle.text)
 
                         wp_data.append({'lat': float(c_raw[1]), 'lon': float(c_raw[0]), 'yaw': yaw, 'target_yaw': target_yaw, 'alt': alt, 'index': idx})
 

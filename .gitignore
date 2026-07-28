@@ -16,3 +16,6 @@ missions/
 
 #Machine-specific tracker folder preference
 .tracker_config.json
+
+#User-specific Creator parameter presets
+.creator_presets.json
