@@ -21,6 +21,18 @@ from PIL import Image
 import subprocess
 import shlex
 import time
+import matplotlib
+# Streamlit sets MPLBACKEND=Agg on import, which only takes effect if
+# matplotlib hasn't already picked a backend - as long as `import streamlit`
+# (line 1) runs before matplotlib.pyplot's first import, this is currently
+# redundant. But generate_name_thumbnail() renders on Streamlit's own
+# per-rerun worker thread, and any interactive backend (e.g. this box's
+# default, TkAgg) crashes the whole process when driven off the main thread
+# - reproduced live as a hard segfault (Tcl_AsyncDelete: async handler
+# deleted by the wrong thread). Setting it explicitly here means that stays
+# true even if these imports are ever reordered (an autoformatter's import
+# sort would do it) or the app is ever run standalone without Streamlit.
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 import textwrap
@@ -1174,6 +1186,24 @@ def get_bearing(p1, p2):
     return (math.degrees(math.atan2(y, x)) + 360) % 360
 
 @st.cache_data(show_spinner=False, ttl=3600)
+class ElevationLookupError(Exception):
+    """Raised when NONE of a batch's points could get a real elevation
+    reading from any source - see get_elevations_batch."""
+    pass
+
+# All three fetchers below use None (never 0) to mark a failed/missing
+# reading. 0 is a legitimate elevation (sea level, and a fair amount of
+# low-lying US terrain), so using it as a failure sentinel too - as this
+# code used to - makes a failed lookup indistinguishable from "this point
+# really is at sea level." That matters a lot here: elevation differences
+# between waypoints get baked directly into each waypoint's commanded
+# altitude (see generate_native_kmz_contents), so one silently-wrong 0
+# among otherwise-correct hilly-terrain readings shows up as a real,
+# uncommanded altitude cliff in the flight path at that exact waypoint.
+# get_elevations_batch is where every caller actually gets its elevations
+# from - it fills any None here with a nearby real reading before
+# returning, so downstream code never has to check for None itself.
+
 def get_elevations_open_elev(coords):
     url = "https://api.open-elevation.com/api/v1/lookup"
     locations = [{"latitude": lat, "longitude": lon} for lat, lon in coords]
@@ -1182,10 +1212,11 @@ def get_elevations_open_elev(coords):
         req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req) as response:
             res_json = json.loads(response.read().decode('utf-8'))
-            return [result['elevation'] for result in res_json['results']]
+            results = res_json['results']
+            return [r.get('elevation') for r in results]
     except Exception as e:
         st.warning(f"Open-Elevation error: {e}")
-        return [0] * len(coords)
+        return [None] * len(coords)
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_elevations_usgs(coords):
@@ -1196,16 +1227,16 @@ def get_elevations_usgs(coords):
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(req) as response:
                 res_json = json.loads(response.read().decode('utf-8'))
-                val = res_json.get('value', 0)
-                elevations.append(0 if str(val).lower() == 'null' or str(val).strip() == '' else float(val))
+                val = res_json.get('value')
+                elevations.append(None if val is None or str(val).lower() == 'null' or str(val).strip() == '' else float(val))
         except Exception as e:
-            elevations.append(0)
+            elevations.append(None)
     return elevations
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_elevations_raster(coords, tif_path):
     if not RASTERIO_AVAILABLE:
-        return [0] * len(coords)
+        return [None] * len(coords)
     elevations = []
     try:
         with rasterio.open(tif_path) as src:
@@ -1214,16 +1245,16 @@ def get_elevations_raster(coords, tif_path):
             lats = [c[0] for c in coords]
             xs, ys = transform('EPSG:4326', src.crs, lons, lats)
             pts = list(zip(xs, ys))
-            
+
             for val in src.sample(pts):
                 v = float(val[0])
                 if nodata is not None and math.isclose(v, nodata, rel_tol=1e-5):
-                    elevations.append(0.0)
+                    elevations.append(None)
                 else:
                     elevations.append(v)
     except Exception as e:
         st.warning(f"Error reading GeoTIFF: {e}")
-        return [0] * len(coords)
+        return [None] * len(coords)
     return elevations
 
 def get_tif_bounds_wgs84(tif_path):
@@ -1431,15 +1462,48 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
     plt.savefig(output_filepath, format='jpg', dpi=120, bbox_inches='tight', pad_inches=0)
     plt.close()
 
+def _fill_missing_elevations(coords, elevations):
+    """
+    Replaces each failed (None) elevation with the reading from the
+    nearest OTHER point in this same batch that did succeed - "nearby" in
+    the literal geographic sense, via haversine distance - rather than
+    guessing. Returns (filled, num_missing); num_missing == len(coords)
+    means not a single point in the batch got a real reading, so there was
+    nothing to fall back on at all.
+    """
+    valid_idxs = [i for i, e in enumerate(elevations) if e is not None]
+    if not valid_idxs:
+        return elevations, len(elevations)
+
+    filled = list(elevations)
+    num_missing = 0
+    for i, e in enumerate(elevations):
+        if e is not None:
+            continue
+        num_missing += 1
+        nearest_idx = min(valid_idxs, key=lambda j: get_haversine_dist(coords[i], coords[j]))
+        filled[i] = elevations[nearest_idx]
+    return filled, num_missing
+
 def get_elevations_batch(coords, source, tif_path=None):
     if not coords:
         return []
     if source == "USGS 3DEP (US High-Res)":
-        return get_elevations_usgs(coords)
+        raw = get_elevations_usgs(coords)
     elif source == "Local GeoTIFF" and tif_path and os.path.exists(tif_path):
-        return get_elevations_raster(coords, tif_path)
+        raw = get_elevations_raster(coords, tif_path)
     else:
-        return get_elevations_open_elev(coords)
+        raw = get_elevations_open_elev(coords)
+
+    filled, num_missing = _fill_missing_elevations(coords, raw)
+    if num_missing == len(coords):
+        raise ElevationLookupError(
+            f"Could not get elevation data from {source} for any point in this mission. "
+            "Check your network connection (or the GeoTIFF path/coverage) and try again."
+        )
+    if num_missing:
+        st.warning(f"{num_missing} waypoint(s) had no {source} elevation reading - used the nearest successful nearby reading instead.")
+    return filled
 
 def pick_folder_dialog(prompt_title):
     """
@@ -1912,7 +1976,7 @@ CREATOR_PRESET_KEYS = [
 def load_creator_presets():
     if os.path.exists(CREATOR_PRESETS_FILE):
         try:
-            with open(CREATOR_PRESETS_FILE) as f:
+            with open(CREATOR_PRESETS_FILE, encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return {}
@@ -1921,7 +1985,7 @@ def load_creator_presets():
 
 def save_creator_presets(presets):
     try:
-        with open(CREATOR_PRESETS_FILE, 'w') as f:
+        with open(CREATOR_PRESETS_FILE, 'w', encoding="utf-8") as f:
             json.dump(presets, f, indent=2)
     except Exception:
         pass
@@ -2027,6 +2091,22 @@ def strip_flight_suffix(name):
     suffix on top of the old one.
     """
     return re.sub(r'(?:_(?:Fly|Pilot))?_H\d+A\d+OL\d+(?:SO\d+)?$', '', name)
+
+# Characters that are legal in a macOS filename (this app's original
+# platform - only '/' is illegal there) but raise a raw, unhandled OSError
+# on Windows: '<>:"/\|?*' and control characters. Windows also forbids a
+# trailing dot or space, which a plain character strip won't catch.
+_WINDOWS_ILLEGAL_FILENAME_CHARS_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+def sanitize_filename_component(name):
+    """
+    Cleans a user-typed mission name so it's safe to build a filename from
+    on any OS. Applied once, right where the name comes off its text_input
+    widget, so every downstream use (filename, thumbnail label, success
+    message) stays consistent with what actually got saved.
+    """
+    cleaned = _WINDOWS_ILLEGAL_FILENAME_CHARS_RE.sub('', name).strip().rstrip('.')
+    return cleaned or "Mission"
 
 def line_intersection_local(p_a, bearing_a, p_b, bearing_b):
     """
@@ -2864,7 +2944,7 @@ if page == 'Creator':
         min_photo_interval_sec = 2.0 if "narrow_band" in camera_type else 0.7
 
         st.header("2. Global Config")
-        mission_name = st.text_input("Filename", "Mission_Flight", help=param_help("Filename"))
+        mission_name = sanitize_filename_component(st.text_input("Filename", "Mission_Flight", help=param_help("Filename")))
 
         with st.expander("💾 Parameter Presets"):
             c_presets = load_creator_presets()
@@ -3205,23 +3285,25 @@ if page == 'Creator':
                             elif save_option == "Create New Folder...": final_dir = os.path.join(MISSION_DIR, new_dir_name)
                             else: final_dir = os.path.join(MISSION_DIR, save_option)
 
-                            os.makedirs(final_dir, exist_ok=True)
-                            final_filepath = os.path.join(final_dir, f"{final_filename}.kmz")
-
-                            template_kml, waylines_wpml = generate_native_kmz_contents(path_coords, cfg, c_elev_source, c_tif_path)
-                            export_mission_kmz_from_strings(
-                                template_kml_str=template_kml,
-                                waylines_wpml_str=waylines_wpml,
-                                output_kmz_path=final_filepath,
-                                is_dji_fly=True
-                            )
-                            thumbnail_path = final_filepath.replace('.kmz', '.jpg')
-                            generate_name_thumbnail(
-                                prefixed_name, map_alt, map_pitch_val,
-                                map_front_ol, thumbnail_path, coords=path_coords, photo_count=est_photos
-                            )
-
-                        notices.success(f"Saved {final_filename}.kmz to {final_dir}/")
+                            try:
+                                template_kml, waylines_wpml = generate_native_kmz_contents(path_coords, cfg, c_elev_source, c_tif_path)
+                            except ElevationLookupError as e:
+                                notices.error(f"Save aborted: {e}")
+                            else:
+                                os.makedirs(final_dir, exist_ok=True)
+                                final_filepath = os.path.join(final_dir, f"{final_filename}.kmz")
+                                export_mission_kmz_from_strings(
+                                    template_kml_str=template_kml,
+                                    waylines_wpml_str=waylines_wpml,
+                                    output_kmz_path=final_filepath,
+                                    is_dji_fly=True
+                                )
+                                thumbnail_path = final_filepath.replace('.kmz', '.jpg')
+                                generate_name_thumbnail(
+                                    prefixed_name, map_alt, map_pitch_val,
+                                    map_front_ol, thumbnail_path, coords=path_coords, photo_count=est_photos
+                                )
+                                notices.success(f"Saved {final_filename}.kmz to {final_dir}/")
 
     elif map_data.get("all_drawings") and any(
         d.get('geometry', {}).get('type') == 'LineString' for d in map_data["all_drawings"]
@@ -3277,23 +3359,25 @@ if page == 'Creator':
                     elif save_option == "Create New Folder...": final_dir = os.path.join(MISSION_DIR, new_dir_name)
                     else: final_dir = os.path.join(MISSION_DIR, save_option)
 
-                    os.makedirs(final_dir, exist_ok=True)
-                    final_filepath = os.path.join(final_dir, f"{final_filename}.kmz")
-
-                    template_kml, waylines_wpml = generate_native_kmz_contents(coords, cfg, c_elev_source, c_tif_path)
-                    export_mission_kmz_from_strings(
-                        template_kml_str=template_kml,
-                        waylines_wpml_str=waylines_wpml,
-                        output_kmz_path=final_filepath,
-                        is_dji_fly=is_dji_fly
-                    )
-                    thumbnail_path = final_filepath.replace('.kmz', '.jpg')
-                    generate_name_thumbnail(
-                        prefixed_name, safe_get_float('alt_ft', 50.0), safe_get_float('pitch', -60.0),
-                        safe_get_float('overlap_pct', 70.0), thumbnail_path, coords=coords, photo_count=est_photos
-                    )
-
-                notices.success(f"Saved {final_filename}.kmz to {final_dir}/")
+                    try:
+                        template_kml, waylines_wpml = generate_native_kmz_contents(coords, cfg, c_elev_source, c_tif_path)
+                    except ElevationLookupError as e:
+                        notices.error(f"Save aborted: {e}")
+                    else:
+                        os.makedirs(final_dir, exist_ok=True)
+                        final_filepath = os.path.join(final_dir, f"{final_filename}.kmz")
+                        export_mission_kmz_from_strings(
+                            template_kml_str=template_kml,
+                            waylines_wpml_str=waylines_wpml,
+                            output_kmz_path=final_filepath,
+                            is_dji_fly=is_dji_fly
+                        )
+                        thumbnail_path = final_filepath.replace('.kmz', '.jpg')
+                        generate_name_thumbnail(
+                            prefixed_name, safe_get_float('alt_ft', 50.0), safe_get_float('pitch', -60.0),
+                            safe_get_float('overlap_pct', 70.0), thumbnail_path, coords=coords, photo_count=est_photos
+                        )
+                        notices.success(f"Saved {final_filename}.kmz to {final_dir}/")
 
 # --- EDITOR MODE ---
 elif page == 'Editor':
@@ -3332,7 +3416,11 @@ elif page == 'Editor':
         active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
         dir_label = selected_dir_name
 
-    kmz_files = [f for f in os.listdir(active_dir) if f.endswith(".kmz")]
+    try:
+        kmz_files = [f for f in os.listdir(active_dir) if f.endswith(".kmz")]
+    except OSError as e:
+        notices.error(f"Can't read {dir_label}: {e.strerror or e}")
+        kmz_files = []
 
     if not kmz_files:
         notices.warning(f"No missions found in {dir_label}.")
@@ -3370,7 +3458,7 @@ elif page == 'Editor':
             e_sync_geometry()
             
         meta = st.session_state.meta
-        
+
         with st.sidebar:
             st.header("1. Hardware & Payload")
             e_hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()), index=list(HARDWARE_MAP.keys()).index(meta.get('hardware_key', "DJI Fly (RC2 / Mini / Air Series)")), help=param_help("Drone Platform"))
@@ -3393,7 +3481,7 @@ elif page == 'Editor':
             e_camera_type = CAM_VAL_MAP[e_cam_choice]
             min_photo_interval_sec = 2.0 if "narrow_band" in e_camera_type else 0.7
 
-            edit_name = st.text_input("Mission Name", key="e_name_input", help=param_help("Mission Name"))
+            edit_name = sanitize_filename_component(st.text_input("Mission Name", key="e_name_input", help=param_help("Mission Name")))
             e_preview_suffix = f"_H{int(safe_get_float('e_alt_ft', 50.0))}A{int(abs(safe_get_float('e_pitch', -60.0)))}OL{int(safe_get_float('e_overlap_pct', 70.0))}"
             e_preview_platform = "Fly" if e_is_dji_fly else "Pilot"
             st.info(f"Will save as: {edit_name}_{e_preview_platform}{e_preview_suffix}.kmz")
@@ -3517,7 +3605,20 @@ elif page == 'Editor':
             cum_dist = [0.0]
             total_dist_ft = 0.0
         
-            elevations = get_elevations_batch(current_coords, e_elev_source, e_tif_path)
+            # This is only the live map preview (elevation-diff labels drawn
+            # while editing) - not what actually gets saved, which computes
+            # its own elevations fresh at save time and aborts on total
+            # failure instead (see the "Save & Update Mission" handler
+            # below). A total elevation-service outage shouldn't make the
+            # Editor itself unusable, so this falls back to a flat 0 just
+            # for this preview render, with a visible warning so it's clear
+            # the diff labels are unreliable right now rather than silently
+            # wrong.
+            try:
+                elevations = get_elevations_batch(current_coords, e_elev_source, e_tif_path)
+            except ElevationLookupError:
+                notices.warning(f"Couldn't get {e_elev_source} elevation data - elevation-diff labels below are unavailable, but the mission will still save if you can restore terrain data by save time.")
+                elevations = [0.0] * len(current_coords)
             start_elev = elevations[0] if elevations else 0
             target_agl_ft = safe_get_float('e_alt_ft', 50.0)
         
@@ -3637,36 +3738,39 @@ elif page == 'Editor':
                     suffix = f"_H{int(safe_get_float('e_alt_ft', 50.0))}A{int(abs(safe_get_float('e_pitch', -60.0)))}OL{int(safe_get_float('e_overlap_pct', 70.0))}"
                     final_filename = f"{e_prefixed_name}{suffix}"
 
-                    template_kml, waylines_wpml = generate_native_kmz_contents(final_coords, new_cfg, e_elev_source, e_tif_path)
+                    try:
+                        template_kml, waylines_wpml = generate_native_kmz_contents(final_coords, new_cfg, e_elev_source, e_tif_path)
+                    except ElevationLookupError as e:
+                        notices.error(f"Save aborted: {e}")
+                    else:
+                        final_filepath = os.path.join(active_dir, f"{final_filename}.kmz")
+                        export_mission_kmz_from_strings(
+                            template_kml_str=template_kml,
+                            waylines_wpml_str=waylines_wpml,
+                            output_kmz_path=final_filepath,
+                            is_dji_fly=e_is_dji_fly
+                        )
 
-                    final_filepath = os.path.join(active_dir, f"{final_filename}.kmz")
-                    export_mission_kmz_from_strings(
-                        template_kml_str=template_kml,
-                        waylines_wpml_str=waylines_wpml,
-                        output_kmz_path=final_filepath,
-                        is_dji_fly=e_is_dji_fly
-                    )
+                        thumbnail_path = final_filepath.replace('.kmz', '.jpg')
+                        generate_name_thumbnail(
+                            e_prefixed_name, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0),
+                            safe_get_float('e_overlap_pct', 70.0), thumbnail_path, coords=final_coords, photo_count=est_photos
+                        )
 
-                    thumbnail_path = final_filepath.replace('.kmz', '.jpg')
-                    generate_name_thumbnail(
-                        e_prefixed_name, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0),
-                        safe_get_float('e_overlap_pct', 70.0), thumbnail_path, coords=final_coords, photo_count=est_photos
-                    )
+                        # "Make new file?" unchecked means overwrite, not "keep both" -
+                        # since the suffix is re-derived from the current alt/pitch/
+                        # overlap (and the name is freely editable), the save path
+                        # very often differs from the source file even when the user
+                        # never intended to keep a second copy. Remove the original
+                        # (and its paired thumbnail) once the new save has succeeded.
+                        if not make_new_file and final_filepath != full_path:
+                            if os.path.exists(full_path):
+                                os.remove(full_path)
+                            old_thumbnail = full_path.replace('.kmz', '.jpg')
+                            if os.path.exists(old_thumbnail):
+                                os.remove(old_thumbnail)
 
-                    # "Make new file?" unchecked means overwrite, not "keep both" -
-                    # since the suffix is re-derived from the current alt/pitch/
-                    # overlap (and the name is freely editable), the save path
-                    # very often differs from the source file even when the user
-                    # never intended to keep a second copy. Remove the original
-                    # (and its paired thumbnail) once the new save has succeeded.
-                    if not make_new_file and final_filepath != full_path:
-                        if os.path.exists(full_path):
-                            os.remove(full_path)
-                        old_thumbnail = full_path.replace('.kmz', '.jpg')
-                        if os.path.exists(old_thumbnail):
-                            os.remove(old_thumbnail)
-
-                notices.success(f"Successfully updated and saved as {final_filename}.kmz in {dir_label}!")
+                        notices.success(f"Successfully updated and saved as {final_filename}.kmz in {dir_label}!")
 
 # ==========================================
 # VIEWER MODE
@@ -3703,7 +3807,11 @@ elif page == 'Viewer  |':
         active_dir = MISSION_DIR if selected_dir_name == "Root (missions/)" else os.path.join(MISSION_DIR, selected_dir_name)
         dir_label = selected_dir_name
 
-    kmz_files = [f for f in os.listdir(active_dir) if f.endswith(".kmz")]
+    try:
+        kmz_files = [f for f in os.listdir(active_dir) if f.endswith(".kmz")]
+    except OSError as e:
+        notices.error(f"Can't read {dir_label}: {e.strerror or e}")
+        kmz_files = []
 
     if not kmz_files:
         notices.warning(f"No missions found in {dir_label}.")
@@ -4064,10 +4172,14 @@ elif page == 'DJI Fly Transfer':
             # This page is DJI Fly-only (MTP transfer to the RC 2's dummy mission
             # slots doesn't apply to DJI Pilot missions), so Pilot-format .kmz
             # files are filtered out rather than just listed alongside Fly ones.
-            kmz_files = [
-                f for f in os.listdir(active_dir)
-                if f.endswith(".kmz") and is_dji_fly_kmz(os.path.join(active_dir, f))
-            ]
+            try:
+                kmz_files = [
+                    f for f in os.listdir(active_dir)
+                    if f.endswith(".kmz") and is_dji_fly_kmz(os.path.join(active_dir, f))
+                ]
+            except OSError as e:
+                st.error(f"Can't read {dir_label}: {e.strerror or e}")
+                kmz_files = []
 
             if not kmz_files:
                 st.warning(f"No DJI Fly missions found in {dir_label}.")
