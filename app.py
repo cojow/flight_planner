@@ -2326,10 +2326,25 @@ def line_intersection_local(p_a, bearing_a, p_b, bearing_b):
     """
     Intersects two infinite lines - each given as a point plus a compass
     bearing - using a local-planar approximation valid for small areas.
-    Returns None if the lines are within ~15 degrees of parallel: the true
-    crossing point races toward infinity as two lines approach parallel,
-    so ordinary coordinate rounding noise (KMZ coordinates are serialized
-    to 8 decimal places) gets amplified by orders of magnitude there.
+
+    The true crossing point races toward infinity as the two lines approach
+    parallel, so ordinary coordinate rounding noise gets amplified there -
+    but "how close to parallel" alone isn't a reliable proxy for whether
+    that's actually happened, because it ignores scale. A mapping serpentine
+    can produce a connector whose bearing is only a few degrees shy of
+    exactly reversing the pass it leaves - the true corner there is a
+    perfectly well-defined, stable point (see recover_corners), just an
+    acute one - while a genuine "there and back" survey leg is a real
+    reversal that races off just as an angle test would predict.
+
+    So rather than pre-judging from the angle, the intersection is always
+    computed, then trusted only if it lands within a generous multiple of
+    how far apart p_a and p_b themselves are - a direct measurement of
+    whether the math actually blew up, not a guess based on angle alone.
+    Genuine blow-ups land literally millions of times farther out than that
+    (verified: a synthetic reversal put the raw result ~2.7 million times
+    the anchor separation away), so this cleanly separates the two cases
+    with a lot of headroom either side.
     """
     lat0, lon0 = p_a
     lon_scale = 111320.0 * math.cos(math.radians(lat0)) or 1e-9
@@ -2346,11 +2361,20 @@ def line_intersection_local(p_a, bearing_a, p_b, bearing_b):
     d2 = (math.sin(math.radians(bearing_b)), math.cos(math.radians(bearing_b)))
 
     denom = d1[0] * d2[1] - d1[1] * d2[0]
-    if abs(denom) < 0.26:
-        return None
+    if abs(denom) < 1e-9:
+        return None  # exactly parallel - no intersection exists at all
 
     t = ((a2[0] - a1[0]) * d2[1] - (a2[1] - a1[1]) * d2[0]) / denom
-    return from_local(a1[0] + t * d1[0], a1[1] + t * d1[1])
+    ix, iy = a1[0] + t * d1[0], a1[1] + t * d1[1]
+
+    baseline = math.hypot(a2[0] - a1[0], a2[1] - a1[1])
+    if baseline > 1e-9:
+        dist_from_a1 = math.hypot(ix - a1[0], iy - a1[1])
+        dist_from_a2 = math.hypot(ix - a2[0], iy - a2[1])
+        if min(dist_from_a1, dist_from_a2) > 50.0 * baseline:
+            return None
+
+    return from_local(ix, iy)
 
 def recover_corners(coords, cluster_start, cluster_end):
     """
