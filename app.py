@@ -831,10 +831,32 @@ if "locked_viewer_center" not in st.session_state:
     st.session_state.locked_viewer_center = [40.246860, -111.648667]
 
 # Mavic 3 Multispectral Sensor Specs
-SENSOR_W = 17.3  
+SENSOR_W = 17.3
 SENSOR_H = 13.0
-FOCAL_L = 12.3   
-IMAGE_W = 5280   
+FOCAL_L = 12.3
+IMAGE_W = 5280
+
+# Half of the sensor's vertical field of view (~27.9 deg here). The gimbal
+# tilt is applied about the sensor's height axis, so at any pitch shallower
+# than this the top edge of the frame points at or above the horizon and the
+# footprint has no finite ground projection - its far edge runs off to
+# infinity. Derived from the optics rather than hard-coded so it stays
+# correct if the sensor constants above are ever changed for another camera.
+VERT_HALF_FOV_DEG = math.degrees(math.atan((SENSOR_H / 2.0) / FOCAL_L))
+
+# Shallowest gimbal tilt an area-mapping mission will accept. The bare
+# half-FOV is an asymptote - the footprint diverges as it is approached, so
+# overlap/spacing derived from it become meaningless long before it - so keep
+# a margin that still leaves a finite, usable footprint.
+MIN_MAPPING_PITCH_DEG = VERT_HALF_FOV_DEG + 5.0
+
+# How the camera is aimed on an area-mapping mission, relative to the
+# direction of travel. "forward" puts the sensor's long axis across-track,
+# which widens the swath by SENSOR_W/SENSOR_H (~33% here) and so cuts the
+# number of flight lines and photos by the same proportion. Corridor/line
+# missions keep the "perpendicular" aim, where the point is to image
+# something beside the flight path rather than to cover ground efficiently.
+MAPPING_YAW_MODE = "forward"
 
 CAM_DISPLAY_MAP = {
     "visible": "RGB Only",
@@ -1185,7 +1207,6 @@ def get_bearing(p1, p2):
     x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(d_lon)
     return (math.degrees(math.atan2(y, x)) + 360) % 360
 
-@st.cache_data(show_spinner=False, ttl=3600)
 class ElevationLookupError(Exception):
     """Raised when NONE of a batch's points could get a real elevation
     reading from any source - see get_elevations_batch."""
@@ -1204,6 +1225,7 @@ class ElevationLookupError(Exception):
 # from - it fills any None here with a nearby real reading before
 # returning, so downstream code never has to check for None itself.
 
+@st.cache_data(show_spinner=False, ttl=3600)
 def get_elevations_open_elev(coords):
     url = "https://api.open-elevation.com/api/v1/lookup"
     locations = [{"latitude": lat, "longitude": lon} for lat, lon in coords]
@@ -1632,6 +1654,12 @@ def st_group_images_by_time(source_folder, output_folder, target_date, gap_minut
 # 3D ROTATION MATRIX FOOTPRINT CALCULATOR
 # ==========================================
 def get_photo_footprint(lat, lon, alt_ft, pitch, yaw):
+    """
+    Ground footprint of one photo as a list of [lat, lon] corners, or None
+    if the camera is too shallow for all four corner rays to reach the
+    ground (see VERT_HALF_FOV_DEG). Callers must skip drawing on None -
+    there is no meaningful polygon to show at that tilt.
+    """
     w, h, f = SENSOR_W, SENSOR_H, FOCAL_L
     corners = [(-w/2, h/2, -f), (w/2, h/2, -f), (w/2, -h/2, -f), (-w/2, -h/2, -f)]
     yaw_rad = math.radians(yaw)
@@ -1658,8 +1686,15 @@ def get_photo_footprint(lat, lon, alt_ft, pitch, yaw):
         ray = [R[0][0]*corner[0] + R[0][1]*corner[1] + R[0][2]*corner[2],
                R[1][0]*corner[0] + R[1][1]*corner[1] + R[1][2]*corner[2],
                R[2][0]*corner[0] + R[2][1]*corner[1] + R[2][2]*corner[2]]
-        if ray[2] == 0: 
-            continue
+        # ray[2] >= 0 means this corner looks at or above the horizon and
+        # never meets the ground. Projecting it anyway gives a negative t -
+        # a point BEHIND the camera - which folds the quad into a bowtie
+        # whose drawn area *shrinks* as the camera flattens, when physically
+        # it should grow without bound. Bail out so callers skip drawing
+        # rather than render a silently wrong footprint. (project_footprint_ft
+        # already guards this the same way; this function was missed.)
+        if ray[2] >= 0:
+            return None
         t = -alt_ft / ray[2]
         dx_ft, dy_ft = ray[0] * t, ray[1] * t
         dlat = math.degrees(dy_ft / R_earth_ft)
@@ -1670,27 +1705,43 @@ def get_photo_footprint(lat, lon, alt_ft, pitch, yaw):
 def interpolate_path(coords, gap_m, return_frac=False):
     """
     Breaks down a corner-based path into physical waypoints for DJI Fly
-    compatibility. When return_frac=True, also returns a parallel list of
-    (segment_index, frac) tuples describing each output point's position
-    along the original path - used to interpolate other per-waypoint values
-    (like elevation) consistently with the same points, without having to
-    re-query them for every densified waypoint.
+    compatibility, spaced at gap_m along the path's total cumulative distance
+    so photo cadence is set by the whole route, not reset at each bend. Every
+    original vertex - not just the first and last - is also always kept as an
+    exact point, snapping out any interval-spaced point that landed within
+    gap_m/10 of one.
+
+    That corner precision matters beyond just fidelity to the drawn path: on
+    a mapping mission, a vertex is exactly where one pass ends and the turn
+    to the next begins. The old distance-only walk had no reason to land a
+    point there, so the photo nearest a strip's edge often fell some
+    distance short of it, leaving a sliver of the area right at the boundary
+    with less coverage than the rest of the strip. Anchoring a point to every
+    corner fixes that regardless of how the interval happens to phase
+    against the path's bends.
+
+    When return_frac=True, also returns a parallel list of (segment_index,
+    frac) tuples describing each output point's position along the original
+    path - used to interpolate other per-waypoint values (like elevation)
+    consistently with the same points, without having to re-query them for
+    every densified waypoint. A point sitting exactly on vertex i (other than
+    the last) is recorded as (i, 0.0) - the start of the segment leaving that
+    vertex - except the final vertex, which has no outgoing segment and is
+    recorded as (len(coords)-2, 1.0) instead.
     """
     if gap_m <= 0 or len(coords) < 2:
         if return_frac:
             return coords, [(i, 0.0) for i in range(len(coords))]
         return coords
 
-    dense_coords = [coords[0]]
-    fracs = [(0, 0.0)]
     cum_dist = [0.0]
     total_dist_m = 0.0
-
-    for i in range(len(coords)-1):
-        d = get_haversine_dist(coords[i], coords[i+1])
-        total_dist_m += d
+    for i in range(len(coords) - 1):
+        total_dist_m += get_haversine_dist(coords[i], coords[i+1])
         cum_dist.append(total_dist_m)
 
+    # Natural interval points, exactly as before.
+    interval_points = []  # (distance, seg_idx, frac, lat, lon)
     target_dist = gap_m
     while target_dist <= total_dist_m + 0.001:
         for i in range(len(cum_dist) - 1):
@@ -1700,14 +1751,27 @@ def interpolate_path(coords, gap_m, return_frac=False):
                     frac = (target_dist - cum_dist[i]) / seg_len
                     lat = coords[i][0] + (coords[i+1][0] - coords[i][0]) * frac
                     lon = coords[i][1] + (coords[i+1][1] - coords[i][1]) * frac
-                    dense_coords.append((lat, lon))
-                    fracs.append((i, frac))
+                    interval_points.append((target_dist, i, frac, lat, lon))
                 break
         target_dist += gap_m
 
-    if get_haversine_dist(dense_coords[-1], coords[-1]) > gap_m * 0.1:
-        dense_coords.append(coords[-1])
-        fracs.append((len(coords) - 2, 1.0))
+    # Every original vertex, exactly.
+    corner_points = []  # same shape as interval_points
+    for i, (lat, lon) in enumerate(coords):
+        if i < len(coords) - 1:
+            corner_points.append((cum_dist[i], i, 0.0, lat, lon))
+        else:
+            corner_points.append((cum_dist[i], len(coords) - 2, 1.0, lat, lon))
+
+    snap_tol = gap_m * 0.1
+    merged = corner_points + [
+        p for p in interval_points
+        if not any(abs(p[0] - c[0]) <= snap_tol for c in corner_points)
+    ]
+    merged.sort(key=lambda p: p[0])
+
+    dense_coords = [(p[3], p[4]) for p in merged]
+    fracs = [(p[1], p[2]) for p in merged]
 
     if return_frac:
         return dense_coords, fracs
@@ -1759,25 +1823,74 @@ def project_footprint_ft(alt_ft, pitch, yaw_deg):
         pts.append((ray[0] * t, ray[1] * t))
     return pts
 
-def footprint_extents_ft(alt_ft, pitch, side="right"):
+def _min_cross_width_ft(pts, samples=33):
+    """
+    Narrowest cross-track (y) width of a projected footprint, measured across
+    its along-track (x) span.
+
+    The footprint is a clean rectangle only at nadir; any gimbal tilt turns it
+    into a trapezoid that tapers toward the near edge. Spacing flight lines by
+    the WIDEST part of that trapezoid leaves unimaged wedges between adjacent
+    strips, so line spacing has to come from the narrowest part instead - in
+    effect the width of the largest rectangle that fits inside the footprint.
+    Returns the same value as the bounding box at nadir, and progressively
+    tighter spacing as the camera tilts.
+    """
+    xs = [p[0] for p in pts]
+    lo, hi = min(xs), max(xs)
+    if hi - lo < 1e-9:
+        return 0.0
+    n = len(pts)
+    narrowest = float('inf')
+    for k in range(samples):
+        x = lo + (hi - lo) * (k + 0.5) / samples
+        crossings = []
+        for i in range(n):
+            x1, y1 = pts[i]
+            x2, y2 = pts[(i + 1) % n]
+            if abs(x2 - x1) < 1e-12:
+                continue
+            if (x1 - x) * (x2 - x) <= 0:
+                t = (x - x1) / (x2 - x1)
+                crossings.append(y1 + t * (y2 - y1))
+        if len(crossings) >= 2:
+            narrowest = min(narrowest, max(crossings) - min(crossings))
+    return 0.0 if narrowest == float('inf') else narrowest
+
+
+def footprint_extents_ft(alt_ft, pitch, side="right", yaw_mode="perpendicular"):
     """
     True ground-footprint dimensions (feet) for the mission's camera
-    orientation (camera yawed 90 deg off the flight line, tilting to the
-    chosen side), derived by projecting the sensor corners:
+    orientation, derived by projecting the sensor corners:
     - along_ft: extent parallel to the flight line (drives frontal overlap)
-    - cross_ft: extent perpendicular to it (drives side overlap)
+    - cross_ft: extent perpendicular to it (drives side overlap / swath)
     - offset_ft: how far the footprint's cross-track center sits from the
       point directly below the drone (0 at nadir; grows with tilt)
     Computed with the flight line running east so along = |x|, cross = |y|.
+
+    yaw_mode picks how the camera is aimed relative to the direction of
+    travel, and must match what generate_native_kmz_contents actually writes:
+    - "perpendicular": camera yawed 90 deg off the flight line, tilting to
+      the chosen side. Used by corridor/line missions, where the point is to
+      image something beside the flight path.
+    - "forward": camera aimed along the direction of travel. Used by area
+      mapping, because it puts the sensor's LONG axis across-track - a 33%
+      wider swath for the same altitude, so proportionally fewer flight
+      lines and photos. It also keeps any tilt in the along-track plane, so
+      the cross-track offset stays 0 and the drone can fly straight down each
+      strip's centerline instead of being shifted sideways.
     """
-    yaw = 180.0 if side == "right" else 0.0
+    if yaw_mode == "forward":
+        yaw = 90.0  # flight line runs east, so "forward" is east
+    else:
+        yaw = 180.0 if side == "right" else 0.0
     pts = project_footprint_ft(alt_ft, pitch, yaw)
     if pts is None:
         return None
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
     along_ft = max(xs) - min(xs)
-    cross_ft = max(ys) - min(ys)
+    cross_ft = _min_cross_width_ft(pts)
     offset_ft = abs((max(ys) + min(ys)) / 2.0)
     return along_ft, cross_ft, offset_ft
 
@@ -1792,13 +1905,22 @@ def mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct
     - offset_ft: horizontal distance from the drone to the center of what
       the camera actually images - the flight lines are shifted by this so
       the *imaged* strips, not the drone itself, line up over the area.
-    Pitch shallower than 20 degrees is clamped - the ground footprint
-    stretches toward infinity as the camera approaches horizontal.
+      Always 0 under MAPPING_YAW_MODE, since aiming the camera along the
+      direction of travel keeps any tilt in the along-track plane.
+    Pitch shallower than MIN_MAPPING_PITCH_DEG is clamped - the ground
+    footprint stretches toward infinity as the camera approaches the
+    horizon, so overlap and spacing derived from it stop meaning anything.
     """
-    clamped_pitch = -min(90.0, max(20.0, abs(pitch)))
-    extents = footprint_extents_ft(alt_ft, clamped_pitch, side)
+    clamped_pitch = -min(90.0, max(MIN_MAPPING_PITCH_DEG, abs(pitch)))
+    extents = footprint_extents_ft(alt_ft, clamped_pitch, side, MAPPING_YAW_MODE)
     if extents is None:
-        extents = footprint_extents_ft(alt_ft, -20.0, side)
+        # Defensive only: MIN_MAPPING_PITCH_DEG is derived to sit above the
+        # horizon threshold, so the clamp above should always project. Fall
+        # back to nadir, which is valid at every altitude, rather than to
+        # another shallow angle - the previous fallback here retried at a
+        # pitch that was itself below the threshold, so it returned None
+        # again and the unpack below raised TypeError.
+        extents = footprint_extents_ft(alt_ft, -90.0, side, MAPPING_YAW_MODE)
     footprint_w_ft, footprint_h_ft, offset_ft = extents
     return {
         "footprint_w_ft": footprint_w_ft,
@@ -1858,15 +1980,27 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
     cos_lat = math.cos(math.radians(lat0))
     pts = [((c[1] - lon0) * cos_lat * FT_PER_DEG_LAT, (c[0] - lat0) * FT_PER_DEG_LAT) for c in boundary_coords]
 
-    # Sweep parallel to the longest boundary edge; rotate that edge horizontal.
-    best_len, sweep_ang = 0.0, 0.0
+    # Sweep parallel to whichever boundary edge leaves the SMALLEST extent
+    # perpendicular to the sweep. That perpendicular extent is exactly what
+    # the pass count is derived from below, so minimizing it minimizes passes
+    # (and therefore turns and flight time). For a convex polygon the optimal
+    # sweep direction is always parallel to one of its edges, so testing the
+    # edges is sufficient; for concave ones it remains a good heuristic.
+    # Sweeping along the LONGEST edge - the previous rule - usually picks the
+    # same direction but is not equivalent, and could cost an extra pass.
     n = len(pts)
+    sweep_ang, best_width = 0.0, float('inf')
     for i in range(n):
         x1, y1 = pts[i]
         x2, y2 = pts[(i + 1) % n]
-        edge_len = math.hypot(x2 - x1, y2 - y1)
-        if edge_len > best_len:
-            best_len, sweep_ang = edge_len, math.atan2(y2 - y1, x2 - x1)
+        if math.hypot(x2 - x1, y2 - y1) < 1e-9:
+            continue  # duplicate vertex - no direction to take from it
+        ang = math.atan2(y2 - y1, x2 - x1)
+        ca_t, sa_t = math.cos(-ang), math.sin(-ang)
+        ys_t = [x * sa_t + y * ca_t for x, y in pts]
+        width = max(ys_t) - min(ys_t)
+        if width < best_width - 1e-9:
+            best_width, sweep_ang = width, ang
     ca, sa = math.cos(-sweep_ang), math.sin(-sweep_ang)
     rot = [(x * ca - y * sa, x * sa + y * ca) for x, y in pts]
 
@@ -1924,7 +2058,87 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
 
     info = dict(geom)
     info["num_passes"] = len(centers)
+    # Each pass contributes exactly two waypoints, so path segment j runs
+    # along a pass when j is even and is a turn/connector between passes when
+    # j is odd. The camera is yawed off the direction of travel, so on a
+    # connector it points along the strips instead of across them - those
+    # photos image the wrong thing and, on DJI Fly, burn the 99-photo budget.
+    # Hand the connector indices to the generator so it can skip them.
+    info["connector_segments"] = [j for j in range(max(0, len(path_coords) - 1)) if j % 2 == 1]
     return path_coords, info
+
+
+def photo_index_ranges(n_coords, connector_segments):
+    """
+    Waypoint index ranges that should be photographed, as the maximal runs of
+    consecutive non-connector segments. DJI Pilot needs these because it fires
+    from an interval trigger over a waypoint range rather than per-waypoint,
+    so skipping the turns means emitting one trigger per pass.
+    """
+    skip = set(connector_segments or ())
+    ranges, start = [], None
+    for j in range(max(0, n_coords - 1)):
+        if j in skip:
+            if start is not None:
+                ranges.append((start, j))
+                start = None
+        elif start is None:
+            start = j
+    if start is not None:
+        ranges.append((start, n_coords - 1))
+    return ranges
+
+
+def dense_photo_segments(fracs, connector_segments):
+    """
+    For each densified mapping waypoint (as interpolate_path's (segment_index,
+    frac) pairs), the original path segment whose photo-taking status and
+    heading it should use.
+
+    Normally that is just the point's own (outgoing) segment. But
+    interpolate_path now always places a point exactly on every original
+    vertex, and a vertex directly between a pass and a connector is
+    simultaneously the END of one pass and the START of whatever comes next.
+    If that next thing is a connector, attributing the point to it would
+    silently drop a photo - or, if takes_photo overrode that, aim it along
+    the connector instead of across the strip - exactly at a strip's edge,
+    which is precisely where mapping coverage most depends on a photo
+    landing. So an exact vertex (frac == 0.0) prefers whichever adjacent
+    segment is a photo-taking pass, when the two disagree; interior points
+    (0 < frac < 1) only ever belong to the one segment they're on regardless.
+    """
+    skip = set(connector_segments or ())
+    out = []
+    for seg, frac in fracs:
+        if frac == 0.0 and seg in skip and seg > 0 and (seg - 1) not in skip:
+            out.append(seg - 1)
+        else:
+            out.append(seg)
+    return out
+
+
+def count_mapping_photos(path_coords, interval_ft, connector_segments, is_dji_fly=True):
+    """
+    Number of photos a mapping path will actually take, so the Creator's
+    estimate can't drift from what gets written into the KMZ. DJI Fly is exact
+    - it mirrors the generator's own densification. DJI Pilot is a close
+    estimate, since its interval trigger runs on the aircraft.
+    """
+    if not path_coords or len(path_coords) < 2:
+        return 0
+    if is_dji_fly:
+        gap_m = max(1.0, interval_ft * FT_TO_M)
+        _dense, fracs = interpolate_path(path_coords, gap_m, return_frac=True)
+        skip = set(connector_segments or ())
+        return sum(1 for seg in dense_photo_segments(fracs, connector_segments) if seg not in skip)
+
+    total = 0
+    for r_start, r_end in photo_index_ranges(len(path_coords), connector_segments):
+        seg_ft = sum(
+            get_haversine_dist(path_coords[j], path_coords[j + 1]) for j in range(r_start, r_end)
+        ) * M_TO_FT
+        total += int(seg_ft / interval_ft) + 1 if interval_ft > 0 else 0
+    return total
 
 # ==========================================
 # SESSION STATE INITIALIZATION & SAFE CALLBACKS
@@ -2354,10 +2568,23 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
         # here, especially with USGS 3DEP, which looks up one coordinate
         # at a time.
         corner_elevations = get_elevations_batch(coords, elev_source, tif_path)
+        corner_coords = coords  # pre-densification, for per-segment headings
         coords, fracs = interpolate_path(coords, gap_m, return_frac=True)
         elevations = interpolate_elevations(corner_elevations, fracs)
+        # Mapping missions mark their turn/connector segments so no photo is
+        # taken while crossing between passes (see generate_mapping_flight_path).
+        # dense_photo_segments resolves each densified waypoint to the ORIGINAL
+        # segment whose photo-taking status (and, below, heading) it should use
+        # - ordinarily its own outgoing segment, except at a vertex shared
+        # between a pass and a connector, which it attributes to the pass.
+        no_photo_segments = cfg.get("no_photo_segments")
+        photo_segments = dense_photo_segments(fracs, no_photo_segments)
+        skip_segments = set(no_photo_segments or ())
+        takes_photo = [seg not in skip_segments for seg in photo_segments]
     else:
         elevations = get_elevations_batch(coords, elev_source, tif_path)
+        takes_photo = [True] * len(coords)
+        corner_coords, fracs = coords, None  # DJI Pilot flies the corners as-is
 
     ms_ts = int(datetime.now().timestamp() * 1000)
 
@@ -2377,12 +2604,33 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
     total_duration = total_dist_m / speed_m if speed_m > 0 else 0
     pitch_val = cfg['pitch'] if 'pitch' in cfg else cfg.get('gimbal_pitch', -60)
 
-    yaws = []
-    for i in range(len(coords) - 1):
-        ref_bearing = get_bearing(coords[i], coords[i+1])
-        yaw = (ref_bearing + 90) % 360 if cfg['side'] == "right" else (ref_bearing - 90) % 360
-        if yaw > 180: yaw -= 360
-        yaws.append(int(yaw))
+    # Must stay in step with footprint_extents_ft's yaw_mode - the overlap and
+    # line spacing a mapping mission is built from assume this exact aim.
+    yaw_mode = cfg.get("camera_yaw_mode", "perpendicular")
+
+    def aim(bearing):
+        if yaw_mode == "forward":
+            yaw = bearing % 360
+        else:
+            yaw = (bearing + 90) % 360 if cfg['side'] == "right" else (bearing - 90) % 360
+        return int(yaw - 360 if yaw > 180 else yaw)
+
+    yaws = [aim(get_bearing(coords[i], coords[i+1])) for i in range(len(coords) - 1)]
+
+    # Each waypoint's heading normally comes from the leg it just flew, which
+    # for an interior densified point is exactly right - interpolate_path now
+    # keeps every point within the ONE original segment it was placed on, so
+    # consecutive dense points never straddle a bend. The one case that still
+    # needs help is a vertex shared between a pass and a connector: it takes
+    # its photo-or-not status from photo_segments (the pass, not whichever of
+    # the two the vertex happened to be recorded against), and its heading has
+    # to agree - otherwise a photo at the edge of a strip could still end up
+    # aimed along the connector instead of across the strip.
+    wp_headings = None
+    if is_dji_fly and yaw_mode == "forward" and len(corner_coords) >= 2:
+        seg_aim = [aim(get_bearing(corner_coords[j], corner_coords[j+1]))
+                   for j in range(len(corner_coords) - 1)]
+        wp_headings = [seg_aim[min(seg, len(seg_aim) - 1)] for seg in photo_segments]
 
     template_placemarks = ""
     waylines_placemarks = ""
@@ -2408,7 +2656,10 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
         terrain_diff = current_elev - start_elev
         alt_m = target_agl_m + terrain_diff
         
-        current_yaw = yaws[0] if i == 0 else yaws[i-1]
+        if wp_headings is not None and i < len(wp_headings):
+            current_yaw = wp_headings[i]
+        else:
+            current_yaw = yaws[0] if i == 0 else yaws[i-1]
         template_action_group = ""
         waylines_action_group = ""
 
@@ -2467,7 +2718,7 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
         start_wp = 0 if is_dji_fly else cfg.get("photo_start_wp", 0)
         
         if is_dji_fly:
-            if i >= start_wp:
+            if i >= start_wp and takes_photo[i]:
                 photo_action_block = f"""
           <wpml:actionGroupStartIndex>{i}</wpml:actionGroupStartIndex>
           <wpml:actionGroupEndIndex>{i}</wpml:actionGroupEndIndex>
@@ -2489,10 +2740,20 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
             if i == start_wp:
                 trigger_tag = "multipleDistance" if cfg["trigger_type"] == "distance" else "multipleTiming"
                 interval_val = max(1.0, cfg['interval_ft'] * FT_TO_M) if cfg["trigger_type"] == "distance" else cfg['interval_sec']
-                
-                photo_action_block = f"""
-          <wpml:actionGroupStartIndex>{start_wp}</wpml:actionGroupStartIndex>
-          <wpml:actionGroupEndIndex>{len(coords)-1}</wpml:actionGroupEndIndex>
+
+                # DJI Pilot fires from an interval trigger spanning a waypoint
+                # range, rather than per-waypoint like DJI Fly, so connector
+                # legs are skipped by emitting one trigger per pass instead of
+                # a single one covering the whole route. Missions that don't
+                # ask for that (every corridor/line mission) still get exactly
+                # one group spanning everything, as before.
+                photo_ranges = cfg.get("photo_index_ranges") or [(start_wp, len(coords) - 1)]
+                for r_start, r_end in photo_ranges:
+                    if r_end <= r_start:
+                        continue  # a single point can't host an interval trigger
+                    photo_action_block = f"""
+          <wpml:actionGroupStartIndex>{r_start}</wpml:actionGroupStartIndex>
+          <wpml:actionGroupEndIndex>{r_end}</wpml:actionGroupEndIndex>
           <wpml:actionGroupMode>sequence</wpml:actionGroupMode>
           <wpml:actionTrigger><wpml:actionTriggerType>{trigger_tag}</wpml:actionTriggerType><wpml:actionTriggerParam>{interval_val:.2f}</wpml:actionTriggerParam></wpml:actionTrigger>
           <wpml:action>
@@ -2505,10 +2766,10 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
             </wpml:actionActuatorFuncParam>
           </wpml:action>
         </wpml:actionGroup>"""
-                template_action_group += f"\n        <wpml:actionGroup>\n          <wpml:actionGroupId>{g_id_template}</wpml:actionGroupId>{photo_action_block}"
-                waylines_action_group += f"\n        <wpml:actionGroup>\n          <wpml:actionGroupId>{g_id_waylines}</wpml:actionGroupId>{photo_action_block}"
-                g_id_template += 1
-                g_id_waylines += 1
+                    template_action_group += f"\n        <wpml:actionGroup>\n          <wpml:actionGroupId>{g_id_template}</wpml:actionGroupId>{photo_action_block}"
+                    waylines_action_group += f"\n        <wpml:actionGroup>\n          <wpml:actionGroupId>{g_id_waylines}</wpml:actionGroupId>{photo_action_block}"
+                    g_id_template += 1
+                    g_id_waylines += 1
 
         if i < len(coords) - 1 and not is_dji_fly:
             waylines_action_group += f"""
@@ -2914,25 +3175,18 @@ if page == 'Creator':
         )
 
         st.header("1. Hardware & Payload")
-        if mapping_mode:
-            st.info("Mapping missions are generated as DJI Fly waypoint missions.")
-            fly_hw = HARDWARE_MAP["DJI Fly (RC2 / Mini / Air Series)"]
-            drone_enum = fly_hw["drone_enum"]
-            drone_sub_enum = fly_hw["drone_sub"]
-            payload_enum = fly_hw["payload_enum"]
-            payload_sub_enum = fly_hw["payload_sub"]
-            is_dji_fly = True
-            st.warning("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
-        else:
-            hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()), key="hw_choice", help=param_help("Drone Platform"))
-            drone_enum = HARDWARE_MAP[hw_choice]["drone_enum"]
-            drone_sub_enum = HARDWARE_MAP[hw_choice]["drone_sub"]
-            payload_enum = HARDWARE_MAP[hw_choice]["payload_enum"]
-            payload_sub_enum = HARDWARE_MAP[hw_choice]["payload_sub"]
-            is_dji_fly = HARDWARE_MAP[hw_choice].get("is_dji_fly", False)
+        # Both platforms plan either kind of mission - mapping used to be
+        # forced onto DJI Fly, which capped an area mission at 99 photos no
+        # matter which aircraft was actually flying it.
+        hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()), key="hw_choice", help=param_help("Drone Platform"))
+        drone_enum = HARDWARE_MAP[hw_choice]["drone_enum"]
+        drone_sub_enum = HARDWARE_MAP[hw_choice]["drone_sub"]
+        payload_enum = HARDWARE_MAP[hw_choice]["payload_enum"]
+        payload_sub_enum = HARDWARE_MAP[hw_choice]["payload_sub"]
+        is_dji_fly = HARDWARE_MAP[hw_choice].get("is_dji_fly", False)
 
-            if is_dji_fly:
-                st.warning("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
+        if is_dji_fly:
+            st.warning("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
 
         if is_dji_fly:
             cam_choice = "RGB Only"
@@ -2991,7 +3245,17 @@ if page == 'Creator':
                     st.warning("No .tif files found in the 'surfaces' folder.")
 
         if mapping_mode:
-            st.slider("Gimbal Pitch (°)", -90, -20, value=-90, key="map_pitch", help=param_help("Gimbal Pitch (°)"))
+            # Lower bound comes from the sensor's own FOV, not a magic number:
+            # past this the footprint has no finite ground extent, so overlap
+            # and line spacing can't be computed (and used to crash).
+            map_pitch_min = -int(math.ceil(MIN_MAPPING_PITCH_DEG))
+            # A preset saved while the old (shallower) bound was in force can
+            # hold a pitch outside the new range, which Streamlit rejects
+            # outright - pull any such value back in before the slider reads it.
+            if "map_pitch" in st.session_state:
+                st.session_state.map_pitch = int(max(-90, min(map_pitch_min, st.session_state.map_pitch)))
+            st.slider("Gimbal Pitch (°)", -90, map_pitch_min, value=-90,
+                      key="map_pitch", help=param_help("Gimbal Pitch (°)"))
 
             map_alt = safe_get_float('map_alt_ft', 100.0)
             map_pitch_val = safe_get_float('map_pitch', -90.0)
@@ -3243,17 +3507,24 @@ if page == 'Creator':
             if path_coords:
                 total_dist_ft = sum(get_haversine_dist(path_coords[i], path_coords[i+1]) for i in range(len(path_coords)-1)) * M_TO_FT
                 gap_ft = map_info['interval_ft']
-                est_photos = int(total_dist_ft / gap_ft) + 1 if gap_ft > 0 else 0
+                # Counted the same way the generator writes them - photos on
+                # the turn legs between passes are skipped, so a plain
+                # distance/interval estimate would overstate the total and
+                # trip the 99-photo limit earlier than the mission actually does.
+                est_photos = count_mapping_photos(path_coords, gap_ft, map_info["connector_segments"], is_dji_fly)
 
+                # The 99-photo ceiling is a DJI Fly limitation; Pilot has no
+                # equivalent cap, so an area mission flown on Pilot is only
+                # bounded by battery.
                 save_disabled = False
-                if est_photos > 99:
-                    notices.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please shrink the area, raise the altitude, or reduce the overlaps.")
+                if is_dji_fly and est_photos > 99:
+                    notices.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please shrink the area, raise the altitude, reduce the overlaps, or switch to DJI Pilot 2.")
                     save_disabled = True
 
                 with top_hud:
                     c1, c2, c3, c4 = st.columns([1.2, 1.2, 1, 1.6])
                     c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft")
-                    c2.metric("Estimated Photos", f"{est_photos} / 99")
+                    c2.metric("Estimated Photos", f"{est_photos} / 99" if is_dji_fly else f"{est_photos}")
                     c3.metric("Passes", f"{map_info['num_passes']}")
                     with c4:
                         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
@@ -3272,10 +3543,15 @@ if page == 'Creator':
                                 "interval_sec": 0.0,
                                 "speed_m": speed_m, "photo_start_wp": 0,
                                 "camera_type": camera_type, "drone_sub": drone_sub_enum, "payload_sub": payload_sub_enum,
-                                "is_dji_fly": True
+                                "is_dji_fly": is_dji_fly,
+                                "camera_yaw_mode": MAPPING_YAW_MODE,
+                                # DJI Fly skips turns per-waypoint; Pilot needs
+                                # the equivalent as one interval trigger per pass.
+                                "no_photo_segments": map_info["connector_segments"],
+                                "photo_index_ranges": photo_index_ranges(len(path_coords), map_info["connector_segments"]),
                             }
 
-                            prefixed_name = f"{mission_name}_Fly"
+                            prefixed_name = f"{mission_name}_{'Fly' if is_dji_fly else 'Pilot'}"
                             suffix = f"_H{int(map_alt)}A{int(abs(map_pitch_val))}OL{int(map_front_ol)}SO{int(map_side_ol)}"
                             final_filename = f"{prefixed_name}{suffix}"
 
@@ -3296,7 +3572,7 @@ if page == 'Creator':
                                     template_kml_str=template_kml,
                                     waylines_wpml_str=waylines_wpml,
                                     output_kmz_path=final_filepath,
-                                    is_dji_fly=True
+                                    is_dji_fly=is_dji_fly
                                 )
                                 thumbnail_path = final_filepath.replace('.kmz', '.jpg')
                                 generate_name_thumbnail(
@@ -3553,6 +3829,12 @@ elif page == 'Editor':
 
             st.header("4. Visuals")
             show_footprints = st.checkbox("Show Image Footprints", value=True, help=param_help("Show Image Footprints"))
+            if show_footprints and abs(safe_get_float('e_pitch', -60.0)) < VERT_HALF_FOV_DEG:
+                st.warning(
+                    f"Gimbal pitch is shallower than {VERT_HALF_FOV_DEG:.0f}° (the camera's vertical half-FOV), "
+                    "so the top of the frame looks above the horizon and the footprint has no finite size on "
+                    "the ground. Footprints are hidden at this angle."
+                )
             show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="editor_faa_toggle", help=param_help("Show FAA Airspace Restrictions"))
             if show_faa_airspace:
                 st.write("#### Update restrictions of map center")
@@ -3662,7 +3944,8 @@ elif page == 'Editor':
                                 lat, lon = current_coords[i][0], current_coords[i][1]
                         
                             footprint = get_photo_footprint(lat, lon, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0), yaws[i])
-                            folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_edit)
+                            if footprint:
+                                folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_edit)
                             folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_edit)
                             break
                     current_dist += gap_ft_preview
@@ -3992,7 +4275,8 @@ elif page == 'Viewer  |':
                                 if show_footprints:
                                     yaw = w['target_yaw']
                                     footprint = get_photo_footprint(w['lat'], w['lon'], w['alt'], meta['pitch'], yaw)
-                                    folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_view)
+                                    if footprint:
+                                        folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_view)
                                 folium.CircleMarker([w['lat'], w['lon']], radius=2.5, color="yellow", fill=True).add_to(m_view)
                                 photo_count += 1
                         elif gap > 0 and meta['start_idx'] < len(wp_data):
@@ -4011,7 +4295,8 @@ elif page == 'Viewer  |':
                                         if show_footprints:
                                             yaw = wp_data[i]['target_yaw']
                                             footprint = get_photo_footprint(lat, lon, meta['alt']*M_TO_FT, meta['pitch'], yaw)
-                                            folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_view)
+                                            if footprint:
+                                                folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_view)
                                         
                                         folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_view)
                                         photo_count += 1
@@ -4037,6 +4322,12 @@ elif page == 'Viewer  |':
                         st.sidebar.write(f"Waypoint Alt: {meta['alt']*M_TO_FT:.1f} ft")
                         st.sidebar.write(f"Trigger: {'Dense Waypoints (DJI Fly)' if meta['mode'] == 'None' else meta['mode']} ({meta['t_val']*M_TO_FT if meta['mode']=='Distance' else meta['t_val']:.1f})")
                         st.sidebar.write(f"Calculated Photos: {grand_total_photos}")
+                        if show_footprints and abs(meta['pitch']) < VERT_HALF_FOV_DEG:
+                            st.sidebar.warning(
+                                f"This mission's {meta['pitch']}° gimbal pitch is shallower than the camera's "
+                                f"{VERT_HALF_FOV_DEG:.0f}° vertical half-FOV, so its footprints have no finite "
+                                "ground size and are hidden."
+                            )
                     else:
                         st.sidebar.success(f"Viewing {len(selected_kmzs)} combined missions.")
                         st.sidebar.write(f"Total Aggregated Distance: {grand_total_dist_ft:.1f} ft")
