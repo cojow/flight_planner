@@ -850,13 +850,25 @@ VERT_HALF_FOV_DEG = math.degrees(math.atan((SENSOR_H / 2.0) / FOCAL_L))
 # a margin that still leaves a finite, usable footprint.
 MIN_MAPPING_PITCH_DEG = VERT_HALF_FOV_DEG + 5.0
 
-# How the camera is aimed on an area-mapping mission, relative to the
-# direction of travel. "forward" puts the sensor's long axis across-track,
-# which widens the swath by SENSOR_W/SENSOR_H (~33% here) and so cuts the
-# number of flight lines and photos by the same proportion. Corridor/line
-# missions keep the "perpendicular" aim, where the point is to image
-# something beside the flight path rather than to cover ground efficiently.
-MAPPING_YAW_MODE = "forward"
+# How the camera may be aimed on an area-mapping mission, relative to the
+# direction of travel.
+#   "parallel" - camera looks along the flight line. The tilt then falls in
+#     the along-track plane, so the imaged strip stays centred on the drone
+#     and every pass runs straight down its strip: the computed path keeps
+#     the shape of the drawn area instead of being pushed sideways. It also
+#     puts the sensor's long axis across-track, widening the swath by
+#     SENSOR_W/SENSOR_H (~33% here) for proportionally fewer flight lines.
+#   "right"/"left" - camera looks across the flight line to that side, the
+#     corridor-mission aim. The tilt now falls across-track, so the imaged
+#     strip sits off to one side and the flight lines have to be offset to
+#     compensate - which, because the offset flips with each direction
+#     change, visibly distorts the path away from the drawn shape.
+MAPPING_CAMERA_SIDES = ["parallel", "right", "left"]
+
+
+def mapping_yaw_mode(side):
+    """Which footprint geometry a mapping camera side implies."""
+    return "forward" if side == "parallel" else "perpendicular"
 
 CAM_DISPLAY_MAP = {
     "visible": "RGB Only",
@@ -1823,10 +1835,12 @@ def project_footprint_ft(alt_ft, pitch, yaw_deg):
         pts.append((ray[0] * t, ray[1] * t))
     return pts
 
-def _min_cross_width_ft(pts, samples=33):
+def _min_section_width_ft(pts, samples=33):
     """
-    Narrowest cross-track (y) width of a projected footprint, measured across
-    its along-track (x) span.
+    Narrowest second-axis (y) width of a footprint polygon, measured across its
+    first-axis (x) span. Callers hand the points in already so that x is the
+    axis the gimbal tilt runs along; pass them transposed to measure the other
+    way round.
 
     The footprint is a clean rectangle only at nadir; any gimbal tilt turns it
     into a trapezoid that tapers toward the near edge. Spacing flight lines by
@@ -1835,15 +1849,26 @@ def _min_cross_width_ft(pts, samples=33):
     effect the width of the largest rectangle that fits inside the footprint.
     Returns the same value as the bounding box at nadir, and progressively
     tighter spacing as the camera tilts.
+
+    Both ends of the span are probed as well as the interior samples: a
+    trapezoid always reaches its narrowest at the near parallel edge, so
+    sampling only at sample-cell centres (as this did) never actually visited
+    the minimum and over-reported the usable width by up to ~5% at steep tilt,
+    which quietly ate into the requested side overlap. The end probes sit a
+    hair inside the span rather than exactly on it: the projection leaves the
+    two corners of an edge differing by ~1e-14 ft, enough that a probe placed
+    exactly at the extreme falls outside one of the two adjoining edges and
+    finds a single crossing instead of a pair.
     """
     xs = [p[0] for p in pts]
     lo, hi = min(xs), max(xs)
     if hi - lo < 1e-9:
         return 0.0
     n = len(pts)
+    inset = (hi - lo) * 1e-6
+    probes = [lo + inset, hi - inset] + [lo + (hi - lo) * (k + 0.5) / samples for k in range(samples)]
     narrowest = float('inf')
-    for k in range(samples):
-        x = lo + (hi - lo) * (k + 0.5) / samples
+    for x in probes:
         crossings = []
         for i in range(n):
             x1, y1 = pts[i]
@@ -1866,19 +1891,32 @@ def footprint_extents_ft(alt_ft, pitch, side="right", yaw_mode="perpendicular"):
     - cross_ft: extent perpendicular to it (drives side overlap / swath)
     - offset_ft: how far the footprint's cross-track center sits from the
       point directly below the drone (0 at nadir; grows with tilt)
+    - along_offset_ft: the same thing along-track, signed in the direction of
+      travel (0 at nadir; positive means the camera images ground ahead of
+      the drone rather than beneath it)
     Computed with the flight line running east so along = |x|, cross = |y|.
 
     yaw_mode picks how the camera is aimed relative to the direction of
     travel, and must match what generate_native_kmz_contents actually writes:
+    - "forward": camera aimed along the direction of travel ("parallel" in the
+      UI). Puts the sensor's LONG axis across-track - a 33% wider swath for
+      the same altitude, so proportionally fewer flight lines and photos. It
+      also keeps any tilt in the along-track plane, so the cross-track offset
+      stays 0 and the drone flies straight down each strip's centerline.
     - "perpendicular": camera yawed 90 deg off the flight line, tilting to
-      the chosen side. Used by corridor/line missions, where the point is to
+      the chosen side. The corridor/line-mission aim, where the point is to
       image something beside the flight path.
-    - "forward": camera aimed along the direction of travel. Used by area
-      mapping, because it puts the sensor's LONG axis across-track - a 33%
-      wider swath for the same altitude, so proportionally fewer flight
-      lines and photos. It also keeps any tilt in the along-track plane, so
-      the cross-track offset stays 0 and the drone can fly straight down each
-      strip's centerline instead of being shifted sideways.
+
+    Tilt stretches the footprint into a trapezoid ALONG THE AXIS IT TILTS
+    ABOUT, so which axis is which swaps between the two modes, and the usable
+    rectangle has to be measured accordingly: it spans the full extent along
+    the tilt axis, and is as wide as the narrowest section across it.
+    Measuring both from the x axis regardless (as this did) was right only for
+    "forward". In "perpendicular" it read the trapezoid's pinched corners as
+    the swath - near zero, collapsing line spacing to the 1 ft floor - and
+    took the widest (far) edge as the along-track extent instead of the usable
+    narrow one, so realized frontal overlap fell well short of the request and
+    went negative, i.e. left gaps, past roughly -45 deg.
     """
     if yaw_mode == "forward":
         yaw = 90.0  # flight line runs east, so "forward" is east
@@ -1889,12 +1927,20 @@ def footprint_extents_ft(alt_ft, pitch, side="right", yaw_mode="perpendicular"):
         return None
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
-    along_ft = max(xs) - min(xs)
-    cross_ft = _min_cross_width_ft(pts)
+    if yaw_mode == "forward":
+        # Tilt runs along-track: parallel edges lie across-track.
+        along_ft = max(xs) - min(xs)
+        cross_ft = _min_section_width_ft(pts)
+    else:
+        # Tilt runs across-track: the trapezoid is the same shape turned 90
+        # deg, so the two axes trade roles.
+        cross_ft = max(ys) - min(ys)
+        along_ft = _min_section_width_ft([(y, x) for x, y in pts])
     offset_ft = abs((max(ys) + min(ys)) / 2.0)
-    return along_ft, cross_ft, offset_ft
+    along_offset_ft = (max(xs) + min(xs)) / 2.0
+    return along_ft, cross_ft, offset_ft, along_offset_ft
 
-def mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct, side="right"):
+def mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct, side="parallel"):
     """
     Camera coverage geometry for area-mapping missions, all in feet. Overlap
     is based on the TRUE projected ground footprint (footprint_extents_ft),
@@ -1905,14 +1951,18 @@ def mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct
     - offset_ft: horizontal distance from the drone to the center of what
       the camera actually images - the flight lines are shifted by this so
       the *imaged* strips, not the drone itself, line up over the area.
-      Always 0 under MAPPING_YAW_MODE, since aiming the camera along the
-      direction of travel keeps any tilt in the along-track plane.
+      Always 0 for the "parallel" camera side, since aiming the camera along
+      the direction of travel keeps any tilt in the along-track plane; that
+      is what lets the computed path keep the drawn area's shape.
+    - along_offset_ft: the along-track counterpart, non-zero only for
+      "parallel" with tilt (the camera then images ground ahead of the drone)
     Pitch shallower than MIN_MAPPING_PITCH_DEG is clamped - the ground
     footprint stretches toward infinity as the camera approaches the
     horizon, so overlap and spacing derived from it stop meaning anything.
     """
+    yaw_mode = mapping_yaw_mode(side)
     clamped_pitch = -min(90.0, max(MIN_MAPPING_PITCH_DEG, abs(pitch)))
-    extents = footprint_extents_ft(alt_ft, clamped_pitch, side, MAPPING_YAW_MODE)
+    extents = footprint_extents_ft(alt_ft, clamped_pitch, side, yaw_mode)
     if extents is None:
         # Defensive only: MIN_MAPPING_PITCH_DEG is derived to sit above the
         # horizon threshold, so the clamp above should always project. Fall
@@ -1920,12 +1970,14 @@ def mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct
         # another shallow angle - the previous fallback here retried at a
         # pitch that was itself below the threshold, so it returned None
         # again and the unpack below raised TypeError.
-        extents = footprint_extents_ft(alt_ft, -90.0, side, MAPPING_YAW_MODE)
-    footprint_w_ft, footprint_h_ft, offset_ft = extents
+        extents = footprint_extents_ft(alt_ft, -90.0, side, yaw_mode)
+    footprint_w_ft, footprint_h_ft, offset_ft, along_offset_ft = extents
     return {
         "footprint_w_ft": footprint_w_ft,
         "footprint_h_ft": footprint_h_ft,
         "offset_ft": offset_ft,
+        "along_offset_ft": along_offset_ft,
+        "yaw_mode": yaw_mode,
         "interval_ft": max(1.0, footprint_w_ft * (1.0 - frontal_overlap_pct / 100.0)),
         "spacing_ft": max(1.0, footprint_h_ft * (1.0 - side_overlap_pct / 100.0)),
     }
@@ -1949,18 +2001,25 @@ def extract_polygon_from_map_data(map_data):
                 return coords
     return None
 
-def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap_pct, side_overlap_pct, side="right"):
+def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap_pct, side_overlap_pct,
+                                 side="parallel", runout_intervals=1.0, line_bearing_deg=None):
     """
     Builds a serpentine (lawnmower) flight path whose camera footprints
     fully cover the drawn boundary polygon, honoring altitude, gimbal
-    pitch, and frontal/side overlap. The drone path itself may run outside
-    the boundary: passes extend half a footprint past each end so photo
-    coverage reaches the edges, and with an oblique gimbal the flight
-    lines are offset sideways so the *imaged* strips (not the drone) land
-    on the target area. Passes sweep parallel to the boundary's longest
-    edge to minimize turns, alternating direction; because the camera
-    stays on the drone's chosen side, the sideways offset flips with each
-    direction change.
+    pitch, and frontal/side overlap. The drone path itself runs a little
+    outside the boundary: each pass spans the area's width across the strip
+    it covers, plus runout_intervals photo intervals at either end so the
+    boundary itself is not the last frame (0 still covers the area, since
+    the footprint reaches half its own length past the final photo).
+
+    line_bearing_deg fixes the compass bearing the passes run along; None
+    picks the bearing that needs the fewest passes. With the "parallel" camera side the imaged
+    strip stays centred on the drone, so each pass runs straight down its
+    strip and the path keeps the drawn area's shape; with "right"/"left" and
+    an oblique gimbal the flight lines are offset sideways so the *imaged*
+    strips (not the drone) land on the target area, and because the camera
+    stays on the drone's chosen side that offset flips with each direction
+    change - which is what pushes the path out of the drawn shape.
 
     Returns (path_coords, info) where path_coords is the corner-waypoint
     serpentine as (lat, lon) tuples, or (None, None) for a degenerate
@@ -1970,7 +2029,7 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
         return None, None
 
     geom = mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct, side)
-    fw, fh = geom["footprint_w_ft"], geom["footprint_h_ft"]
+    fh = geom["footprint_h_ft"]
     offset, spacing = geom["offset_ft"], geom["spacing_ft"]
 
     # Project to a local planar frame in feet (equirectangular approximation,
@@ -1988,19 +2047,26 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
     # edges is sufficient; for concave ones it remains a good heuristic.
     # Sweeping along the LONGEST edge - the previous rule - usually picks the
     # same direction but is not equivalent, and could cost an extra pass.
+    # A fixed bearing overrides the search. Bearings are compass degrees
+    # (clockwise from north) while this frame measures counter-clockwise from
+    # east, hence the 90 - b; passes are bidirectional, so only 0..180 is
+    # distinct and anything outside wraps into it.
     n = len(pts)
-    sweep_ang, best_width = 0.0, float('inf')
-    for i in range(n):
-        x1, y1 = pts[i]
-        x2, y2 = pts[(i + 1) % n]
-        if math.hypot(x2 - x1, y2 - y1) < 1e-9:
-            continue  # duplicate vertex - no direction to take from it
-        ang = math.atan2(y2 - y1, x2 - x1)
-        ca_t, sa_t = math.cos(-ang), math.sin(-ang)
-        ys_t = [x * sa_t + y * ca_t for x, y in pts]
-        width = max(ys_t) - min(ys_t)
-        if width < best_width - 1e-9:
-            best_width, sweep_ang = width, ang
+    if line_bearing_deg is not None:
+        sweep_ang = math.radians(90.0 - (float(line_bearing_deg) % 180.0))
+    else:
+        sweep_ang, best_width = 0.0, float('inf')
+        for i in range(n):
+            x1, y1 = pts[i]
+            x2, y2 = pts[(i + 1) % n]
+            if math.hypot(x2 - x1, y2 - y1) < 1e-9:
+                continue  # duplicate vertex - no direction to take from it
+            ang = math.atan2(y2 - y1, x2 - x1)
+            ca_t, sa_t = math.cos(-ang), math.sin(-ang)
+            ys_t = [x * sa_t + y * ca_t for x, y in pts]
+            width = max(ys_t) - min(ys_t)
+            if width < best_width - 1e-9:
+                best_width, sweep_ang = width, ang
     ca, sa = math.cos(-sweep_ang), math.sin(-sweep_ang)
     rot = [(x * ca - y * sa, x * sa + y * ca) for x, y in pts]
 
@@ -2033,12 +2099,31 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
         return min(xs), max(xs)
 
     side_sign = 1.0 if side == "right" else -1.0
+    runout = geom["interval_ft"] * max(0.0, float(runout_intervals))
+    # A pass only has to span the strip it is RESPONSIBLE for - the ground
+    # between it and its neighbours - not the full width of its own footprint.
+    # The footprint does reach fh/2 to either side, but ground that far off is
+    # imaged directly by a nearer pass, which is already sized for it. Taking
+    # the band at the full fh (as this did) stretched every pass to the widest
+    # part of a band fh tall; at high side overlap fh is several times the line
+    # spacing, so on any shape whose width varies every pass came out nearly as
+    # long as the widest part of the whole area, regardless of how narrow the
+    # area was at that pass. The outermost passes still open out to the block
+    # edge, since there is no neighbour beyond them.
+    half_strip = (centers[1] - centers[0]) / 2.0 if len(centers) > 1 else 0.0
     path_rot = []
     for k, c in enumerate(centers):
-        x_lo, x_hi = band_x_range(c - fh / 2.0, c + fh / 2.0)
-        # Extend so the end photos' footprints reach past the boundary edge.
-        x_lo -= fw / 2.0
-        x_hi += fw / 2.0
+        band_lo = ymin if k == 0 else c - half_strip
+        band_hi = ymax if k == len(centers) - 1 else c + half_strip
+        x_lo, x_hi = band_x_range(band_lo, band_hi)
+        # Run-out past each edge, so the boundary is not the very last frame.
+        # The footprint is centred on the drone, so a photo taken AT the
+        # boundary already images fw/2 beyond it and zero run-out still covers
+        # the area - the old fixed fw/2 extension here pushed the drone that
+        # far out again, laying a full extra footprint of photos outside the
+        # area at both ends of every pass without covering any more of it.
+        x_lo -= runout
+        x_hi += runout
         eastbound = (k % 2 == 0)
         # Camera looks to the drone's chosen side of travel; place the drone
         # on the opposite side of the strip so the footprint lands on it.
@@ -2058,6 +2143,10 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
 
     info = dict(geom)
     info["num_passes"] = len(centers)
+    # Compass bearing the passes actually run along, so the UI can report what
+    # the automatic search picked (and seed the manual control from it).
+    info["line_bearing_deg"] = (90.0 - math.degrees(sweep_ang)) % 180.0
+    info["runout_ft"] = runout
     # Each pass contributes exactly two waypoints, so path segment j runs
     # along a pass when j is even and is a turn/connector between passes when
     # j is odd. The camera is yawed off the direction of travel, so on a
@@ -2115,6 +2204,39 @@ def dense_photo_segments(fracs, connector_segments):
         else:
             out.append(seg)
     return out
+
+
+def major_waypoint_indices(points, turn_deg=20.0, max_run=12):
+    """
+    Waypoint indices worth annotating on a densified (DJI Fly) mission.
+
+    DJI Fly stores one waypoint per photo, so a route drawn from a handful of
+    clicks comes back as 90+ points, and a label on every leg is unreadable.
+    The points that still carry meaning are the ones the route actually turns
+    at - the corners originally clicked on a corridor mission, and the ends of
+    each pass on a mapping mission - so those are kept, plus a periodic
+    fill-in so a long straight run is not left completely unlabelled.
+    """
+    n = len(points)
+    if n < 3:
+        return list(range(n))
+    keep = {0, n - 1}
+    for i in range(1, n - 1):
+        turn = abs((get_bearing(points[i], points[i + 1])
+                    - get_bearing(points[i - 1], points[i]) + 180) % 360 - 180)
+        if turn > turn_deg:
+            keep.add(i)
+    ordered = sorted(keep)
+    filled = []
+    for a, b in zip(ordered, ordered[1:]):
+        filled.append(a)
+        span = b - a
+        if span > max_run:
+            steps = math.ceil(span / max_run)
+            for k in range(1, steps):
+                filled.append(a + round(k * span / steps))
+    filled.append(ordered[-1])
+    return sorted(set(filled))
 
 
 def count_mapping_photos(path_coords, interval_ft, connector_segments, is_dji_fly=True):
@@ -2184,6 +2306,7 @@ CREATOR_PRESET_KEYS = [
     "t_dist_val", "overlap_pct", "manual_mph_dist",
     "t_val_sec", "auto_speed", "target_gap_ft", "manual_mph_time",
     "map_front_ol", "map_side_ol", "map_speed_mph",
+    "map_fix_bearing", "map_bearing", "map_runout",
 ]
 
 
@@ -2650,8 +2773,11 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
     # the two the vertex happened to be recorded against), and its heading has
     # to agree - otherwise a photo at the edge of a strip could still end up
     # aimed along the connector instead of across the strip.
+    # Gated on the mapping mission's connector list rather than on the yaw mode:
+    # a pass/connector vertex needs its heading pinned to the pass under either
+    # camera aim, and only a mapping mission has connectors to begin with.
     wp_headings = None
-    if is_dji_fly and yaw_mode == "forward" and len(corner_coords) >= 2:
+    if is_dji_fly and cfg.get("no_photo_segments") and len(corner_coords) >= 2:
         seg_aim = [aim(get_bearing(corner_coords[j], corner_coords[j+1]))
                    for j in range(len(corner_coords) - 1)]
         wp_headings = [seg_aim[min(seg, len(seg_aim) - 1)] for seg in photo_segments]
@@ -3026,6 +3152,10 @@ footer {{ display: none !important; }}
 .st-key-notices [data-testid="stElementContainer"] {{ margin-bottom: 2px !important; width: 100% !important; }}
 .st-key-notices [data-testid="stMarkdownContainer"] {{ width: 100% !important; }}
 .st-key-notices .stAlert {{ padding: 4px 12px !important; width: 100% !important; box-sizing: border-box !important; }}
+/* The 99-photo override tick box sits in this banner and should read as a
+   small aside under the error, not as another headline control. */
+.st-key-notices .stCheckbox {{ pointer-events: auto !important; padding: 0 12px !important; }}
+.st-key-notices .stCheckbox p {{ font-size: 0.78rem !important; }}
 
 /* Small floating badge, bottom-right of the screen, for the map's current
    center coordinates - out of the way of both the search toggle (bottom
@@ -3131,6 +3261,74 @@ def _github_slug(heading_text):
     return re.sub(r'\s+', '-', text)
 
 
+# ==========================================
+# DJI FLY 99-PHOTO SAVE-BLOCK OVERRIDE
+# ==========================================
+# Saving is blocked past the cap because DJI Fly bogs down badly and can take
+# the controller with it. This lets a pilot who has reason to believe their
+# setup will cope lift the block deliberately. Ticking the box only REQUESTS
+# the override - it is not granted until the confirmation dialog is accepted,
+# so a stray click can't quietly re-enable saving. Each caller passes its own
+# `scope` so the Creator's two modes and the Editor keep independent state.
+
+@st.dialog("Override the DJI Fly photo limit?")
+def _confirm_99_override(scope, est_photos):
+    st.warning(f"This mission takes {est_photos} photos - {est_photos - 99} more than the 99 DJI Fly supports.")
+    st.markdown(
+        "DJI Fly needs one waypoint per photo. Past 99 it is known to lag badly, "
+        "and it can crash the controller **mid-flight**, taking the mission with it.\n\n"
+        "Only turn this on if you have reason to believe your controller will cope, "
+        "and load the mission on the controller to check it before you rely on it."
+    )
+    cancel_col, ok_col = st.columns(2)
+    if cancel_col.button("Cancel", use_container_width=True):
+        st.session_state[f"{scope}_99_dialog"] = False
+        st.session_state[f"{scope}_99_override_ok"] = False
+        # The tick box has already been instantiated this run, so its state
+        # cannot be written here - defer the reset to the next run.
+        st.session_state[f"{scope}_99_reset"] = True
+        st.rerun()
+    if ok_col.button("Turn on override", type="primary", use_container_width=True):
+        st.session_state[f"{scope}_99_dialog"] = False
+        st.session_state[f"{scope}_99_override_ok"] = True
+        st.rerun()
+
+
+def _99_override_toggled(scope):
+    if st.session_state.get(f"{scope}_99_override_cb"):
+        # Ask for confirmation only if it isn't already granted.
+        if not st.session_state.get(f"{scope}_99_override_ok"):
+            st.session_state[f"{scope}_99_dialog"] = True
+    else:
+        # Unticking revokes immediately - no dialog needed to become safer.
+        st.session_state[f"{scope}_99_override_ok"] = False
+        st.session_state[f"{scope}_99_dialog"] = False
+
+
+def render_99_override(container, scope, est_photos):
+    """
+    Tick box (plus its confirmation dialog) that lifts the DJI Fly save block,
+    rendered inside `container` directly under the limit message. Only call it
+    when the mission is actually over the cap. Returns True while the override
+    is active, i.e. while saving should be allowed.
+    """
+    if st.session_state.pop(f"{scope}_99_reset", False):
+        st.session_state[f"{scope}_99_override_cb"] = False
+
+    with container:
+        st.checkbox(
+            "Override the limit and let me save anyway",
+            key=f"{scope}_99_override_cb",
+            on_change=_99_override_toggled,
+            args=(scope,),
+        )
+
+    if st.session_state.get(f"{scope}_99_dialog"):
+        _confirm_99_override(scope, est_photos)
+
+    return bool(st.session_state.get(f"{scope}_99_override_ok"))
+
+
 @st.dialog("README", width="large")
 def _readme_dialog():
     try:
@@ -3177,6 +3375,12 @@ if page == 'Creator':
         for k, v in st.session_state.pop("_c_pending_preset").items():
             st.session_state[k] = v
 
+    # A deleted preset's name is still sitting in the select box's state, and
+    # Streamlit rejects a stored value that isn't among the widget's options.
+    # Clearing it has to happen here, before the widget is rebuilt below.
+    if st.session_state.pop("_c_preset_deleted", False):
+        st.session_state.pop("c_preset_select", None)
+
     @st.dialog("Save Preset")
     def _c_save_preset_dialog(default_name):
         preset_name_input = st.text_input("Preset Name", value=default_name, key="c_preset_name_input")
@@ -3189,6 +3393,21 @@ if page == 'Creator':
                 st.rerun()
             else:
                 st.warning("Enter a preset name.")
+
+    @st.dialog("Delete preset?")
+    def _c_delete_preset_dialog(name):
+        st.warning(f"Delete the preset **{name}**?")
+        st.caption("It is removed from your saved presets and cannot be recovered. "
+                   "The settings currently in the sidebar are not changed.")
+        cancel_col, ok_col = st.columns(2)
+        if cancel_col.button("Cancel", use_container_width=True, key="c_preset_del_cancel"):
+            st.rerun()
+        if ok_col.button("Delete", type="primary", use_container_width=True, key="c_preset_del_ok"):
+            presets = load_creator_presets()
+            presets.pop(name, None)
+            save_creator_presets(presets)
+            st.session_state["_c_preset_deleted"] = True
+            st.rerun()
 
     with st.sidebar:
         mapping_mode = st.checkbox(
@@ -3228,14 +3447,22 @@ if page == 'Creator':
             c_presets = load_creator_presets()
             c_preset_names = sorted(c_presets.keys())
             c_selected_preset = st.selectbox("Preset", ["Select a preset..."] + c_preset_names, key="c_preset_select", help=param_help("Parameter Presets"))
+            c_no_preset = (c_selected_preset == "Select a preset...")
             c_pcol1, c_pcol2 = st.columns(2)
             with c_pcol1:
-                if st.button("📥 Load", use_container_width=True, disabled=(c_selected_preset == "Select a preset...")):
+                if st.button("📥 Load", use_container_width=True, disabled=c_no_preset):
                     st.session_state["_c_pending_preset"] = c_presets[c_selected_preset]
                     st.rerun()
             with c_pcol2:
                 if st.button("💾 Save", use_container_width=True):
-                    _c_save_preset_dialog(c_selected_preset if c_selected_preset != "Select a preset..." else "")
+                    _c_save_preset_dialog("" if c_no_preset else c_selected_preset)
+            # Delete gets its own row rather than a third column: three buttons
+            # wrap badly at sidebar width, and keeping the destructive one apart
+            # from Load/Save makes it harder to hit by accident. It acts on
+            # whatever is selected above, and confirms before rewriting the file.
+            if st.button("🗑 Delete Preset", use_container_width=True, disabled=c_no_preset,
+                         help="Permanently delete the selected preset"):
+                _c_delete_preset_dialog(c_selected_preset)
 
         trans_speed_mph = st.number_input("Takeoff Speed (mph)", value=22.0, step=1.0, key="trans_speed_mph", help=param_help("Takeoff Speed (mph)"))
         safe_takeoff_ft = st.number_input("Safe Takeoff Alt (ft)", value=60.0, step=1.0, key="safe_takeoff_ft", help=param_help("Safe Takeoff Alt (ft)"))
@@ -3288,11 +3515,32 @@ if page == 'Creator':
             gsd_cm = (D_ft_c * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_c != float('inf') else 0
             st.info(f"Est. Ground GSD: {gsd_cm:.2f} cm/px")
 
-            side = st.selectbox("Camera side of flight path", ["right", "left"], key="map_side", help=param_help("Camera side of flight path"))
+            # "parallel" aims the camera along each pass, which is the only
+            # option that leaves the computed path matching the drawn area -
+            # the two side aims shift alternating passes sideways to put the
+            # tilted footprint back over the target. A preset saved before
+            # "parallel" existed can hold a side that is no longer the default.
+            if st.session_state.get("map_side") not in MAPPING_CAMERA_SIDES:
+                st.session_state.map_side = "parallel"
+            side = st.selectbox("Camera side of flight path", MAPPING_CAMERA_SIDES,
+                                key="map_side", help=param_help("Camera side of flight path"))
 
             st.header("4. Coverage & Speed")
             st.number_input("Frontal Overlap (%)", min_value=0.0, max_value=95.0, value=75.0, step=1.0, key="map_front_ol")
             st.number_input("Side Overlap (%)", min_value=0.0, max_value=95.0, value=65.0, step=1.0, key="map_side_ol")
+
+            # Off by default: the automatic bearing is the one that needs the
+            # fewest passes, so a fixed bearing is opt-in and normally costs
+            # passes (and photos) in exchange for lines pointing a chosen way.
+            map_fix_bearing = st.checkbox("Set flight line direction", value=False, key="map_fix_bearing",
+                                          help=param_help("Set flight line direction"))
+            map_bearing = None
+            if map_fix_bearing:
+                map_bearing = float(st.slider("Flight Line Bearing (°)", 0, 179, value=90, key="map_bearing",
+                                              help=param_help("Flight Line Bearing (°)")))
+
+            map_runout = st.slider("Edge Run-out (photo intervals)", 0.0, 3.0, value=1.0, step=0.25,
+                                   key="map_runout", help=param_help("Edge Run-out (photo intervals)"))
 
             map_geom = mapping_camera_geometry(
                 map_alt, map_pitch_val,
@@ -3300,7 +3548,8 @@ if page == 'Creator':
             )
             st.info(
                 f"Photo every {map_geom['interval_ft']:.0f} ft along track\n\n"
-                f"Flight line spacing: {map_geom['spacing_ft']:.0f} ft"
+                f"Flight line spacing: {map_geom['spacing_ft']:.0f} ft\n\n"
+                f"Run-out past each edge: {map_geom['interval_ft'] * map_runout:.0f} ft"
             )
 
             manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=4.0, key="map_speed_mph", help=param_help("Flight Speed (mph)"))
@@ -3415,7 +3664,44 @@ if page == 'Creator':
 
     top_hud = hud_half.container()
     with map_layer:
-        m = folium.Map(location=st.session_state.locked_creator_center, zoom_start=17, tiles=None)
+        # --- Retained map view ---
+        # st_folium hands the map's HTML to the component, and ANY change to
+        # that HTML remounts it - which destroys every client-side Leaflet
+        # layer, including a flight line drawn with the draw tools. So the view
+        # handed to folium.Map must not track the live view on every rerun:
+        # doing that turned each pan and zoom into "report view -> rerun -> new
+        # HTML -> remount -> drawing wiped".
+        #
+        # Instead the view is refreshed only when something ELSE about the map
+        # is already about to change - a remount is happening regardless then,
+        # so it may as well land where the user is actually looking. Panning
+        # and zooming on their own leave these arguments untouched, so no
+        # remount happens and anything drawn survives.
+        #
+        # IMPORTANT: every input that changes what gets drawn onto `m` below
+        # has to appear in this signature. Miss one and the map keeps building
+        # at a stale view; add something that changes on every rerun and the
+        # remount loop comes back.
+        map_sig = (
+            mapping_mode,
+            bool(show_faa_airspace),
+            tuple(st.session_state.locked_creator_center) if show_faa_airspace else None,
+            c_tif_path if (c_elev_source == "Local GeoTIFF" and c_show_bounds) else None,
+            tuple(tuple(p) for p in (st.session_state.map_boundary or ())),
+            (safe_get_float('map_alt_ft', 100.0), safe_get_float('map_pitch', -90.0),
+             safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0),
+             side, map_runout, map_bearing) if mapping_mode else None,
+        )
+        if map_sig != st.session_state.get("creator_map_sig"):
+            st.session_state.creator_map_sig = map_sig
+            if st.session_state.get("creator_center"):
+                st.session_state.creator_view = [
+                    list(st.session_state.creator_center),
+                    st.session_state.get("creator_zoom") or 17,
+                ]
+        view_center, view_zoom = (st.session_state.get("creator_view")
+                                  or [st.session_state.locked_creator_center, 17])
+        m = folium.Map(location=view_center, zoom_start=view_zoom, tiles=None)
         folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m)
 
         if c_elev_source == "Local GeoTIFF" and c_tif_path and c_show_bounds:
@@ -3455,7 +3741,7 @@ if page == 'Creator':
                         st.session_state.map_boundary,
                         safe_get_float('map_alt_ft', 100.0), safe_get_float('map_pitch', -90.0),
                         safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0),
-                        side
+                        side, map_runout, map_bearing
                     )
                     folium.Polygon(
                         locations=st.session_state.map_boundary, color="#00ffff", weight=3,
@@ -3508,6 +3794,13 @@ if page == 'Creator':
                         if new_coords:
                             st.session_state.locked_creator_center = new_coords
                             st.session_state.creator_center = new_coords
+                            # Jumping is the whole point here, so move the
+                            # retained view directly - the map signature may not
+                            # change (FAA off draws nothing from the centre) and
+                            # then nothing else would make the map rebuild.
+                            st.session_state.creator_view = [
+                                list(new_coords), st.session_state.get("creator_zoom") or 17
+                            ]
                             st.session_state.c_show_search = False
                             st.rerun()
                         else:
@@ -3525,7 +3818,8 @@ if page == 'Creator':
             map_side_ol = safe_get_float('map_side_ol', 65.0)
 
             path_coords, map_info = generate_mapping_flight_path(
-                boundary, map_alt, map_pitch_val, map_front_ol, map_side_ol, side
+                boundary, map_alt, map_pitch_val, map_front_ol, map_side_ol,
+                side, map_runout, map_bearing
             )
 
             if path_coords:
@@ -3543,13 +3837,18 @@ if page == 'Creator':
                 save_disabled = False
                 if is_dji_fly and est_photos > 99:
                     notices.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please shrink the area, raise the altitude, reduce the overlaps, or switch to DJI Pilot 2.")
-                    save_disabled = True
+                    save_disabled = not render_99_override(notices, "cmap", est_photos)
 
                 with top_hud:
                     c1, c2, c3, c4 = st.columns([1.2, 1.2, 1, 1.6])
                     c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft")
                     c2.metric("Estimated Photos", f"{est_photos} / 99" if is_dji_fly else f"{est_photos}")
-                    c3.metric("Passes", f"{map_info['num_passes']}")
+                    # Show the bearing actually flown either way - on automatic
+                    # it is the only place the chosen direction is visible, and
+                    # it gives a starting value for the manual slider.
+                    c3.metric("Passes", f"{map_info['num_passes']}",
+                              delta=f"{map_info['line_bearing_deg']:.0f}° lines",
+                              delta_color="off")
                     with c4:
                         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
                         save_clicked = st.button("Save & Generate KMZ", use_container_width=True, disabled=save_disabled)
@@ -3568,7 +3867,7 @@ if page == 'Creator':
                                 "speed_m": speed_m, "photo_start_wp": 0,
                                 "camera_type": camera_type, "drone_sub": drone_sub_enum, "payload_sub": payload_sub_enum,
                                 "is_dji_fly": is_dji_fly,
-                                "camera_yaw_mode": MAPPING_YAW_MODE,
+                                "camera_yaw_mode": map_info["yaw_mode"],
                                 # DJI Fly skips turns per-waypoint; Pilot needs
                                 # the equivalent as one interval trigger per pass.
                                 "no_photo_segments": map_info["connector_segments"],
@@ -3625,7 +3924,7 @@ if page == 'Creator':
         save_disabled = False
         if is_dji_fly and est_photos > 99:
             notices.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please reduce your distance or increase the interval.")
-            save_disabled = True
+            save_disabled = not render_99_override(notices, "cline", est_photos)
 
         with top_hud:
             c1, c2, c3 = st.columns(3)
@@ -3874,6 +4173,7 @@ elif page == 'Editor':
         current_coords = [(row['Latitude'], row['Longitude']) for _, row in edited_df.iterrows()]
 
         with map_layer:
+            # Constant view arguments - see the note on the Creator map.
             m_edit = folium.Map(location=st.session_state.locked_editor_center, zoom_start=18, tiles=None)
             folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_edit)
         
@@ -4026,7 +4326,7 @@ elif page == 'Editor':
             save_disabled = False
             if e_is_dji_fly and est_photos > 99:
                 notices.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please reduce your distance or increase the interval.")
-                save_disabled = True
+                save_disabled = not render_99_override(notices, "edit", est_photos)
 
             if st.button("Save & Update Mission", disabled=save_disabled):
                 with notices.spinner("Calculating terrain elevations and generating KMZ..."):
@@ -4163,7 +4463,8 @@ elif page == 'Viewer  |':
                 
                     meta = {
                         "speed": 0, "pitch": -60, "mode": "None", "t_val": 0, "alt": 50.0, "safe_alt": 0,
-                        "start_idx": 0, "camera_type": "visible", "drone_sub": "0", "payload_sub": "3"
+                        "start_idx": 0, "camera_type": "visible", "drone_sub": "0", "payload_sub": "3",
+                        "trans_speed": 0, "finish": "", "height_mode": ""
                     }
 
                     p_node = root.find('.//{*}waypointGimbalHeadingParam/{*}waypointGimbalPitchAngle')
@@ -4172,6 +4473,12 @@ elif page == 'Viewer  |':
                     if speed_node is not None: meta['speed'] = float(speed_node.text)
                     safe_node = root.find('.//{*}takeOffSecurityHeight')
                     if safe_node is not None: meta['safe_alt'] = float(safe_node.text)
+                    trans_node = root.find('.//{*}globalTransitionalSpeed')
+                    if trans_node is not None: meta['trans_speed'] = float(trans_node.text)
+                    finish_node = root.find('.//{*}finishAction')
+                    if finish_node is not None: meta['finish'] = finish_node.text
+                    hmode_node = root.find('.//{*}executeHeightMode')
+                    if hmode_node is not None: meta['height_mode'] = hmode_node.text
 
                     drone_info = root_t.find('.//{*}droneInfo')
                     if drone_info is not None:
@@ -4196,6 +4503,12 @@ elif page == 'Viewer  |':
                         if not wp_data and alt_node is not None: meta['alt'] = float(alt_node.text)
 
                         target_yaw = yaw
+                        # Whether THIS waypoint actually fires the shutter. On a
+                        # mapping mission the turns between passes are waypoints
+                        # with no takePhoto action, so counting waypoints instead
+                        # of photo actions overstates the total - which is what
+                        # made the Viewer disagree with the Creator's estimate.
+                        wp_takes_photo = False
                         for action_group in pm.findall('.//{*}actionGroup'):
                             t_type = action_group.find('.//{*}actionTriggerType')
                             if t_type is not None:
@@ -4212,6 +4525,7 @@ elif page == 'Viewer  |':
                                 func = a.find('.//{*}actionActuatorFunc')
                                 if func is not None:
                                     if func.text == 'takePhoto':
+                                        wp_takes_photo = True
                                         params = a.find('.//{*}actionActuatorFuncParam')
                                         if params is not None:
                                             lens = params.find('.//{*}payloadLensIndex')
@@ -4232,14 +4546,17 @@ elif page == 'Viewer  |':
                                             p_angle = params.find('.//{*}gimbalPitchRotateAngle')
                                             if p_angle is not None and p_angle.text: meta['pitch'] = float(p_angle.text)
 
-                        wp_data.append({'lat': float(c_raw[1]), 'lon': float(c_raw[0]), 'yaw': yaw, 'target_yaw': target_yaw, 'alt': alt, 'index': idx})
+                        wp_data.append({'lat': float(c_raw[1]), 'lon': float(c_raw[0]), 'yaw': yaw,
+                                        'target_yaw': target_yaw, 'alt': alt, 'index': idx,
+                                        'photo': wp_takes_photo})
 
                     if wp_data:
                         if m_view is None:
                             if 'current_viewer_file' not in st.session_state or st.session_state.current_viewer_file != selected_kmzs[0]:
                                 st.session_state.current_viewer_file = selected_kmzs[0]
                                 st.session_state.locked_viewer_center = [wp_data[0]['lat'], wp_data[0]['lon']]
-                        
+
+                            # Constant view arguments - see the note on the Creator map.
                             m_view = folium.Map(location=st.session_state.locked_viewer_center, zoom_start=19, tiles=None)
                             folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_view)
                         
@@ -4261,18 +4578,28 @@ elif page == 'Viewer  |':
                         cum_dist = [0.0]
                         total_dist_m = 0.0
                         for i in range(len(wp_data) - 1):
-                            p1 = (wp_data[i]['lat'], wp_data[i]['lon'])
-                            p2 = (wp_data[i+1]['lat'], wp_data[i+1]['lon'])
-                            d = get_haversine_dist(p1, p2)
-                            total_dist_m += d
+                            total_dist_m += get_haversine_dist(
+                                (wp_data[i]['lat'], wp_data[i]['lon']),
+                                (wp_data[i+1]['lat'], wp_data[i+1]['lon'])
+                            )
                             cum_dist.append(total_dist_m)
-                        
-                            elev_diff_ft = wp_data[i+1]['alt'] - wp_data[i]['alt']
-                            mid_lat = (p1[0] + p2[0]) / 2
-                            mid_lon = (p1[1] + p2[1]) / 2
+
+                        # A DJI Fly mission carries one waypoint per photo, so a
+                        # leg-by-leg label puts 90+ overlapping numbers on the
+                        # map. Collapse them onto the waypoints that actually
+                        # mean something and summarise each span between them:
+                        # the distance is the length of the whole span and the
+                        # elevation figure its net change, not a single leg's.
+                        is_dense_mission = (len(wp_data) > 4 and meta['mode'] == "None")
+                        label_idx = (major_waypoint_indices([(w['lat'], w['lon']) for w in wp_data])
+                                     if is_dense_mission else list(range(len(wp_data))))
+                        for a, b in zip(label_idx, label_idx[1:]):
+                            span_ft = (cum_dist[b] - cum_dist[a]) * M_TO_FT
+                            elev_diff_ft = wp_data[b]['alt'] - wp_data[a]['alt']
+                            anchor = wp_data[(a + b) // 2]
                             folium.Marker(
-                                location=[mid_lat, mid_lon],
-                                icon=DivIcon(icon_size=(120, 40), icon_anchor=(60, 20), html=f'<div style="font-size: 12pt; color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-weight: bold; text-align: center; line-height: 1.2;">{d * M_TO_FT:.1f} ft<br><span style="font-size: 10pt; color: #00ffff;">Elev Dif: {elev_diff_ft:+.1f} ft</span></div>')
+                                location=[anchor['lat'], anchor['lon']],
+                                icon=DivIcon(icon_size=(120, 40), icon_anchor=(60, 20), html=f'<div style="font-size: 12pt; color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; font-weight: bold; text-align: center; line-height: 1.2;">{span_ft:.1f} ft<br><span style="font-size: 10pt; color: #00ffff;">Elev Dif: {elev_diff_ft:+.1f} ft</span></div>')
                             ).add_to(m_view)
                     
                         grand_total_dist_ft += (total_dist_m * M_TO_FT)
@@ -4292,10 +4619,13 @@ elif page == 'Viewer  |':
                             ).add_to(m_view)
                     
                         photo_count = 0
-                        is_dense_mission = (len(wp_data) > 4 and meta['mode'] == "None")
-                    
                         if is_dense_mission:
                             for w in wp_data:
+                                # Turn waypoints between mapping passes carry no
+                                # takePhoto action - they are flown through, not
+                                # shot - so they are neither counted nor marked.
+                                if not w['photo']:
+                                    continue
                                 if show_footprints:
                                     yaw = w['target_yaw']
                                     footprint = get_photo_footprint(w['lat'], w['lon'], w['alt'], meta['pitch'], yaw)
@@ -4339,13 +4669,71 @@ elif page == 'Viewer  |':
                             if v["drone_sub"] == meta.get('drone_sub', '') and v["payload_sub"] == meta.get('payload_sub', ''):
                                 hw_key = k
 
+                        # Photo spacing: stated outright by an interval trigger,
+                        # and on DJI Fly recovered from the gap between the
+                        # waypoints that actually shoot (the median ignores the
+                        # long hop across a mapping mission's turns).
+                        photo_pts = [w for w in wp_data if w['photo']]
+                        if meta['mode'] == 'Distance':
+                            interval_ft = meta['t_val'] * M_TO_FT
+                        elif len(photo_pts) > 1:
+                            gaps = sorted(
+                                get_haversine_dist((photo_pts[i]['lat'], photo_pts[i]['lon']),
+                                                   (photo_pts[i+1]['lat'], photo_pts[i+1]['lon'])) * M_TO_FT
+                                for i in range(len(photo_pts) - 1)
+                            )
+                            interval_ft = gaps[len(gaps) // 2]
+                        else:
+                            interval_ft = 0.0
+
+                        fw_ft = get_center_footprint(meta['pitch'], meta['alt'] * M_TO_FT)
+                        overlap_pct = (1 - interval_ft / fw_ft) * 100 if fw_ft > 0 and interval_ft else None
+
+                        # Which way the camera looked, from the angle between the
+                        # gimbal yaw and the direction of travel.
+                        yaw_offsets = [
+                            ((wp_data[i]['target_yaw'] - get_bearing(
+                                (wp_data[i]['lat'], wp_data[i]['lon']),
+                                (wp_data[i+1]['lat'], wp_data[i+1]['lon'])) + 180) % 360) - 180
+                            for i in range(len(wp_data) - 1)
+                        ]
+                        if yaw_offsets:
+                            avg_off = sum(yaw_offsets) / len(yaw_offsets)
+                            if sum(abs(o) for o in yaw_offsets) / len(yaw_offsets) < 45:
+                                cam_side = "Parallel (along path)"
+                            else:
+                                cam_side = "Right of path" if avg_off > 0 else "Left of path"
+                        else:
+                            cam_side = "Unknown"
+
                         st.sidebar.write(f"Hardware Platform: {hw_key}")
                         st.sidebar.write(f"Camera Sensor: {cam_display}")
                         st.sidebar.write(f"Gimbal Pitch: {meta['pitch']}°")
-                        st.sidebar.write(f"Safe Takeoff: {meta['safe_alt']*M_TO_FT:.1f} ft")
+                        st.sidebar.write(f"Camera Side: {cam_side}")
                         st.sidebar.write(f"Waypoint Alt: {meta['alt']*M_TO_FT:.1f} ft")
+                        st.sidebar.write(f"Safe Takeoff Alt: {meta['safe_alt']*M_TO_FT:.1f} ft")
+                        if meta['trans_speed']:
+                            st.sidebar.write(f"Takeoff Speed: {meta['trans_speed']*MS_TO_MPH:.1f} mph")
+                        if meta['speed']:
+                            st.sidebar.write(f"Flight Speed: {meta['speed']*MS_TO_MPH:.1f} mph")
                         st.sidebar.write(f"Trigger: {'Dense Waypoints (DJI Fly)' if meta['mode'] == 'None' else meta['mode']} ({meta['t_val']*M_TO_FT if meta['mode']=='Distance' else meta['t_val']:.1f})")
+                        if interval_ft:
+                            st.sidebar.write(f"Photo Interval: {interval_ft:.1f} ft")
+                        if overlap_pct is not None:
+                            st.sidebar.write(f"Forward Overlap: {max(0.0, min(overlap_pct, 99.9)):.1f}%")
+                        if meta['mode'] != 'None' and meta['start_idx']:
+                            st.sidebar.write(f"Photos Start at WP: {meta['start_idx']}")
+                        # Side overlap and the mapping camera aim aren't stored
+                        # anywhere in the KMZ, so they come off the filename
+                        # suffix the Creator writes (_H..A..OL..SO..).
+                        suffix = re.search(r'_H(\d+)A(\d+)OL(\d+)(?:SO(\d+))?', current_kmz)
+                        if suffix and suffix.group(4):
+                            st.sidebar.write(f"Side Overlap: {suffix.group(4)}% (from filename)")
+                        st.sidebar.write(f"Waypoints: {len(wp_data)}")
+                        st.sidebar.write(f"Total Distance: {grand_total_dist_ft:.1f} ft")
                         st.sidebar.write(f"Calculated Photos: {grand_total_photos}")
+                        if meta['finish']:
+                            st.sidebar.write(f"On Finish: {meta['finish']}")
                         if show_footprints and abs(meta['pitch']) < VERT_HALF_FOV_DEG:
                             st.sidebar.warning(
                                 f"This mission's {meta['pitch']}° gimbal pitch is shallower than the camera's "

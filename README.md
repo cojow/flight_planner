@@ -84,7 +84,9 @@ Thus, the drone should take off as close as possible to the first waypoint.
 This is very important if your flight plan is not over a flat surface. 
 * **Gimbal Pitch (°)**: Angle at which the pictures will be taken. 
 * **Side of flight path**: The aircraft takes pictures to the left or right side of the path.
-* **Camera side of flight path**: Same as Side of flight path, but for mapping missions - the aircraft takes pictures to the left or right side of each pass.
+* **Camera side of flight path**: Which way the camera points on a mapping mission.
+*parallel* (recommended) aims it along each pass. This is the only setting that keeps the computed flight path matching the shape you drew, and it points the sensor's long edge across the pass, so each pass covers about 33% more ground and the mission needs fewer passes.
+*right* and *left* aim the camera across the pass to that side, the same way a normal (non-mapping) flight line does. With any gimbal tilt this shifts the imaged ground off to one side, so the app has to offset each pass to compensate - and because the offset flips every time the aircraft turns around, the flight path visibly zigzags away from the shape you drew. Use these only when you specifically want to shoot the area from the side.
 * **Yaw Side**: Same as Side of flight path, but named for the Editor - the aircraft takes pictures to the left or right side of the path.
 
 ##### Trigger & Speed
@@ -98,6 +100,9 @@ This is very important if your flight plan is not over a flat surface.
 * **Forward Overlap (%)**: How much of one picture will be in the next one. 
 This and the interval are connected and will change dynamically based on each other. 
 This is also affected by the altitude, but doesn't edit it.
+* **Set flight line direction**: Mapping missions only. Off by default, which lets the app pick the direction that needs the fewest flight lines. Turn it on when you want the lines pointed a particular way - along crop rows, into the wind, or parallel to a runway or field edge. The bearing the app is currently using is shown under the "Passes" count above the map, so you can read it off before switching to manual.
+* **Flight Line Bearing (°)**: Mapping missions only. The compass direction the flight lines run, in degrees clockwise from north: 0 is north-south, 90 is east-west. Only 0-179 is offered because the aircraft flies each line in both directions anyway. Expect the pass count (and photo count) to go up compared to the automatic setting - the automatic choice is the cheapest one, so anything else trades photos for a preferred orientation.
+* **Edge Run-out (photo intervals)**: Mapping missions only. How far each flight line continues past the edge of your drawn area, measured in photo intervals, so it scales automatically if you change altitude or overlap. The area is fully covered even at 0, because each photo already images half a footprint beyond the aircraft. The default of 1 adds one spare frame past each edge, which helps stitching at the borders. Raise it if your edges are coming out weak; drop it to 0 to save photos when you are near the DJI Fly 99-photo limit. The resulting distance in feet is shown in the coverage summary.
 * **Flight Speed (mph)**: Includes auto-calculation for time-based intervals and visual warnings if the speed exceeds the sensor's minimum photo interval. 
 4 mph is recommended when following the drone.
 * **Manual Speed (mph)**: Same as Flight Speed (mph), set manually instead of auto-calculated. 4 mph is recommended when following the drone.
