@@ -865,6 +865,14 @@ MIN_MAPPING_PITCH_DEG = VERT_HALF_FOV_DEG + 5.0
 #     change, visibly distorts the path away from the drawn shape.
 MAPPING_CAMERA_SIDES = ["parallel", "right", "left"]
 
+# Smallest drawn area worth sweeping, in square feet. Anything at or below this
+# is a degenerate shape rather than a small one - duplicate vertices, or points
+# that all fall on a line - and has no interior to cover. Such a shape used to
+# yield a two-waypoint "mission" that looked valid enough to save but had no
+# flyable path in it. A genuinely small plot is still allowed: a 3 ft square is
+# well clear of this and simply comes out as one short pass.
+MIN_MAPPABLE_AREA_FT2 = 1.0
+
 
 def mapping_yaw_mode(side):
     """Which footprint geometry a mapping camera side implies."""
@@ -2039,6 +2047,14 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
     cos_lat = math.cos(math.radians(lat0))
     pts = [((c[1] - lon0) * cos_lat * FT_PER_DEG_LAT, (c[0] - lat0) * FT_PER_DEG_LAT) for c in boundary_coords]
 
+    # Reject a shape with no interior before trying to sweep it. The shoelace
+    # area is 0 for duplicated vertices and for any set of collinear points,
+    # however far apart they are, so this catches both.
+    area_ft2 = abs(sum(pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1]
+                       for i in range(len(pts)))) / 2.0
+    if area_ft2 < MIN_MAPPABLE_AREA_FT2:
+        return None, None
+
     # Sweep parallel to whichever boundary edge leaves the SMALLEST extent
     # perpendicular to the sweep. That perpendicular extent is exactly what
     # the pass count is derived from below, so minimizing it minimizes passes
@@ -2206,6 +2222,42 @@ def dense_photo_segments(fracs, connector_segments):
     return out
 
 
+def photo_gap_m(trigger_type, interval_ft, interval_sec, speed_m):
+    """
+    Metres between photos, derived exactly the way generate_native_kmz_contents
+    derives it - a distance trigger is the interval itself, a time trigger is
+    speed x time. Kept in metres throughout: the Creator used to divide a
+    distance in FEET by a time-trigger gap in METRES, inflating the estimate by
+    ~3.3x on time-triggered missions.
+    """
+    if trigger_type == "distance":
+        return max(1.0, interval_ft * FT_TO_M)
+    return max(1.0, speed_m * interval_sec)
+
+
+def count_corridor_photos(coords, gap_m, is_dji_fly, photo_start_wp=0):
+    """
+    Photos a corridor (drawn-line) mission will actually take.
+
+    DJI Fly is exact rather than estimated: the generator densifies the line and
+    puts one photo on every resulting waypoint, and interpolate_path also pins a
+    waypoint to each drawn corner - so distance/interval undercounts by roughly
+    one photo per corner, and by more as the interval grows. It also ignores
+    photo_start_wp (the generator forces 0 for DJI Fly), so this ignores it too.
+
+    DJI Pilot fires from an interval trigger running on the aircraft, so
+    distance over interval - counted from the start waypoint - is right there.
+    """
+    if not coords or len(coords) < 2 or gap_m <= 0:
+        return 0
+    if is_dji_fly:
+        return len(interpolate_path(coords, gap_m))
+    start = max(0, min(int(photo_start_wp), len(coords) - 1))
+    dist_m = sum(get_haversine_dist(coords[i], coords[i + 1])
+                 for i in range(start, len(coords) - 1))
+    return int(dist_m / gap_m) + 1
+
+
 def major_waypoint_indices(points, turn_deg=20.0, max_run=12):
     """
     Waypoint indices worth annotating on a densified (DJI Fly) mission.
@@ -2311,21 +2363,33 @@ CREATOR_PRESET_KEYS = [
 
 
 def load_creator_presets():
-    if os.path.exists(CREATOR_PRESETS_FILE):
-        try:
-            with open(CREATOR_PRESETS_FILE, encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+    if not os.path.exists(CREATOR_PRESETS_FILE):
+        return {}
+    try:
+        with open(CREATOR_PRESETS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        # Flag it rather than just presenting "no presets". An unreadable file
+        # still holds the user's presets, and the next save would overwrite it
+        # with a fresh one-entry dict, destroying whatever was recoverable.
+        st.session_state["_c_preset_load_error"] = f"{type(e).__name__}: {e}"
+        return {}
 
 
 def save_creator_presets(presets):
+    """
+    Write the presets file. Returns None on success or the error text on
+    failure - swallowing it silently meant a failed write (read-only checkout,
+    no permission, disk full) still reported "Saved preset", and the preset was
+    simply gone the next time the app started.
+    """
     try:
         with open(CREATOR_PRESETS_FILE, 'w', encoding="utf-8") as f:
             json.dump(presets, f, indent=2)
-    except Exception:
-        pass
+        return None
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
 
 
 README_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "README.md")
@@ -2357,34 +2421,74 @@ def param_help(label):
     return PARAM_HELP.get(label)
 
 
-def get_center_footprint(pitch, alt):
-    # Along-track ground footprint (feet), used to convert between photo
-    # interval and forward overlap. Uses the true projected footprint rather
-    # than a center-slant estimate, so forward overlap matches the images at
-    # any gimbal angle (identical to the old estimate at nadir, but the old
-    # estimate under-reported the footprint - and so over-reported overlap -
-    # as the camera tilted).
-    if pitch == 0: return 999999.0
+def finite_center_footprint(pitch, alt):
+    """
+    Along-track footprint in feet, or None when this tilt has no bounded ground
+    footprint at all.
+
+    Along-track ground footprint (feet), used to convert between photo interval
+    and forward overlap. Derived from the true projected footprint, so overlap
+    matches the images at any gimbal angle.
+
+    The frame reaches VERT_HALF_FOV_DEG above the lens axis, so once the tilt is
+    shallower than that the top of every image is aimed at or above the horizon
+    and the footprint runs to infinity - hence None rather than a number. This
+    replaced a version that answered 999999 in that case (a sentinel meant only
+    for the pitch==0 divide-by-zero guard); callers took it at face value, which
+    turned a request for 70% overlap into a ~300,000 ft photo interval written
+    straight into the mission, and made three separate read-outs report 99.9%
+    overlap for a footprint that had no far edge.
+    """
+    if pitch == 0:
+        return None
     extents = footprint_extents_ft(alt, pitch)
-    return extents[0] if extents else 999999.0
+    return extents[0] if extents else None
+
+def format_overlap(fw_ft, gap_ft):
+    """
+    Forward overlap for a photo spacing, as text ready to display.
+
+    Returns a plain statement instead of a number in the two cases where a
+    percentage would be a lie:
+    - fw_ft is None: the gimbal is shallower than the sensor's vertical
+      half-FOV, so the footprint has no far edge and overlap is undefined.
+      These read-outs used to divide by the 999999 sentinel and cheerfully
+      report 99.9%.
+    - the spacing exceeds the footprint: overlap is genuinely negative, which
+      means consecutive photos do not touch. Clamping that to 0% (as the
+      Viewer did) hides an actual gap in coverage.
+    """
+    if not fw_ft or fw_ft <= 0:
+        return "n/a at this gimbal pitch"
+    if not gap_ft or gap_ft <= 0:
+        return "n/a"
+    pct = (1 - gap_ft / fw_ft) * 100
+    if pct < 0:
+        return f"none - {gap_ft - fw_ft:.0f} ft gap between consecutive photos"
+    return f"{min(pct, 99.9):.1f}%"
+
 
 def sync_dist_to_overlap():
-    fw = get_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
-    if fw > 0: 
+    # No finite footprint -> overlap is undefined; leave the field alone rather
+    # than writing a meaningless 99.9%.
+    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
+    if fw:
         st.session_state.overlap_pct = max(0.0, min(((fw - safe_get_float('t_dist_val', 9.0)) / fw) * 100, 99.9))
 
 def sync_overlap_to_dist():
-    fw = get_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
-    st.session_state.t_dist_val = fw * (1 - (safe_get_float('overlap_pct', 70.0) / 100))
+    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
+    if fw:
+        st.session_state.t_dist_val = fw * (1 - (safe_get_float('overlap_pct', 70.0) / 100))
 
 def sync_gap_to_overlap():
-    fw = get_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
-    if fw > 0: 
+    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
+    if fw:
         st.session_state.overlap_pct = max(0.0, min(((fw - safe_get_float('target_gap_ft', 26.2)) / fw) * 100, 99.9))
 
 def sync_overlap_to_gap():
-    fw = get_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
-    st.session_state.target_gap_ft = fw * (1 - (safe_get_float('overlap_pct', 70.0) / 100))
+    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
+    if fw:
+        st.session_state.target_gap_ft = fw * (1 - (safe_get_float('overlap_pct', 70.0) / 100))
 
 def sync_geometry():
     if st.session_state.get('trigger_type', 'distance') == 'distance': 
@@ -2393,22 +2497,25 @@ def sync_geometry():
         sync_gap_to_overlap()
 
 def e_sync_dist_to_overlap():
-    fw = get_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
-    if fw > 0: 
+    # As on the Creator side: skip entirely when there is no finite footprint.
+    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
+    if fw:
         st.session_state.e_overlap_pct = max(0.0, min(((fw - safe_get_float('e_t_dist_val', 9.0)) / fw) * 100, 99.9))
 
 def e_sync_overlap_to_dist():
-    fw = get_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
-    st.session_state.e_t_dist_val = fw * (1 - (safe_get_float('e_overlap_pct', 70.0) / 100))
+    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
+    if fw:
+        st.session_state.e_t_dist_val = fw * (1 - (safe_get_float('e_overlap_pct', 70.0) / 100))
 
 def e_sync_gap_to_overlap():
-    fw = get_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
-    if fw > 0: 
+    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
+    if fw:
         st.session_state.e_overlap_pct = max(0.0, min(((fw - safe_get_float('e_target_gap_ft', 26.2)) / fw) * 100, 99.9))
 
 def e_sync_overlap_to_gap():
-    fw = get_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
-    st.session_state.e_target_gap_ft = fw * (1 - (safe_get_float('e_overlap_pct', 70.0) / 100))
+    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
+    if fw:
+        st.session_state.e_target_gap_ft = fw * (1 - (safe_get_float('e_overlap_pct', 70.0) / 100))
 
 def e_sync_geometry():
     if st.session_state.get('e_trigger_type', 'distance') == 'distance': 
@@ -3388,9 +3495,12 @@ if page == 'Creator':
             if preset_name_input.strip():
                 presets = load_creator_presets()
                 presets[preset_name_input.strip()] = {k: st.session_state[k] for k in CREATOR_PRESET_KEYS if k in st.session_state}
-                save_creator_presets(presets)
-                st.success(f"Saved preset '{preset_name_input.strip()}'")
-                st.rerun()
+                err = save_creator_presets(presets)
+                if err:
+                    st.error(f"Could not save the preset: {err}")
+                else:
+                    st.success(f"Saved preset '{preset_name_input.strip()}'")
+                    st.rerun()
             else:
                 st.warning("Enter a preset name.")
 
@@ -3405,9 +3515,12 @@ if page == 'Creator':
         if ok_col.button("Delete", type="primary", use_container_width=True, key="c_preset_del_ok"):
             presets = load_creator_presets()
             presets.pop(name, None)
-            save_creator_presets(presets)
-            st.session_state["_c_preset_deleted"] = True
-            st.rerun()
+            err = save_creator_presets(presets)
+            if err:
+                st.error(f"Could not delete the preset: {err}")
+            else:
+                st.session_state["_c_preset_deleted"] = True
+                st.rerun()
 
     with st.sidebar:
         mapping_mode = st.checkbox(
@@ -3445,6 +3558,12 @@ if page == 'Creator':
 
         with st.expander("💾 Parameter Presets"):
             c_presets = load_creator_presets()
+            if st.session_state.get("_c_preset_load_error"):
+                st.error(
+                    f"Your saved presets could not be read ({st.session_state['_c_preset_load_error']}). "
+                    "They are shown as empty below - saving a preset now would overwrite the existing "
+                    f"file. Back up {os.path.basename(CREATOR_PRESETS_FILE)} first if you want to keep it."
+                )
             c_preset_names = sorted(c_presets.keys())
             c_selected_preset = st.selectbox("Preset", ["Select a preset..."] + c_preset_names, key="c_preset_select", help=param_help("Parameter Presets"))
             c_no_preset = (c_selected_preset == "Select a preset...")
@@ -3567,15 +3686,43 @@ if page == 'Creator':
             gsd_cm = (D_ft_c * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_c != float('inf') else 0
             st.info(f"Est. Ground GSD: {gsd_cm:.2f} cm/px")
 
+            # Overlap only means something when the frame has a bounded ground
+            # footprint. Tilt the gimbal shallower than the sensor's vertical
+            # half-FOV and the top of every frame points at or above the
+            # horizon, so the footprint has no far edge - and any overlap
+            # figure derived from it is fiction. The field is disabled rather
+            # than left to produce one.
+            c_overlap_ok = finite_center_footprint(current_pitch, current_alt) is not None
+            if not c_overlap_ok:
+                st.warning(
+                    f"At {current_pitch:.0f}° the camera is tilted less than its own "
+                    f"{VERT_HALF_FOV_DEG:.1f}° half field-of-view, so the top of the frame "
+                    "looks at or above the horizon and the photo footprint has no far edge. "
+                    "Forward Overlap can't be calculated from that, so it is disabled - set "
+                    "the photo interval directly. Tilt to about -28° or steeper to use overlap."
+                )
+
             side = st.selectbox("Side of flight path", ["right", "left"], key="side", help=param_help("Side of flight path"))
 
             st.header("4. Trigger & Speed")
-            photo_start_wp = st.number_input("Start Photos at Waypoint Index", min_value=0, value=0, step=1, key="photo_start_wp", help=param_help("Start Photos at Waypoint Index"))
+            # DJI Fly puts one photo on every waypoint and the generator forces
+            # the start index to 0, so the control does nothing there - greyed
+            # out rather than left to imply an effect it can't have.
+            photo_start_wp = st.number_input(
+                "Start Photos at Waypoint Index", min_value=0, value=0, step=1,
+                key="photo_start_wp", disabled=is_dji_fly,
+                help=("Not available on DJI Fly - it shoots at every waypoint from the start."
+                      if is_dji_fly else param_help("Start Photos at Waypoint Index")))
+            if is_dji_fly:
+                photo_start_wp = 0
             st.radio("Type", ["distance", "time"], key="trigger_type", on_change=sync_geometry, help=param_help("Type"))
 
             if st.session_state.get('trigger_type', 'distance') == "distance":
                 st.number_input("Interval (ft)", key="t_dist_val", min_value=1.0, step=1.0, on_change=sync_dist_to_overlap, help=param_help("Interval (ft)"))
-                st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=sync_overlap_to_dist, help=param_help("Forward Overlap (%)"))
+                st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0,
+                                on_change=sync_overlap_to_dist, disabled=not c_overlap_ok,
+                                help=(param_help("Forward Overlap (%)") if c_overlap_ok else
+                                      "Unavailable at this gimbal pitch - see the notice above."))
                 manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=4.0, key="manual_mph_dist", help=param_help("Flight Speed (mph)"))
                 speed_m = manual_mph * MPH_TO_MS
 
@@ -3588,16 +3735,18 @@ if page == 'Creator':
                 auto_speed = st.checkbox("Auto-Calc Speed", True, key="auto_speed")
                 if auto_speed:
                     st.number_input("Target Gap (ft)", key="target_gap_ft", min_value=1.0, on_change=sync_gap_to_overlap)
-                    st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=sync_overlap_to_gap, help=param_help("Forward Overlap (%)"))
+                    st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0,
+                                    on_change=sync_overlap_to_gap, disabled=not c_overlap_ok,
+                                    help=(param_help("Forward Overlap (%)") if c_overlap_ok else
+                                          "Unavailable at this gimbal pitch - see the notice above."))
                     speed_m = min(max((safe_get_float('target_gap_ft', 26.2) * FT_TO_M) / t_val_sec, 1.0), 10.0)
                     st.info(f"Auto-Calculated Speed: {speed_m * MS_TO_MPH:.1f} mph")
                 else:
                     manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, value=6.0, step=1.0, key="manual_mph_time", help=param_help("Manual Speed (mph)"))
                     speed_m = manual_mph * MPH_TO_MS
                     current_gap = speed_m * M_TO_FT * t_val_sec
-                    fw = get_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
-                    current_overlap = ((fw - current_gap) / fw) * 100 if fw > 0 else 0
-                    st.info(f"Current Overlap: {max(0, min(current_overlap, 99.9)):.1f}%")
+                    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
+                    st.info(f"Current Overlap: {format_overlap(fw, current_gap)}")
 
         st.header("5. Visuals")
         show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="creator_faa_toggle", help=param_help("Show FAA Airspace Restrictions"))
@@ -3750,8 +3899,11 @@ if page == 'Creator':
                     if preview_path:
                         path_line = folium.PolyLine(preview_path, color="#ff8800", weight=3, tooltip="Computed flight path").add_to(m)
                         PolyLineTextPath(path_line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '18', 'fill-opacity': '0.4'}).add_to(m)
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Previously swallowed, which made a genuine failure look
+                    # identical to "no path could be drawn for this area".
+                    notices.error(f"Could not compute the flight path for this area: "
+                                  f"{type(e).__name__}: {e}")
         else:
             # Polyline only - a corridor mission is a single flight line, so the
             # area/point tools are disabled to avoid drawing shapes this mode
@@ -3903,6 +4055,11 @@ if page == 'Creator':
                                     map_front_ol, thumbnail_path, coords=path_coords, photo_count=est_photos
                                 )
                                 notices.success(f"Saved {final_filename}.kmz to {final_dir}/")
+            else:
+                notices.error(
+                    "That shape has no area to map - its points are duplicated or fall on a "
+                    "straight line. Delete it with the bin icon and draw an area with width to it."
+                )
 
     elif map_data.get("all_drawings") and any(
         d.get('geometry', {}).get('type') == 'LineString' for d in map_data["all_drawings"]
@@ -3913,13 +4070,13 @@ if page == 'Creator':
         coords = [(c[1], c[0]) for c in line_drawing['geometry']['coordinates']]
         total_dist_ft = sum(get_haversine_dist(coords[i], coords[i+1]) for i in range(len(coords)-1)) * M_TO_FT
 
-        gap_ft = max(1.0, safe_get_float('t_dist_val', 9.0) ) if st.session_state.get('trigger_type', 'distance') == "distance" else speed_m * t_val_sec #* M_TO_FT
-
-        if len(coords) > photo_start_wp:
-            dist_to_start = sum(get_haversine_dist(coords[i], coords[i+1]) for i in range(photo_start_wp)) * M_TO_FT
-            est_photos = int(max(0, total_dist_ft - dist_to_start) / gap_ft) + 1 if gap_ft > 0 else 0
-        else:
-            est_photos = 0
+        # Read the interval from session state, not the sidebar local: t_val_sec
+        # only exists on the time-trigger branch, so naming it directly here
+        # would raise NameError whenever the distance trigger is selected.
+        c_trigger = st.session_state.get('trigger_type', 'distance')
+        gap_m = photo_gap_m(c_trigger, safe_get_float('t_dist_val', 9.0),
+                            safe_get_float('t_val_sec', 2.0), speed_m)
+        est_photos = count_corridor_photos(coords, gap_m, is_dji_fly, photo_start_wp)
 
         save_disabled = False
         if is_dji_fly and est_photos > 99:
@@ -4117,17 +4274,39 @@ elif page == 'Editor':
             current_e_alt = safe_get_float('e_alt_ft', 50.0)
             D_ft_e = current_e_alt / math.sin(pitch_rad_e) if pitch_rad_e > 0 else float('inf')
             st.info(f"Est. Ground GSD: {(D_ft_e * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_e != float('inf') else 0:.2f} cm/px")
+
+            # Same rule as the Creator: no bounded footprint, no meaningful
+            # overlap figure, so the field is disabled instead of inventing one.
+            e_overlap_ok = finite_center_footprint(current_e_pitch, current_e_alt) is not None
+            if not e_overlap_ok:
+                st.warning(
+                    f"At {current_e_pitch:.0f}° the camera is tilted less than its own "
+                    f"{VERT_HALF_FOV_DEG:.1f}° half field-of-view, so the top of the frame "
+                    "looks at or above the horizon and the photo footprint has no far edge. "
+                    "Forward Overlap can't be calculated from that, so it is disabled - set "
+                    "the photo interval directly. Tilt to about -28° or steeper to use overlap."
+                )
             
             e_side = st.selectbox("Yaw Side", ["right", "left"], help=param_help("Yaw Side"))
 
             st.header("3. Trigger Settings")
-            e_start_wp = st.number_input("Start Photos at WP", min_value=0, value=meta['photo_start_wp'], step=1, help=param_help("Start Photos at WP"))
+            # Same as the Creator: inert on DJI Fly, so don't offer it.
+            e_start_wp = st.number_input(
+                "Start Photos at WP", min_value=0, value=meta['photo_start_wp'], step=1,
+                disabled=e_is_dji_fly,
+                help=("Not available on DJI Fly - it shoots at every waypoint from the start."
+                      if e_is_dji_fly else param_help("Start Photos at WP")))
+            if e_is_dji_fly:
+                e_start_wp = 0
             e_trigger = st.radio("Type", ["distance", "time"], key="e_trigger_type", on_change=e_sync_geometry, help=param_help("Type"))
             safe_e_speed = max(2.3, float(meta.get('speed_mph', 6.0)))
 
             if st.session_state.get('e_trigger_type', 'distance') == "distance":
                 st.number_input("Interval (ft)", key="e_t_dist_val", min_value=1.0, step=1.0, on_change=e_sync_dist_to_overlap, help=param_help("Interval (ft)"))
-                st.number_input("Forward Overlap (%)", key="e_overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=e_sync_overlap_to_dist, help=param_help("Forward Overlap (%)"))
+                st.number_input("Forward Overlap (%)", key="e_overlap_pct", min_value=0.0, max_value=99.9, step=1.0,
+                                on_change=e_sync_overlap_to_dist, disabled=not e_overlap_ok,
+                                help=(param_help("Forward Overlap (%)") if e_overlap_ok else
+                                      "Unavailable at this gimbal pitch - see the notice above."))
                 e_speed_m = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=safe_e_speed, help=param_help("Flight Speed (mph)")) * MPH_TO_MS
 
                 gap_m = max(1.0, safe_get_float('e_t_dist_val', 9.0) * FT_TO_M)
@@ -4141,14 +4320,16 @@ elif page == 'Editor':
                 e_auto_speed = st.checkbox("Auto-Calc Speed", True)
                 if e_auto_speed:
                     st.number_input("Target Gap (ft)", key="e_target_gap_ft", min_value=1.0, on_change=e_sync_gap_to_overlap)
-                    st.number_input("Forward Overlap (%)", key="e_overlap_pct", min_value=0.0, max_value=99.9, step=1.0, on_change=e_sync_overlap_to_gap, help=param_help("Forward Overlap (%)"))
+                    st.number_input("Forward Overlap (%)", key="e_overlap_pct", min_value=0.0, max_value=99.9, step=1.0,
+                                    on_change=e_sync_overlap_to_gap, disabled=not e_overlap_ok,
+                                    help=(param_help("Forward Overlap (%)") if e_overlap_ok else
+                                          "Unavailable at this gimbal pitch - see the notice above."))
                     e_speed_m = min(max((safe_get_float('e_target_gap_ft', 26.2) * FT_TO_M) / e_tval_sec, 1.0), 10.0)
                     st.info(f"Auto-Calculated Speed: {e_speed_m * MS_TO_MPH:.1f} mph")
                 else:
                     e_speed_m = st.number_input("Manual Speed (mph)", min_value=2.3, value=safe_e_speed, step=1.0, help=param_help("Manual Speed (mph)")) * MPH_TO_MS
-                    fw = get_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
-                    current_overlap = ((fw - (e_speed_m * M_TO_FT * e_tval_sec)) / fw) * 100 if fw > 0 else 0
-                    st.info(f"Current Overlap: {max(0, min(current_overlap, 99.9)):.1f}%")
+                    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
+                    st.info(f"Current Overlap: {format_overlap(fw, e_speed_m * M_TO_FT * e_tval_sec)}")
 
             st.header("4. Visuals")
             show_footprints = st.checkbox("Show Image Footprints", value=True, help=param_help("Show Image Footprints"))
@@ -4310,13 +4491,10 @@ elif page == 'Editor':
 
         with top_hud:
             total_dist_ft = sum(get_haversine_dist(final_coords[i], final_coords[i+1]) for i in range(len(final_coords)-1)) * M_TO_FT
-            gap_ft = max(1.0, safe_get_float('e_t_dist_val', 9.0) ) if st.session_state.get('e_trigger_type', 'distance') == "distance" else e_speed_m * safe_get_float('e_t_time_val', 2.0) * M_TO_FT #* M_TO_FT
-                
-            if len(final_coords) > e_start_wp:
-                dist_to_start = sum(get_haversine_dist(final_coords[i], final_coords[i+1]) for i in range(e_start_wp)) * M_TO_FT
-                est_photos = int(max(0, total_dist_ft - dist_to_start) / gap_ft) + 1 if gap_ft > 0 else 0
-            else:
-                est_photos = 0
+            e_gap_m = photo_gap_m(st.session_state.get('e_trigger_type', 'distance'),
+                                  safe_get_float('e_t_dist_val', 9.0),
+                                  safe_get_float('e_t_time_val', 2.0), e_speed_m)
+            est_photos = count_corridor_photos(final_coords, e_gap_m, e_is_dji_fly, e_start_wp)
             
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft")
@@ -4686,8 +4864,8 @@ elif page == 'Viewer  |':
                         else:
                             interval_ft = 0.0
 
-                        fw_ft = get_center_footprint(meta['pitch'], meta['alt'] * M_TO_FT)
-                        overlap_pct = (1 - interval_ft / fw_ft) * 100 if fw_ft > 0 and interval_ft else None
+                        fw_ft = finite_center_footprint(meta['pitch'], meta['alt'] * M_TO_FT)
+                        overlap_text = format_overlap(fw_ft, interval_ft)
 
                         # Which way the camera looked, from the angle between the
                         # gimbal yaw and the direction of travel.
@@ -4719,8 +4897,7 @@ elif page == 'Viewer  |':
                         st.sidebar.write(f"Trigger: {'Dense Waypoints (DJI Fly)' if meta['mode'] == 'None' else meta['mode']} ({meta['t_val']*M_TO_FT if meta['mode']=='Distance' else meta['t_val']:.1f})")
                         if interval_ft:
                             st.sidebar.write(f"Photo Interval: {interval_ft:.1f} ft")
-                        if overlap_pct is not None:
-                            st.sidebar.write(f"Forward Overlap: {max(0.0, min(overlap_pct, 99.9)):.1f}%")
+                        st.sidebar.write(f"Forward Overlap: {overlap_text}")
                         if meta['mode'] != 'None' and meta['start_idx']:
                             st.sidebar.write(f"Photos Start at WP: {meta['start_idx']}")
                         # Side overlap and the mapping camera aim aren't stored
