@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import os
 import json
@@ -1115,7 +1114,7 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
             if not ok_kmz:
                 return False, f"KMZ transfer failed: {msg_kmz}"
 
-            local_jpg_path = local_kmz_path.replace('.kmz', '.jpg')
+            local_jpg_path = kmz_companion_path(local_kmz_path)
             if os.path.exists(local_jpg_path):
                 if platform.system() == "Darwin":
                     subprocess.run(f'xattr -c {shlex.quote(local_jpg_path)}', shell=True)
@@ -1160,6 +1159,34 @@ def export_mission_kmz_from_strings(template_kml_str, waylines_wpml_str, output_
             kmz.writestr('template.kml', template_kml_str)
             if waylines_wpml_str:
                 kmz.writestr('waylines.wpml', waylines_wpml_str)
+
+def is_kmz_file(filename):
+    """
+    Whether `filename` is a .kmz, regardless of how the extension is cased.
+
+    Windows filesystems are case-insensitive, so a mission that has been round
+    -tripped through an SD card, a controller, or an email can come back named
+    ".KMZ" and is the same file as far as the OS is concerned. A case-sensitive
+    endswith(".kmz") skipped those silently: the file sat in the folder and
+    opened fine in Explorer, but never appeared in any mission list and gave no
+    error saying why. Files this app writes are always lowercase, so this only
+    widens what gets picked up - it never changes what gets saved.
+    """
+    return filename.lower().endswith(".kmz")
+
+
+def kmz_companion_path(kmz_path, new_ext=".jpg"):
+    """
+    Path of the file paired with a mission - its thumbnail unless told
+    otherwise - derived from the mission's own path.
+
+    Uses splitext rather than replace('.kmz', ...) so it strips a ".KMZ" just
+    as happily as a ".kmz", and so it can only ever rewrite the extension:
+    a plain replace also rewrites any earlier ".kmz" occurrence in the path,
+    which a parent folder named e.g. "old.kmz backups" would trigger.
+    """
+    return os.path.splitext(kmz_path)[0] + new_ext
+
 
 def is_dji_fly_kmz(kmz_path):
     """
@@ -3308,16 +3335,44 @@ footer {{ display: none !important; }}
 .st-key-page_body {{ padding: 16px 24px !important; }}
 .st-key-page_body h1 {{ font-size: 1.5rem !important; }}
 .st-key-page_body h2, .st-key-page_body h3 {{ font-size: 1.15rem !important; }}
+
+/* The script-only embed just below the stylesheet runs the search bar's
+   outside-click listener and renders nothing, but st.iframe insists on a
+   positive height (and "content" still falls back to the browser's default
+   150px for an empty body), so it is asked for 1px and flattened here.
+   Collapsed via height/overflow rather than display:none so the iframe is
+   still rendered and its script is guaranteed to execute. */
+.st-key-search_autoclose_script {{
+    height: 0 !important; min-height: 0 !important; overflow: hidden !important;
+    margin: 0 !important; padding: 0 !important;
+}}
 </style>
 """, unsafe_allow_html=True)
 
 # Auto-close the address search bar on an outside click. st.markdown() can't
 # run <script> tags (React strips them from dangerouslySetInnerHTML), so this
-# goes through components.html's iframe instead, reaching back into the main
-# page via window.parent.document - a same-origin, well-established pattern
-# for this exact limitation. Guarded so the (page-persistent) listener is
-# only ever bound once, no matter how many times Streamlit reruns the script.
-components.html("""
+# goes through an iframe instead, reaching back into the main page via
+# window.parent.document - a same-origin, well-established pattern for this
+# exact limitation. Guarded so the (page-persistent) listener is only ever
+# bound once, no matter how many times Streamlit reruns the script.
+#
+# st.iframe (not st.html) is what this needs: given an HTML string it embeds
+# it as-is in an iframe that permits JavaScript and same-origin access to the
+# app, whereas st.html sanitises the markup through DOMPurify and would strip
+# the script outright. The markup here is a fixed literal, never user input,
+# so st.iframe's untrusted-content caveat doesn't apply.
+#
+# This embed is script-only and renders nothing, so it must take up no space.
+# components.html used to express that as height=0, but st.iframe rejects 0
+# (positive int, "stretch" or "content" only) and "content" does not collapse
+# either - an iframe with no rendered body still falls back to the browser's
+# default 150px, which showed up as a blank 150px band across the page. So
+# ask for the minimum legal height and collapse the container in CSS
+# (.st-key-search_autoclose_script, in the stylesheet above). The container is
+# collapsed with height/overflow rather than display:none so the iframe is
+# still rendered and its script is guaranteed to run.
+with st.container(key="search_autoclose_script"):
+    st.iframe("""
 <script>
 (function() {
     const doc = window.parent.document;
@@ -3353,7 +3408,7 @@ components.html("""
     });
 })();
 </script>
-""", height=0)
+""", height=1)
 
 HEADING_RE = re.compile(r'^(#{1,6})[ \t]+(.+?)[ \t]*$', re.MULTILINE)
 
@@ -3388,14 +3443,14 @@ def _confirm_99_override(scope, est_photos):
         "and load the mission on the controller to check it before you rely on it."
     )
     cancel_col, ok_col = st.columns(2)
-    if cancel_col.button("Cancel", use_container_width=True):
+    if cancel_col.button("Cancel", width='stretch'):
         st.session_state[f"{scope}_99_dialog"] = False
         st.session_state[f"{scope}_99_override_ok"] = False
         # The tick box has already been instantiated this run, so its state
         # cannot be written here - defer the reset to the next run.
         st.session_state[f"{scope}_99_reset"] = True
         st.rerun()
-    if ok_col.button("Turn on override", type="primary", use_container_width=True):
+    if ok_col.button("Turn on override", type="primary", width='stretch'):
         st.session_state[f"{scope}_99_dialog"] = False
         st.session_state[f"{scope}_99_override_ok"] = True
         st.rerun()
@@ -3465,7 +3520,7 @@ with st.container(key="app_header"):
     with header_tabs_col:
         page = st.radio("Navigation", ["Creator", "Editor", "Viewer  |", "Photo Sorter", "DJI Fly Transfer"], horizontal=True, label_visibility="collapsed")
     with header_readme_col:
-        if st.button("📖 README", use_container_width=True):
+        if st.button("📖 README", width='stretch'):
             _readme_dialog()
 
 # --- CREATOR MODE ---
@@ -3510,9 +3565,9 @@ if page == 'Creator':
         st.caption("It is removed from your saved presets and cannot be recovered. "
                    "The settings currently in the sidebar are not changed.")
         cancel_col, ok_col = st.columns(2)
-        if cancel_col.button("Cancel", use_container_width=True, key="c_preset_del_cancel"):
+        if cancel_col.button("Cancel", width='stretch', key="c_preset_del_cancel"):
             st.rerun()
-        if ok_col.button("Delete", type="primary", use_container_width=True, key="c_preset_del_ok"):
+        if ok_col.button("Delete", type="primary", width='stretch', key="c_preset_del_ok"):
             presets = load_creator_presets()
             presets.pop(name, None)
             err = save_creator_presets(presets)
@@ -3569,17 +3624,17 @@ if page == 'Creator':
             c_no_preset = (c_selected_preset == "Select a preset...")
             c_pcol1, c_pcol2 = st.columns(2)
             with c_pcol1:
-                if st.button("📥 Load", use_container_width=True, disabled=c_no_preset):
+                if st.button("📥 Load", width='stretch', disabled=c_no_preset):
                     st.session_state["_c_pending_preset"] = c_presets[c_selected_preset]
                     st.rerun()
             with c_pcol2:
-                if st.button("💾 Save", use_container_width=True):
+                if st.button("💾 Save", width='stretch'):
                     _c_save_preset_dialog("" if c_no_preset else c_selected_preset)
             # Delete gets its own row rather than a third column: three buttons
             # wrap badly at sidebar width, and keeping the destructive one apart
             # from Load/Save makes it harder to hit by accident. It acts on
             # whatever is selected above, and confirms before rewriting the file.
-            if st.button("🗑 Delete Preset", use_container_width=True, disabled=c_no_preset,
+            if st.button("🗑 Delete Preset", width='stretch', disabled=c_no_preset,
                          help="Permanently delete the selected preset"):
                 _c_delete_preset_dialog(c_selected_preset)
 
@@ -3606,7 +3661,7 @@ if page == 'Creator':
             if not RASTERIO_AVAILABLE:
                 st.error("Missing 'rasterio' library. Run `pip install rasterio pyproj` to use local GeoTIFFs.")
             else:
-                tif_files = [f for f in os.listdir(SURFACES_DIR) if f.endswith((".tif", ".tiff"))]
+                tif_files = [f for f in os.listdir(SURFACES_DIR) if f.lower().endswith((".tif", ".tiff"))]
                 if tif_files:
                     selected_tif = st.selectbox("Select Surface File", tif_files, key="c_tif")
                     c_tif_path = os.path.join(SURFACES_DIR, selected_tif)
@@ -3792,14 +3847,14 @@ if page == 'Creator':
             )
         with save_col2:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            if st.button("📂", key="c_btn_browse_dir", help="Browse for a save directory", use_container_width=True):
+            if st.button("📂", key="c_btn_browse_dir", help="Browse for a save directory", width='stretch'):
                 picked = pick_folder_dialog("Select Save Directory")
                 if picked:
                     st.session_state.c_browsed_dir = picked
                     st.rerun()
         with save_col3:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            if st.button("＋", key="c_btn_new_folder_popup", help="Create a new empty folder", use_container_width=True):
+            if st.button("＋", key="c_btn_new_folder_popup", help="Create a new empty folder", width='stretch'):
                 _c_new_folder_dialog()
 
         # Vestigial: "Create New Folder..." isn't an actual option in the
@@ -3940,7 +3995,7 @@ if page == 'Creator':
                 c_search_query = st.text_input("Jump to Address or Lat/Lon", key="c_search_input", placeholder="e.g. 1600 Pennsylvania Ave or 40.25, -111.64")
             with search_col2:
                 st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                if st.button("Search Location", key="c_btn_search", use_container_width=True):
+                if st.button("Search Location", key="c_btn_search", width='stretch'):
                     with st.spinner("Searching..."):
                         new_coords = get_coords_from_search(c_search_query)
                         if new_coords:
@@ -4003,8 +4058,8 @@ if page == 'Creator':
                               delta_color="off")
                     with c4:
                         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-                        save_clicked = st.button("Save & Generate KMZ", use_container_width=True, disabled=save_disabled)
-                        if st.button("🗑 Clear boundary", use_container_width=True, key="btn_clear_boundary"):
+                        save_clicked = st.button("Save & Generate KMZ", width='stretch', disabled=save_disabled)
+                        if st.button("🗑 Clear boundary", width='stretch', key="btn_clear_boundary"):
                             st.session_state.map_boundary = None
                             st.rerun()
 
@@ -4049,7 +4104,7 @@ if page == 'Creator':
                                     output_kmz_path=final_filepath,
                                     is_dji_fly=is_dji_fly
                                 )
-                                thumbnail_path = final_filepath.replace('.kmz', '.jpg')
+                                thumbnail_path = kmz_companion_path(final_filepath)
                                 generate_name_thumbnail(
                                     prefixed_name, map_alt, map_pitch_val,
                                     map_front_ol, thumbnail_path, coords=path_coords, photo_count=est_photos
@@ -4089,7 +4144,7 @@ if page == 'Creator':
             c2.metric("Estimated Photos", f"{est_photos}" + (" / 99" if is_dji_fly else ""))
             with c3:
                 st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-                save_clicked = st.button("Save & Generate KMZ", use_container_width=True, disabled=save_disabled)
+                save_clicked = st.button("Save & Generate KMZ", width='stretch', disabled=save_disabled)
 
             if save_clicked:
                 with notices.spinner("Calculating terrain elevations and generating KMZ..."):
@@ -4128,7 +4183,7 @@ if page == 'Creator':
                             output_kmz_path=final_filepath,
                             is_dji_fly=is_dji_fly
                         )
-                        thumbnail_path = final_filepath.replace('.kmz', '.jpg')
+                        thumbnail_path = kmz_companion_path(final_filepath)
                         generate_name_thumbnail(
                             prefixed_name, safe_get_float('alt_ft', 50.0), safe_get_float('pitch', -60.0),
                             safe_get_float('overlap_pct', 70.0), thumbnail_path, coords=coords, photo_count=est_photos
@@ -4173,7 +4228,7 @@ elif page == 'Editor':
         dir_label = selected_dir_name
 
     try:
-        kmz_files = [f for f in os.listdir(active_dir) if f.endswith(".kmz")]
+        kmz_files = [f for f in os.listdir(active_dir) if is_kmz_file(f)]
     except OSError as e:
         notices.error(f"Can't read {dir_label}: {e.strerror or e}")
         kmz_files = []
@@ -4199,7 +4254,7 @@ elif page == 'Editor':
                 st.session_state.locked_editor_center = list(meta['coords'][0])
                 st.session_state.editor_center = list(meta['coords'][0])
 
-            clean_base_name = strip_flight_suffix(selected_kmz.replace('.kmz', ''))
+            clean_base_name = strip_flight_suffix(kmz_companion_path(selected_kmz, ""))
             st.session_state.e_name_input = f"{clean_base_name}-edited" if make_new_file else clean_base_name
 
             st.session_state.e_alt_ft = meta['alt_ft']
@@ -4259,7 +4314,7 @@ elif page == 'Editor':
                 if not RASTERIO_AVAILABLE:
                     st.error("Missing 'rasterio' library. Run `pip install rasterio pyproj` to use local GeoTIFFs.")
                 else:
-                    tif_files = [f for f in os.listdir(SURFACES_DIR) if f.endswith((".tif", ".tiff"))]
+                    tif_files = [f for f in os.listdir(SURFACES_DIR) if f.lower().endswith((".tif", ".tiff"))]
                     if tif_files:
                         selected_tif = st.selectbox("Select Surface File", tif_files, key="e_tif")
                         e_tif_path = os.path.join(SURFACES_DIR, selected_tif)
@@ -4350,7 +4405,7 @@ elif page == 'Editor':
         side_panel.write("### Fine-Tune Flight Path Coordinates")
 
         df = pd.DataFrame(meta['coords'], columns=['Latitude', 'Longitude'])
-        edited_df = side_panel.data_editor(df, num_rows="dynamic", key=st.session_state.editor_key, use_container_width=True)
+        edited_df = side_panel.data_editor(df, num_rows="dynamic", key=st.session_state.editor_key, width='stretch')
         current_coords = [(row['Latitude'], row['Longitude']) for _, row in edited_df.iterrows()]
 
         with map_layer:
@@ -4475,7 +4530,7 @@ elif page == 'Editor':
                     e_search_query = st.text_input("Jump to Address or Lat/Lon", key="e_search_input", placeholder="e.g. 1600 Pennsylvania Ave or 40.25, -111.64")
                 with e_search_col2:
                     st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                    if st.button("Search Location", key="e_btn_search", use_container_width=True):
+                    if st.button("Search Location", key="e_btn_search", width='stretch'):
                         with st.spinner("Searching..."):
                             new_coords = get_coords_from_search(e_search_query)
                             if new_coords:
@@ -4536,7 +4591,7 @@ elif page == 'Editor':
                             is_dji_fly=e_is_dji_fly
                         )
 
-                        thumbnail_path = final_filepath.replace('.kmz', '.jpg')
+                        thumbnail_path = kmz_companion_path(final_filepath)
                         generate_name_thumbnail(
                             e_prefixed_name, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0),
                             safe_get_float('e_overlap_pct', 70.0), thumbnail_path, coords=final_coords, photo_count=est_photos
@@ -4551,7 +4606,7 @@ elif page == 'Editor':
                         if not make_new_file and final_filepath != full_path:
                             if os.path.exists(full_path):
                                 os.remove(full_path)
-                            old_thumbnail = full_path.replace('.kmz', '.jpg')
+                            old_thumbnail = kmz_companion_path(full_path)
                             if os.path.exists(old_thumbnail):
                                 os.remove(old_thumbnail)
 
@@ -4593,7 +4648,7 @@ elif page == 'Viewer  |':
         dir_label = selected_dir_name
 
     try:
-        kmz_files = [f for f in os.listdir(active_dir) if f.endswith(".kmz")]
+        kmz_files = [f for f in os.listdir(active_dir) if is_kmz_file(f)]
     except OSError as e:
         notices.error(f"Can't read {dir_label}: {e.strerror or e}")
         kmz_files = []
@@ -4992,7 +5047,7 @@ elif page == 'Photo Sorter':
             gap_minutes = st.number_input("Time Gap (minutes)", min_value=1, value=5, step=1, help="If the time between two sequential photos exceeds this gap, a new folder is created.")
         
         st.write("---")
-        submit_btn = st.button("🚀 Sort Photos", use_container_width=True)
+        submit_btn = st.button("🚀 Sort Photos", width='stretch')
     
         if submit_btn:
             source_dir = st.session_state.sorter_source
@@ -5055,7 +5110,7 @@ elif page == 'DJI Fly Transfer':
             try:
                 kmz_files = [
                     f for f in os.listdir(active_dir)
-                    if f.endswith(".kmz") and is_dji_fly_kmz(os.path.join(active_dir, f))
+                    if is_kmz_file(f) and is_dji_fly_kmz(os.path.join(active_dir, f))
                 ]
             except OSError as e:
                 st.error(f"Can't read {dir_label}: {e.strerror or e}")
@@ -5069,7 +5124,7 @@ elif page == 'DJI Fly Transfer':
         with col2:
             st.subheader("2. Controller Nests")
             st.write("Connect the RC 2 via USB, power on, and close Preview and Android File Transfer.")
-            if st.button("🔄 Scan RC 2 & Pull Previews", use_container_width=True):
+            if st.button("🔄 Scan RC 2 & Pull Previews", width='stretch'):
                 with st.spinner("Scanning MTP and downloading thumbnails... (This takes a few seconds)"):
                     st.session_state.rc_nests, st.session_state.preview_id, st.session_state.rc_scan_error = fetch_controller_nests_and_previews()
 
@@ -5158,9 +5213,9 @@ elif page == 'DJI Fly Transfer':
 
                     # Show Local Preview Image
                     if loc_choice != "--- Select Local Mission ---":
-                        local_jpg = os.path.join(active_dir, loc_choice.replace('.kmz', '.jpg'))
+                        local_jpg = os.path.join(active_dir, kmz_companion_path(loc_choice))
                         if os.path.exists(local_jpg):
-                            st.image(local_jpg, use_container_width=True)
+                            st.image(local_jpg, width='stretch')
                         else:
                             st.info("No custom title card generated.")
 
@@ -5176,7 +5231,7 @@ elif page == 'DJI Fly Transfer':
                     if nest_choice != "--- Select Target Nest ---":
                         cached_jpg = os.path.join("missions/.cache", f"{nest_choice}.jpg")
                         if os.path.exists(cached_jpg):
-                            st.image(cached_jpg, use_container_width=True, caption=f"Current: {nest_choice[-8:]}")
+                            st.image(cached_jpg, width='stretch', caption=f"Current: {nest_choice[-8:]}")
                         else:
                             st.info("Native Dummy Mission\n\n*(Preview unreadable over USB until overridden)*")
                 
@@ -5185,7 +5240,7 @@ elif page == 'DJI Fly Transfer':
             
                 st.write("---")
                     
-            if st.button("🚀 Execute Visual Transfer", use_container_width=True):
+            if st.button("🚀 Execute Visual Transfer", width='stretch'):
                 if not transfer_map:
                     st.warning("No valid pairs assigned! Select a local mission and a target nest.")
                 else:
