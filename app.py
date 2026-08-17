@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import os
 import json
@@ -3337,11 +3338,11 @@ footer {{ display: none !important; }}
 .st-key-page_body h2, .st-key-page_body h3 {{ font-size: 1.15rem !important; }}
 
 /* The script-only embed just below the stylesheet runs the search bar's
-   outside-click listener and renders nothing, but st.iframe insists on a
-   positive height (and "content" still falls back to the browser's default
-   150px for an empty body), so it is asked for 1px and flattened here.
-   Collapsed via height/overflow rather than display:none so the iframe is
-   still rendered and its script is guaranteed to execute. */
+   outside-click listener and renders nothing. components.html(height=0)
+   already collapses it, but the container still leaves a hairline margin/
+   padding gap in some browsers, so this belt-and-suspenders rule zeroes
+   that out too. Collapsed via height/overflow rather than display:none so
+   the iframe is still rendered and its script is guaranteed to execute. */
 .st-key-search_autoclose_script {{
     height: 0 !important; min-height: 0 !important; overflow: hidden !important;
     margin: 0 !important; padding: 0 !important;
@@ -3356,23 +3357,20 @@ footer {{ display: none !important; }}
 # exact limitation. Guarded so the (page-persistent) listener is only ever
 # bound once, no matter how many times Streamlit reruns the script.
 #
-# st.iframe (not st.html) is what this needs: given an HTML string it embeds
-# it as-is in an iframe that permits JavaScript and same-origin access to the
-# app, whereas st.html sanitises the markup through DOMPurify and would strip
-# the script outright. The markup here is a fixed literal, never user input,
-# so st.iframe's untrusted-content caveat doesn't apply.
+# components.html (not st.html/st.markdown) is what this needs: given an HTML
+# string it embeds it as-is in an iframe that permits JavaScript and
+# same-origin access to the app, whereas st.html sanitises the markup through
+# DOMPurify and would strip the script outright. The markup here is a fixed
+# literal, never user input, so that untrusted-content caveat doesn't apply.
+# (st.iframe loads a URL, not an HTML string, and isn't the right tool here -
+# and st 1.55, what this app targets, doesn't even have it.)
 #
-# This embed is script-only and renders nothing, so it must take up no space.
-# components.html used to express that as height=0, but st.iframe rejects 0
-# (positive int, "stretch" or "content" only) and "content" does not collapse
-# either - an iframe with no rendered body still falls back to the browser's
-# default 150px, which showed up as a blank 150px band across the page. So
-# ask for the minimum legal height and collapse the container in CSS
-# (.st-key-search_autoclose_script, in the stylesheet above). The container is
-# collapsed with height/overflow rather than display:none so the iframe is
-# still rendered and its script is guaranteed to run.
+# This embed is script-only and renders nothing, so it must take up no space:
+# height=0 collapses it, backed up by the CSS rule on
+# .st-key-search_autoclose_script above for the rare browser that still
+# leaves a hairline gap.
 with st.container(key="search_autoclose_script"):
-    st.iframe("""
+    components.html("""
 <script>
 (function() {
     const doc = window.parent.document;
@@ -3408,7 +3406,7 @@ with st.container(key="search_autoclose_script"):
     });
 })();
 </script>
-""", height=1)
+""", height=0)
 
 HEADING_RE = re.compile(r'^(#{1,6})[ \t]+(.+?)[ \t]*$', re.MULTILINE)
 
@@ -5044,7 +5042,14 @@ elif page == 'Photo Sorter':
                 st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
                 st.button("📂", key="btn_pick_output", on_click=pick_output_folder, help="Browse for Output Directory")
             
-            gap_minutes = st.number_input("Time Gap (minutes)", min_value=1, value=5, step=1, help="If the time between two sequential photos exceeds this gap, a new folder is created.")
+            # float min_value/value/step (not int) is what makes this field
+            # accept fractional minutes - e.g. 0.5 for a 30 second gap -
+            # instead of rounding every entry to the nearest whole minute.
+            gap_minutes = st.number_input(
+                "Time Gap (minutes)", min_value=0.1, value=5.0, step=0.1, format="%.1f",
+                help="If the time between two sequential photos exceeds this gap, a new folder is "
+                     "created. Fractional values are allowed - 0.5 is a 30 second gap."
+            )
         
         st.write("---")
         submit_btn = st.button("🚀 Sort Photos", width='stretch')

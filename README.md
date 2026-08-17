@@ -180,7 +180,7 @@ This tab allows you to automatically group mission photos into folders based on 
 * **Source Directory**: The location where the drone's image folder is located. 
 * **Output Directory**: Where you want the separated mission folders to be saved. The folders are saved with the date and time of the first image in the folder. 
 * **Target Date**: What date the sorter will look for when grouping missions. Only photos taken on this date will be sorted. 
-* **Time Gap (minutes)**: How long there needs to be between photos for them to be considered as part of different groups/missions. 
+* **Time Gap (minutes)**: How long there needs to be between photos for them to be considered as part of different groups/missions. Accepts fractions of a minute - e.g. 0.5 for a 30 second gap. 
 
 ### **DJI Fly Transfer**
 This tab allows you to transfer DJI Fly missions to a RC 2 controller directly from your computer. 
