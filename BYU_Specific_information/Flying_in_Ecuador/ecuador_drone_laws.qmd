@@ -1,0 +1,170 @@
+---
+title: "Ecuador Drone (UAS) Laws — Notes"
+subtitle: "Compiled notes on import tax, general operating rules, insurance, and flight considerations"
+author: "Connor Williams"
+date: 2026-08-18
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    theme: cosmo
+    embed-resources: true
+  pdf:
+    toc: true
+    number-sections: true
+---
+
+## Overview
+
+Ecuador's UAS activity is governed by the **Dirección General de Aviación Civil (DGAC)** — Ecuador's civil aviation authority. 
+Its main drone-specific regulation, **RDAC 101**, sets out the full set of rules and procedures, but is only available in Spanish. 
+A Claude AI translation of relevant parts can be found [here](Ecuador_UAS_Research_Guide.pdf), and is the primary source for information in the document unless stated otherwise.  
+See @sec-sources for all sources.
+
+Are our drones under 250g with the batteries??? This is very important to know. 
+
+::: {.callout-important}
+## Primary vs. secondary sources
+
+Some notes below (tax, general laws, insurance) come from **secondary sources** — third-party drone-law summary sites, not the DGAC itself.  
+:::
+
+
+## Classification
+Research seems to fall under the **Specific** category.
+
+As per Section 101.025 and Section 101.405(a)(5)
+
+(a) UAS operations dedicated to private activities shall follow the operating rules in Chapters B and D of this Regulation and must have the corresponding operating permit under current regulations, and UAS registration, in all cases. 
+(b) Public-service activities, as well as scientific research, innovation, and
+development activities carried out by public or private entities, shall also be considered private activities.
+- Specific category relates to the: "(5) Capture of images, video, or data for purposes of mapping, geodesy, topography,
+photogrammetry... (10) Activities of public entities."
+
+## Compliance Laws
+
+### UAS registration (Section 101.105(a)) (Appendix 1)
+
+Process:
+
+- **Who must register**: every UAS with MTOW ≥ 250 g, plus any associated technology equipment (linked at registration or whenever added to an operation).
+- **Eligibility**: at least 18 years old, and either an Ecuadorian citizen/resident, or a legal entity constituted under Ecuadorian law.
+- **How**: through DGAC's **online registration system** ("sistema de registro web de la Dirección General de Aviación Civil").
+- **Required information**: owner/legal-representative name, ID number, address, email, phone, manufacturer, model, MTOW, purpose of use, serial number, and photos (top, front, side).
+- **Certificate**: DGAC issues a unique registration certificate per aircraft once requirements are met.
+- **Marking**: the aircraft must be legibly marked with its DGAC registration number, per Circular CA-101-A.
+- **Transfers/cancellation**: any sale or transfer must be reported to DGAC to cancel or update the registration; the same applies to end-of-life, destruction, loss, or dissolution of the owning entity (within 7 days of the event).
+
+- Active remote ID and geofencing if we fall under the **Open** category. 
+  - "The UA must have an active remote-identification system and geofencing function." (Section 101.305(e))
+
+### Remote Pilot Authorization
+
+From Section 101.640
+
+- “(a) Without prejudice to Ecuador’s own immigration and labor laws, remote-pilot authorizations, certificates, licenses, or credentials issued by other States party to the Convention on International Civil Aviation (ICAO) may be converted into a remote-pilot authorization, provided the applicant meets the following requirements: (1) An application per the procedure established by DGAC. (2) A copy of the foreign license, certificate, or credential issued by an ICAO contracting State. (3) An identity document. (4) Passing a theoretical knowledge exam before DGAC. (5) Reading, speaking, and understanding the Spanish language. (b) Before converting the license, certificate, or credential, DGAC will consult with the foreign authority that issued the original credential regarding: validity, limitations, suspensions, or revocations. (c) From the moment the remote-pilot authorization is granted, the holder is subject to DGAC’s oversight mechanisms…”
+
+- **Lets hope there is a way around this, since "knowing Spanish" requirement will be the hardest one to accomplish. I don't know Spanish.**
+
+### UAS Operating Certificate (UOC)
+
+- Hold the operating permit to conduct aerial work. Applicable insurance
+certificate. Registration certificate for each and every UAS. (Section 101.510 )
+- [The applicant must] comply with and follow the procedure described in Appendix 5. (b–c) DGAC will carry out inspection and operational-verification processes [and, if satisfactory, will issue the certificate]. (Section 101.520(a)–(c))
+- This process is explained in section 3.3 of the Research Guide.
+
+### Other Documentation
+
+- Operational Risk Analysis: Conduct the corresponding operational safety risk analyses, according to the type of operation [including] hazard identification, risk assessment, and mitigation strategies. (Section 101.410(a)(8))
+- Submit to DGAC a detailed description of the C2 link configuration [and] procedures in case of loss or degradation of the link... Identify the C2 link's limitations, according to the type of specific operation. (Section 101.420(a), (a)(3))
+  - Section 3.4 of the research guide outlines how to do this. 
+
+### Insurance
+
+The owner or operator of the RPAS/UAS is responsible for any damage caused to third parties from flight activities, and must carry civil liability insurance covering third parties.
+
+- The owner or operator of an unmanned aircraft used in [aerial-work] activities, with an MTOW over 250 g, IS required to submit a third-party liability insurance policy to DGAC. (Appendix 3 Section 1(b)–(c))
+- Maybe there is a way around this???
+
+| MTOW (max) | Minimum coverage — Aerial work / private aerial services |
+|---|---|
+| < 250 g | N/A |
+| 251 g – 5 kg | USD $3,000 |
+| 5.01 kg – 25 kg | USD $6,000 |
+| 25.01 kg – 50 kg | USD $10,000 |
+| > 50.01 kg | USD $15,000 |
+
+## General Operational Rules
+Broadly similar in shape to U.S. recreational/Part 107-style rules
+
+### Distances
+- Do not fly above 400 feet (≈122 m). (Section 101.185(a))
+  - "If it's necessary to fly over a structure taller than 122 m (400 ft), operation is allowed within a 50 m (164 ft) radius of the structure, flying no more than 15 m (49 ft) above its upper limit."
+- Stay 100 feet away from people not involved in the UA operation. (Section 101.160(a)(1)).
+- Stay 100 feet away from buildings. (Section 101.160(a)(2))
+
+### Visibility
+
+- Only fly during the day and in good weather conditions with clear visibility.
+- Keep your drone within direct (visual line-of-sight) visibility at all times. (Section 101.200(a)). Exceptions are available.
+- Surrounding visibility must be 2.5 miles. (Section 101.215(a)(6))
+
+
+### Pilot Operator
+
+- Do not pilot under the influence of alcohol or psychotropic substances. (Section 101.050(a)(1)–(2))
+- Must be physically and mentally fit to fly. (Section 101.120(a))
+
+### Accident Reporting
+
+- "Every remote pilot, UAS operator, or owner of an unmanned aircraft must report to DGAC,
+within a maximum of 24 hours, through the State notification system (NSSP), any accident, incident, or event occurring during the operation." (Section 101.045(a))
+
+### Flight Permissions and Restrictions
+- Do not fly closer than 9 kilometers (5.5 miles) from airports and airfields.
+  - RDAC 101 (Section 101.195, p. 20) specifies airport/aerodrome buffers as **600 m either side of the runway centerline, 3 km from the runway threshold, and 5 km in the approach/departure cones** — not the 9 km figure above. 9 km is a conservative rule of thumb.
+- Do not fly in sensitive areas, such as government or military facilities. (Section 101.190(a))
+  - **GET A MAP FOR THESE RESTRICTED AREAS**
+- See @sec-rdac101 if we need special flight authorization, section 5.3.
+
+### Other Relevant Laws
+See section 8 of the Claude Overview for what I thought was relevant.
+
+
+## Potential Ecuadorian Host Institution
+While it doesn't seem like it is a requirement to have a local host institution for any of the processes, it would likely make every process easier. It is worth looking into getting a local partner, if we don't have one already. 
+
+
+## Entering the Country with Drones
+
+### Potential Tax
+- When entering Ecuador as a tourist, you're allowed to bring in a drone valued up to **$500 USD** without additional tax.
+- Drones brought into Ecuador with a market value **over $500 USD** may be taxed at **up to 35%** of the assessed value.
+- This tax may or may not be refundable when you exit the country, provided you bring the drone back out with you.
+- You can be **exempt from the tax** if you can prove the drone will be used for **professional purposes** in Ecuador.
+
+::: {.callout-note}
+This comes from [UAV Coach — Drone Laws in Ecuador](https://uavcoach.com/drone-laws-in-ecuador/). 
+Ecuador's customs authority is **SENAE** (Servicio Nacional de Aduana del Ecuador). 
+If you plan to claim the professional-use exemption, confirm the current documentation SENAE requires to prove that use before you travel.
+:::
+
+
+## The Governing Regulation: RDAC 101 {#sec-rdac101}
+
+The authoritative document for all UAS rules and procedures in Ecuador is:
+
+**RDAC 101 — Sistemas de Aeronaves No Tripuladas (UAS)**
+Resolución Nro. DGAC-DGAC-2024-0100-R, issued by DGAC, December 11, 2024.
+Spanish only. [Official PDF](https://www.aviacioncivil.gob.ec/wp-content/uploads/downloads/2024/12/RDAC-101-UAS.pdf)
+
+This is the document that should take precedence over any conflicting detail in the notes above — it covers registration, pilot authorization, the UAS Operating Certificate (UOC), category rules (Open/Specific/Certified), restricted and prohibited airspace, and penalties, in full legal detail.
+
+## Sources {#sec-sources}
+
+- [DGAC — Aeronaves No Tripuladas](https://www.aviacioncivil.gob.ec/aeronaves-no-tripuladas/) — official DGAC page on unmanned aircraft (Spanish)
+- [RDAC 101 UAS (PDF)](https://www.aviacioncivil.gob.ec/wp-content/uploads/downloads/2024/12/RDAC-101-UAS.pdf) — the full regulation (Spanish)
+- [UAV Coach — Drone Laws in Ecuador](https://uavcoach.com/drone-laws-in-ecuador/)
+- [Drone-Laws.com — Drone Laws in Ecuador](https://drone-laws.com/drone-laws-in-ecuador/)
+- [FAA PackSafe — Lithium Batteries](https://www.faa.gov/hazmat/packsafe/lithium-batteries)

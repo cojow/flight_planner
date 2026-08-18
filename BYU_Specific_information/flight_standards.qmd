@@ -1,0 +1,79 @@
+---
+title: "Flight Standards"
+subtitle: "Licensure, planning, and naming conventions for BYU drone flights"
+author: "Connor Williams"
+date: 2026-08-18
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    theme: cosmo
+    embed-resources: true
+  pdf:
+    toc: true
+    number-sections: true
+---
+
+## Licensure
+
+The flyer must hold a Part 107 license, or have someone actively watching who holds a Part 107 license.
+
+## General Drone Information
+
+Photos are saved in a folder named `DCIM`. Each flight is saved using the following filename format:
+
+`DJI_[date/time]_[flight number]_[flight plan name]`
+
+| Segment | Meaning |
+|---|---|
+| `DJI` | Name of the drone used |
+| First number string | Date and time the flight was run, as `YYYY/MM/DD/HH/MM` |
+| Second number string | Flight number, counted from the very first flight |
+| Last string | Name of the flight plan used to take the pictures |
+
+::: {.callout-note}
+Ignore the `MRK` file unless you know for a fact that you're using an RTK setup with only one set of pictures. Otherwise, it's useless.
+:::
+
+## Planning Flights
+
+- Keep flight altitude relatively low so that analysis doesn't take a long time.
+- DJI Fly controllers struggle with a lot of waypoints — 80+ waypoints causes issues, and more than 99 really slows it down.
+- Leave at least 30 seconds between flights. This ensures the photo sorter doesn't combine separate flights together.
+
+## Naming Missions
+
+Follow this format: `Street1_Street2`
+
+- **Street1** — the street you are flying the drone down.
+- **Street2** — the street to the south or west that you are flying, depending on whether the road runs N-S or E-W.
+- For roads not laid out N-S or E-W, use the most western or southern street, respectively.
+
+### Examples
+
+| Section | Mission Name |
+|---|---|
+| Red | `100N_400E` |
+| Purple | `500E_Center` |
+| Green | `Brair_Cherry` |
+| Blue | `Cherry_Ash` |
+
+## Naming Photo Folders
+
+Name the photo folder after the mission it's composed of (the nadir and oblique flights combined).
+
+## Flight Path Heights and Angles
+
+These are the heights and angles that have been found to work well for flight paths. This list will update and expand as needed.
+
+| Height (ft) | Location | Angle (°) | Overlap |
+|---|---|---|---|
+| 70 | Across Street | 40 | ? |
+| 200 | Across Street | 72 | ? |
+
+::: {.callout-note}
+Overlap values are still to be determined for both flight profiles.
+:::
+
+For roundabouts, follow the same rules above, but plan them as their own separate flight plan.

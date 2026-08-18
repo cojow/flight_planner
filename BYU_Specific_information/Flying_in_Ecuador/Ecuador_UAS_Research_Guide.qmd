@@ -1,0 +1,568 @@
+---
+title: "Flying UAS/Drones in Ecuador for Academic Research"
+subtitle: "A translated, cited guide to RDAC 101 and related Ecuadorian law, for a foreign graduate researcher"
+author: "Connor Williams"
+date: 2026-08-18
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    theme: cosmo
+    embed-resources: true
+  pdf:
+    toc: true
+    number-sections: true
+---
+
+Prepared by a Claude AI agent.
+Primary source: Resolución Nro. DGAC-DGAC-2024-0100-R, "RDAC 101 — Sistemas de Aeronaves No Tripuladas (UAS)", issued by Ecuador's Dirección General de Aviación Civil (DGAC), December 11, 2024.
+
+Official PDF: aviacioncivil.gob.ec — RDAC-101-UAS.pdf (also included in this folder as `RDAC-101-UAS-Spanish.pdf`)
+
+## Note on assumptions and scope
+
+This document assumes: (1) you are a foreign national with no Ecuadorian host institution yet, but a section is included on how things change if you do partner with one; (2) your research use case isn't finalized, so all airspace/zone categories are covered rather than just one; and (3) coverage is expanded beyond RDAC 101 to include the other Ecuadorian law most likely to affect a foreign research drone project — data privacy, environmental/research-permit law, and customs. If any of these assumptions don't match your situation, tell me and I'll narrow or redirect the document.
+
+As of this writing, no amendment or replacement to RDAC 101 (Dec 11, 2024) was found — later 2025 DGAC resolutions checked were operator-specific permits, not regulatory changes. Three advisory circulars expand on RDAC 101 with practical procedures: CA-101A (general guide to RDAC 101, incl. registration and special-authorization procedures), CA-101B (UOC certification procedure), and CA-101C (training-organization certification). These weren't directly accessible for extraction here; ask DGAC or your host institution for current copies before you apply for anything.
+
+# Does RDAC 101 apply to you, and which category?
+
+Yes. The regulation explicitly covers foreign nationals, and its definition of "private activity" explicitly includes scientific research.
+
+## Scope of the regulation
+
+**Who and what it covers**
+Section 101.001(a) — Page 7
+
+> ES (original): "Esta Regulación establece los requisitos para la utilización y operación de sistemas de aeronaves no tripuladas (UAS) hasta un MTOW de 250 Kg que se efectúen en el espacio aéreo de jurisdicción del Estado ecuatoriano, y aplica a toda persona natural o jurídica, pública o privada, nacional o extranjera, que realiza operaciones con UAS, ya sea con fines recreativos, privados o de trabajos aéreos."
+>
+> EN (translation): "This Regulation establishes the requirements for the use and operation of unmanned aircraft systems (UAS) up to a MTOW of 250 kg carried out in the airspace under Ecuadorian State jurisdiction, and applies to any natural or legal person, public or private, national or foreign, that conducts UAS operations, whether for recreational, private, or aerial-work purposes."
+
+**What's excluded**
+Section 101.001(b) — Page 7
+
+> ES (original): "Esta Regulación no se aplica a lo siguiente: (1) Operaciones de transporte aéreo. (2) Operaciones de entidades militares, policía y aduanas que requieran operar aeronaves no tripuladas para el desarrollo de sus actividades, excepto cuando éstas operaciones se desarrollen en espacios aéreos controlados y en las cercanías de aeródromos..."
+>
+> EN (translation): "This Regulation does not apply to: (1) Air-transport operations. (2) Operations by military, police, and customs entities that need to operate unmanned aircraft for their activities, except when those operations occur in controlled airspace or near aerodromes..."
+
+## The category that matters most for you: research is treated as "Specific," not "Open"
+
+This is the single most important classification finding in the regulation for your purposes. Ecuador's "Open" category (the lightest-touch tier) is defined narrowly as non-commercial personal/recreational flying — it does not cover organized research, even if your drone is small and your activities are non-commercial in a colloquial sense.
+
+**"Categoría abierta" (Open category) — recreational only**
+Section 101.005(a) — Page 9
+
+> ES (original): "Corresponde a las operaciones con sistemas de aeronaves no tripuladas (UAS) de hasta 4 kilogramos, realizadas por personas naturales con fines no comerciales."
+>
+> EN (translation): "Corresponds to operations with unmanned aircraft systems (UAS) of up to 4 kilograms, carried out by natural persons for non-commercial purposes."
+
+**"Categoría específica" (Specific category) — where research falls**
+Section 101.005(a) — Page 9
+
+> ES (original): "Corresponde a las operaciones con sistemas de aeronaves no tripuladas (UAS) con un peso (masa) máximo (MTOW) de hasta 250 kilogramos que incluye el peso (masa) de todos los elementos que estén a bordo y/o conectados a la aeronave en el despegue, realizadas con fines de servicios aéreos privados o de trabajos aéreos..."
+>
+> EN (translation): "Corresponds to operations with unmanned aircraft systems (UAS) with a maximum takeoff weight (MTOW) of up to 250 kilograms — including the weight of everything on board and/or attached to the aircraft at takeoff — carried out for private aerial-service purposes or aerial work..."
+
+**The controlling clause: research = private activity = Specific category**
+Section 101.025(a)–(b) — Page 13
+
+> ES (original): "(a) Las operaciones con UAS dedicadas actividades privadas, se ajustarán a las reglas de operación establecidas los capítulos B y D en esta Regulación y deben contar con el correspondiente permiso de operación de conformidad con la normativa vigente y el registro del UAS en todos los casos. (b) Se considerarán también como actividades privadas las actividades de servicio público, así como las actividades de investigación científica, innovación y desarrollo, realizadas por entidades públicas o privadas."
+>
+> EN (translation): "(a) UAS operations dedicated to private activities shall follow the operating rules in Chapters B and D of this Regulation and must have the corresponding operating permit under current regulations, and UAS registration, in all cases. (b) Public-service activities, as well as scientific research, innovation, and development activities carried out by public or private entities, shall also be considered private activities."
+
+::: {.callout-note}
+Practical reading: because your flights are for scientific research, they are legally "actividades privadas" (private activities) under 101.025(b) regardless of drone weight, which pulls you into Chapter B (general operating rules) and Chapter D (Specific category) — meaning an operating permit/UOC and UAS registration are required "en todos los casos" (in all cases). The Open category's lighter rules do not apply to you, even for a small consumer drone.
+:::
+
+**Aerial-work activities the DGAC lists as Specific-category (your work likely fits here)**
+Section 101.405(a)(5) & (10) — Page 24
+
+> ES (original): "(5) Captura de imágenes, videos o datos para fines de cartografía, geodesia, topografía, fotogrametría... (10) Actividades de entidades públicas."
+>
+> EN (translation): "(5) Capture of images, video, or data for purposes of mapping, geodesy, topography, photogrammetry... (10) Activities of public entities."
+
+::: {.callout-note}
+If your research involves aerial imaging/mapping/photogrammetry (common for ecological, agricultural, or infrastructure surveys), it falls squarely within this list of "trabajos aéreos" (aerial work).
+:::
+
+# Key terms (translated)
+
+| Term (ES) | Translation | Definition (translated) | Citation |
+|---|---|---|---|
+| UAS / Sistema de aeronave no tripulada | UAS | An aircraft and its associated elements that operate without a pilot on board. | 101.005, p.10 |
+| MTOW / Masa máxima de despegue | MTOW | The maximum mass of the unmanned aircraft, including payload and fuel, per the manufacturer's/builder's definition, at the moment of takeoff. | 101.005, p.10 |
+| Operador UAS | UAS Operator | A natural or legal person engaged in the operation or exploitation of unmanned aircraft. | 101.005, p.10 |
+| Piloto a distancia | Remote Pilot | A person who operates the flight controls of a UA and/or performs essential functions in its operation during flight time. | 101.005, p.10 |
+| Trabajos aéreos | Aerial work | Non-transport commercial UAS uses: agriculture, construction, photography, surveying, observation/patrol, search & rescue, aerial advertising, and others the Authority deems aerial work. | 101.005, p.11 |
+
+# What you need before you fly (compliance building blocks) {#sec-compliance}
+
+As a Specific-category operator, four things are required in combination: (1) UAS registration, (2) a Remote Pilot Authorization, (3) a UAS Operating Certificate (UOC/"Certificado de Operación UAS"), and (4) liability insurance.
+
+## UAS registration
+
+**Registration threshold and obligation**
+Section 101.105(a) — Page 15; Appendix 1 — Pages 36–37
+
+> ES (original): "Toda UA con un peso (masa) máximo de despegue (MTOW) superior doscientos cincuenta gramos (250gr), pero inferior a doscientos cincuenta kilogramos (250 Kg), debe ser inscrita ante la DGAC."
+>
+> EN (translation): "Any UA with a maximum takeoff weight (MTOW) greater than two hundred fifty grams (250 g) but less than two hundred fifty kilograms (250 kg) must be registered with the DGAC."
+
+Appendix 1 (pp. 36–37) sets out the full registration process:
+
+- **Who must register**: every UAS with MTOW ≥ 250 g, plus any associated technology equipment (linked at registration or whenever added to an operation).
+- **Eligibility**: at least 18 years old, and either an Ecuadorian citizen/resident, or a legal entity constituted under Ecuadorian law.
+- **How**: through DGAC's **online registration system** ("sistema de registro web de la Dirección General de Aviación Civil").
+- **Required information**: owner/legal-representative name, ID number, address, email, phone, manufacturer, model, MTOW, purpose of use, serial number, and photos (top, front, side).
+- **Certificate**: DGAC issues a unique registration certificate per aircraft once requirements are met.
+- **Marking**: the aircraft must be legibly marked with its DGAC registration number, per Circular CA-101-A.
+- **Transfers/cancellation**: any sale or transfer must be reported to DGAC to cancel or update the registration; the same applies to end-of-life, destruction, loss, or dissolution of the owning entity (within 7 days of the event).
+
+::: {.callout-note}
+No registration fee is mentioned anywhere in the text retrieved — confirm current fees directly with DGAC or via CA-101A.
+:::
+
+## Remote Pilot Authorization {#sec-pilot-auth}
+
+Chapter F (Sections 101.600–101.640, pages 31–32) governs who may pilot a UAS in Ecuador. The full chapter text is now available:
+
+**Applicability**
+Section 101.600 — Page 31
+
+> ES (original): "(a) Este capítulo prescribe los requisitos para emitir una 'autorización' de piloto a distancia para operar aeronaves no tripuladas dentro del territorio ecuatoriano en la categoría específica. (b) La obtención de una autorización de piloto a distancia es individual e independiente del registro del UAS o del certificado como operador UAS y no requiere que la persona interesada sea propietaria de un UAS registrado."
+>
+> EN (translation): "(a) This chapter prescribes the requirements for issuing a remote-pilot 'authorization' to operate unmanned aircraft within Ecuadorian territory in the Specific category. (b) Obtaining a remote-pilot authorization is individual and independent of UAS registration or a UAS operator certificate, and does not require the applicant to own a registered UAS."
+
+**Eligibility**
+Section 101.610 — Page 31
+
+> ES (original): "(1) Tener la mayoría de edad legal (18 años de edad). (2) Ser capaz de leer, hablar, escribir y comprender el idioma español."
+>
+> EN (translation): "(1) Be of legal age (18 years old). (2) Be able to read, speak, write, and understand the Spanish language."
+
+**Requirements to be issued an authorization**
+Section 101.615(a) — Page 31
+
+> ES (original): "(1) Acreditar: (i) Curso de formación teórico-práctico en una Organización de Instrucción UAS certificada por la DGAC; o (ii) Curso de formación impartido por el fabricante, el mismo que deberá ser aceptable por la DGAC. (2) Aprobar una prueba de conocimientos teóricos ante la DGAC, en las materias detalladas a continuación: conocimiento general de los UAS, principios de vuelo, operaciones de vuelo, meteorología aeronáutica básica, derecho aeronáutico, factores humanos, navegación aérea, servicios de tránsito aéreo, radiotelefonía aeronáutica, conocimientos generales de SMS."
+>
+> EN (translation): "(1) Provide proof of: (i) a theoretical-practical training course from a DGAC-certified UAS Training Organization; or (ii) a manufacturer-provided training course acceptable to DGAC. (2) Pass a theoretical knowledge exam before DGAC, covering: general UAS knowledge, principles of flight, flight operations, basic aeronautical meteorology, aeronautical law, human factors, air navigation, air traffic services, aeronautical radiotelephony, and general SMS knowledge."
+
+**Passing score and retest rules**
+Sections 101.620(c), 101.630 — Page 31
+
+> ES (original): "La calificación mínima para aprobar la prueba de conocimientos, será del setenta y cinco por ciento (75%) de la puntuación total. [...] Un solicitante que no haya alcanzado la calificación mínima en una prueba de conocimientos, podrá realizar un nuevo intento dos (2) días hábiles después de la falla. En caso de no alcanzar la calificación mínima en el segundo intento, el solicitante podrá realizar nuevos intentos quince (15) días después de la falla."
+>
+> EN (translation): "The minimum passing score for the knowledge exam is seventy-five percent (75%) of the total score. [...] An applicant who does not reach the minimum score may retest two (2) business days after the failure. If the minimum score is not reached on the second attempt, the applicant may retest again fifteen (15) days after that failure."
+
+**Validity and renewal**
+Section 101.635(a) — Page 32
+
+> ES (original): "Una autorización de piloto a distancia otorgada bajo esta regulación tiene una vigencia de veinte y cuatro (24) meses, sin perjuicio de renovarla por otro período igual, siempre y cuando se cumpla el siguiente requisito: Aprobar un examen de conocimientos teóricos ante la DGAC."
+>
+> EN (translation): "A remote-pilot authorization granted under this regulation is valid for twenty-four (24) months, renewable for an equal period, provided the following requirement is met: pass a theoretical knowledge exam before DGAC."
+
+**Foreign-credential conversion — the section that matters most for you**
+Section 101.640 — Page 32
+
+> ES (original): "(a) Sin perjuicio de las leyes migratorias y laborales propias del Ecuador, se podrán convertir las autorizaciones, certificados, licencias o credenciales de piloto a distancia expedidas por otros Estados contratantes al Convenio sobre Aviación Civil Internacional (OACI), en una autorización de piloto remoto, siempre que el solicitante cumpla con los siguientes requisitos: (1) Solicitud de acuerdo al procedimiento establecido por la DGAC. (2) Copia de la licencia, certificado o credencial extranjera emitida por un Estado contratante al Convenio de Aviación Civil Internacional. (3) Documento de identidad. (4) Aprobar un examen de conocimientos teóricos ante la DGAC. (5) Leer, hablar y comprender el idioma español. (b) Antes de convertir la licencia, certificado o credencial, la DGAC realizará la consulta con la Autoridad extranjera otorgadora de la licencia, certificado o credencial de origen respecto a: validez, limitaciones, suspensiones o revocaciones. (c) A partir del otorgamiento de la autorización de piloto a distancia, el titular estará bajo los mecanismos de control de la DGAC..."
+>
+> EN (translation): "(a) Without prejudice to Ecuador's own immigration and labor laws, remote-pilot authorizations, certificates, licenses, or credentials issued by other States party to the Convention on International Civil Aviation (ICAO) may be converted into a remote-pilot authorization, provided the applicant meets the following requirements: (1) An application per the procedure established by DGAC. (2) A copy of the foreign license, certificate, or credential issued by an ICAO contracting State. (3) An identity document. (4) Passing a theoretical knowledge exam before DGAC. (5) Reading, speaking, and understanding the Spanish language. (b) Before converting the license, certificate, or credential, DGAC will consult with the foreign authority that issued the original credential regarding: validity, limitations, suspensions, or revocations. (c) From the moment the remote-pilot authorization is granted, the holder is subject to DGAC's oversight mechanisms..."
+
+::: {.callout-important}
+The US is an ICAO contracting state, so a Part 107 certificate qualifies as convertible under 101.640(a). In practice this means: your Part 107 does **not** let you skip Ecuadorian requirements — you still need to (1) apply through DGAC's conversion procedure, (2) submit a copy of your Part 107 certificate, (3) pass the DGAC theoretical knowledge exam (same subject list as 101.615, 75% to pass), and (4) demonstrate Spanish proficiency. DGAC will also independently verify your certificate's status with the FAA before converting it.
+:::
+
+## UAS Operating Certificate (UOC) {#sec-uoc}
+
+**Baseline requisites to hold a UOC**
+Section 101.510 — Page 27
+
+> ES (original): "[Se requiere:] Contar con el permiso de operación para realizar trabajos aéreos. Certificado de seguros aplicables. Certificado de registro de todas y cada una de las UAS."
+>
+> EN (translation): "[Required:] Hold the operating permit to conduct aerial work. Applicable insurance certificate. Registration certificate for each and every UAS."
+
+**Application procedure**
+Section 101.520(a)–(c) — Pages 27–28
+
+> ES (original): "(a) [El solicitante debe] cumplir y seguir lo descrito en el apéndice 5. (b–c) DGAC llevará a cabo procesos de inspección y verificación operacional [y, de ser satisfactorios, expedirá el certificado]."
+>
+> EN (translation): "(a) [The applicant must] comply with and follow the procedure described in Appendix 5. (b–c) DGAC will carry out inspection and operational-verification processes [and, if satisfactory, will issue the certificate]."
+
+Appendix 5 ("Requisitos para la Certificación Operacional," pages 42–46) is the full UOC application manual. Its substantive content, previously unretrieved, is now available:
+
+**Application package (Appendix 5 §2)** — the operator submits:
+
+1. Personnel description matching a proposed organizational chart.
+2. Supporting documents proving minimum qualifications of management personnel (per Section 101.555).
+3. Description of the UAS fleet and associated technology equipment.
+4. Location of the base of operations and maintenance.
+5. Description of the Safety Management System (SMS) or risk-management system applied to UAS.
+6. Operations Manual (MO) / Instruction Manual and Procedures (MIP).
+7. Maintenance procedures.
+8. Commitment to notify DGAC of any personnel changes.
+9. Proposed quality-assurance system.
+10. Declaration of compliance with RDAC 101.
+11. (Training organizations only) facility/equipment description, curriculum and evaluation plan, and instructor record-keeping description.
+
+**Personnel qualifications (Appendix 5 §4)** — the operator must designate, per its size and scope:
+
+- **Jefe de pilotos a distancia (Chief Remote Pilot)**: trained/experienced in at least one authorized operation type, demonstrated operational experience on similar UAS, and a basic SMS course. Responsible for managing DGAC flight-authorization requests, ensuring regulatory compliance, assigning aircraft/pilots appropriately, and monitoring pilot competency.
+- **Responsable de mantenimiento de UAS (Maintenance Lead)**: trained in maintenance processes by the manufacturer or operator; responsible for keeping the fleet airworthy.
+- **Personal de pilotos a distancia (Remote pilots)**: must hold a DGAC remote-pilot authorization and demonstrate capability for the specific activities the operator requires (documented in the Operations Manual).
+- (Training organizations only) Chief Instructor and Instructor personnel, with their own experience/certification requirements.
+
+**Documentation (Appendix 5 §5)** — at minimum:
+
+- **Manual de Operaciones (MO)**: org structure, types of aerial operations, procedures/limitations by operation type and risk, fleet and associated equipment, pilot/observer competencies. (Content template available via Circular CA-101-B.)
+- **Manual de Mantenimiento (MM)**: maintenance program per aircraft (life-limited components, periodic inspections, monitoring), manufacturer technical data, and a maintenance/work log requirement. (Content template also in CA-101-B.)
+- (Training organizations only) **Manual de Instrucción (MIP)**: org chart, training program content, instructor competencies.
+
+**Safety Management System, minimum requirements (Appendix 5 §6)**
+Appendix 5 §6(b) — Page 46
+
+> ES (original): "El operador UAS / Organización de Instrucción UAS debe establecer, implementar y mantener un SMS, que como mínimo: (1) Identifique los peligros que afecten la seguridad operacional, evalúe y mitigue los riesgos; (2) Asegure que se apliquen las medidas correctivas necesarias."
+>
+> EN (translation): "The UAS operator / UAS Training Organization must establish, implement, and maintain an SMS that, at minimum: (1) identifies hazards affecting operational safety, and assesses and mitigates risks; (2) ensures the necessary corrective measures are applied." The SMS must be proportional to the operator's size, operational complexity, and the hazards/risks of the services it provides.
+
+::: {.callout-note}
+No fixed timeline for UOC issuance is stated in the sections retrieved. Given the inspection/verification step, budget significant lead time before your planned fieldwork. Appendix 5 §7 (training-organization curriculum, 34 hours of theory across 10 modules) only applies if you're setting up a UAS Training Organization — skip it if you're just operating as a research UOC holder.
+:::
+
+## Risk analysis and C2 link documentation (Specific category, Chapter D) {#sec-risk-c2}
+
+**Operational risk analysis — the requirement**
+Section 101.410(a)(8) — Page 25
+
+> ES (original): "Realizar los análisis de riesgos de seguridad operacional correspondientes, de acuerdo con el tipo de operación [incluyendo] identificación de peligros, evaluación de riesgos y estrategias de mitigación."
+>
+> EN (translation): "Conduct the corresponding operational safety risk analyses, according to the type of operation [including] hazard identification, risk assessment, and mitigation strategies."
+
+**Operational risk analysis — the methodology (Appendix 4)**
+
+Appendix 4 ("Gestión de la seguridad operacional para un operador UAS," pages 40–41) spells out exactly how to build this analysis. No one may operate in the Specific category without having conducted one. It must:
+
+1. Describe the characteristics of the UAS operation.
+2. Propose appropriate operational-safety objectives.
+3. Identify ground and air risks, considering:
+   - How much the activity could endanger third parties or property on the ground.
+   - The complexity, performance, and operational characteristics of the UA.
+   - Flight purpose, UAS type, collision probability with other aircraft, and airspace class used.
+   - Type, scale, and complexity of the operation.
+   - How well affected third parties can assess and control the risks involved.
+4. Identify a range of possible risk-mitigation measures.
+5. Determine the robustness level needed for the selected mitigation measures so the operation can proceed safely.
+
+The **ground-risk identification** must specifically address VLOS/EVLOS/BVLOS status, population density overflown, whether a crowd is overflown, and the UA's dimensional characteristics. The **air-risk identification** must address the exact airspace volume needed (plus contingency buffer), airspace class, and impact on other air traffic (altitude, controlled/uncontrolled airspace, aerodrome vs. non-aerodrome environment, urban vs. rural, separation from other traffic).
+
+Possible **mitigation measures** to draw from: containment measures for people on the ground, strategic operational limits (restricting geographic area or time window), common flight rules/airspace structures, contingency capability, organizational factors (maintenance/operating procedures), personnel competency, and UAS design/performance features (airworthiness approval, collision-mitigation systems, impact energy limits, fail-safe design).
+
+DGAC evaluates whether your proposed mitigations are proportional to the operation's actual risk. This risk assessment must be submitted whenever you request a Special Flight Authorization (@sec-special-auth), and must be developed/kept on file by any operator holding a UOC.
+
+**Command-and-control (C2) link documentation — full text**
+Section 101.420(a)–(c) — Page 26
+
+> ES (original): "(a) El enlace C2 estará sujeto a la validación y aceptación de la DGAC, para lo cual todo operador UAS deberá: (1) Presentar a la DGAC una descripción detallada de la configuración del enlace C2 y los procedimientos en caso de pérdida o deterioro del enlace. (2) En caso de utilizar un proveedor de servicios de telefonía celular, contar con un mapa que soporte la cobertura del servicio de enlace en el área donde se planea la operación y durante el tiempo que tomará la misma. (3) Identificar las limitaciones del enlace C2, de acuerdo con el tipo de operación específica solicitada (por ejemplo: bloqueo de la antena, límite de alcance, potencia y patrón de radiación de la antena, infraestructura que bloquee la señal, entre otros). (b) El operador UAS deberá incluir toda la información pertinente sobre el enlace C2 en su Manual de Operaciones. (c) Las acciones de mitigación de riesgos por pérdida de conexión definidos por el fabricante y/o el operador UAS deberá enfocarse en minimizar las consecuencias en caso de falla del enlace C2."
+>
+> EN (translation): "(a) The C2 link is subject to DGAC validation and acceptance, for which every UAS operator must: (1) Submit to DGAC a detailed description of the C2 link configuration and procedures in case of loss or degradation of the link. (2) If using a cellular telephone service provider, have a map supporting the link's service coverage in the planned operating area, for the duration of the operation. (3) Identify the C2 link's limitations for the specific operation type requested (e.g., antenna blockage, range limit, antenna power/radiation pattern, signal-blocking infrastructure, among others). (b) The UAS operator must include all pertinent C2-link information in its Operations Manual. (c) Risk-mitigation actions for connection loss, as defined by the manufacturer and/or the UAS operator, must focus on minimizing the consequences of a C2 link failure."
+
+::: {.callout-important}
+**This closes the C2-link "how."** If you're using a cellular data link for your control system, you now need a coverage map for the specific operating area and time window as part of your DGAC submission — plan on pulling that from your carrier or a coverage-mapping tool before you apply.
+:::
+
+## Third-party liability insurance {#sec-insurance}
+
+Appendix 3 ("Requerimiento de Seguros de responsabilidad civil a terceros," page 39) is now fully extracted, including the coverage table that was previously unavailable.
+
+Section 1(b)–(c) — Page 39
+
+> ES (original): "(b) El propietario o el operador de una aeronave no tripuladas utilizada en actividades recreativas en la categoría abierta, cuyo peso (masa) máximo de despegue (MTOW) sea inferior a 4 kg, NO está en la obligación de presentar ante la DGAC la póliza de seguros... (c) El propietario o el operador de una aeronave no tripulada utilizada en actividades [de trabajos aéreos], cuyo peso (masa) máximo de despegue (MTOW) sea superior a 250 gr, está en la obligación de presentar ante la DGAC la póliza [de] seguros que cubran la responsabilidad civil frente a terceros."
+>
+> EN (translation): "(b) The owner or operator of an unmanned aircraft used in recreational Open-category activities, with an MTOW under 4 kg, is NOT required to submit a third-party liability insurance policy to DGAC... (c) The owner or operator of an unmanned aircraft used in [aerial-work] activities, with an MTOW over 250 g, IS required to submit a third-party liability insurance policy to DGAC."
+
+Because your research use case is aerial work (Specific category, per @sec-uoc), you fall under (c) and insurance is mandatory. The minimum coverage table:
+
+| MTOW (max) | Minimum coverage — Aerial work / private aerial services |
+|---|---|
+| < 250 g | N/A |
+| 251 g – 5 kg | USD $3,000 |
+| 5.01 kg – 25 kg | USD $6,000 |
+| 25.01 kg – 50 kg | USD $10,000 |
+| > 50.01 kg | USD $15,000 |
+
+Section 1(e)–(f) — Page 39
+
+> ES (original): "En caso de que la cuantificación del daño sea superior a la cobertura de dicha póliza, el operador será el responsable civil directo de los daños... La obtención de un seguro de casco, que cubra la integridad física de la aeronave no tripulada, no es un requerimiento para esta Regulación, pero puede ser obtenido de manera voluntaria."
+>
+> EN (translation): "If the quantified damage exceeds the policy's coverage, the operator remains directly civilly liable for the excess... Obtaining hull insurance, covering the physical integrity of the unmanned aircraft itself, is not a requirement of this Regulation, but may be obtained voluntarily."
+
+::: {.callout-warning}
+**This table replaces the secondary-source figures currently in `ecuador_drone_laws.qmd`** (which cites 2–25 kg → $3,000 and >25 kg → $5,000, from Drone-Laws.com). The real RDAC 101 table has four weight bands starting at 251 g, and the dollar amounts differ at every band above the first. Update that section when you merge this in.
+:::
+
+# General operational rules you must follow on every flight (Chapter B)
+
+These apply across categories, including Specific-category research flights.
+
+**Maximum altitude**
+Section 101.185(a) — Page 19
+
+> ES (original): "Se permite la operación de una aeronave no tripulada en las categorías abierta y específica, en el espacio aéreo ecuatoriano hasta una altura ciento veintidós metros (122 m) o cuatrocientos pies (400 ft) sobre el nivel de la superficie (AGL)."
+>
+> EN (translation): "Operation of an unmanned aircraft in the open and specific categories is permitted in Ecuadorian airspace up to a height of one hundred twenty-two meters (122 m) or four hundred feet (400 ft) above ground level (AGL)."
+
+**Structure-overflight exception**
+Section 101.185(a)(1) — Page 19
+
+> ES (original): "En caso de requerir volar sobre una estructura que supere los 122 m (400 ft), se puede operar dentro de un radio de cincuenta metros (50 m) de la estructura y sobrevolar a no más de quince metros (15 m) por encima del límite superior de dicha estructura."
+>
+> EN (translation): "If it's necessary to fly over a structure taller than 122 m (400 ft), operation is allowed within a 50 m radius of the structure, flying no more than 15 m above its upper limit."
+
+**Visual observation requirements**
+
+VLOS (visual line of sight) — Section 101.200(a), Page 20
+
+> ES (original): "Se puede operar una aeronave no tripulada con visibilidad en línea de vista (VLOS) es decir dentro del alcance visual con una visión directa y sin la ayuda de ningún dispositivo óptico o electrónico."
+>
+> EN (translation): "An unmanned aircraft may be operated with visual line of sight (VLOS) — i.e., within visual range, with direct vision, without the aid of any optical or electronic device."
+
+EVLOS (extended VLOS) — Section 101.205(a), Page 20
+
+> ES (original): "Se puede operar una aeronave no tripulada con visibilidad en línea de vista extendida (EVLOS), es decir dentro de un alcance visual 'aumentado' con la utilización de un observador visual intermedio encargado de visualizar la aeronave y de dar indicaciones al piloto al mando en todo momento."
+>
+> EN (translation): "An unmanned aircraft may be operated with extended visual line of sight (EVLOS) — an 'augmented' visual range using an intermediate visual observer responsible for keeping the aircraft in sight and giving guidance to the pilot in command at all times."
+
+BVLOS (beyond VLOS) — Section 101.210(a), Page 21
+
+> ES (original): "Se puede operar una aeronave no tripulada con visibilidad más allá de la línea de vista (BVLOS), es decir una operación en la que el piloto a distancia no necesita tener a la vista la aeronave."
+>
+> EN (translation): "An unmanned aircraft may be operated beyond visual line of sight (BVLOS) — an operation in which the remote pilot does not need to keep the aircraft in sight."
+
+::: {.callout-note}
+BVLOS is the most likely category to matter for wide-area research surveys. It is permitted in principle but is subject to tighter conditions and likely requires Special Flight Authorization (@sec-special-auth) — confirm before planning a BVLOS mission.
+:::
+
+**Minimum distances**
+
+Distance from people — Section 101.160(a)(1), Page 17
+
+> ES (original): "No se encuentra permitido operar la UA a menos de 30 metros horizontales y verticales de cualquier persona ajena a la operación del UA."
+>
+> EN (translation): "It is not permitted to operate the UA less than 30 horizontal and vertical meters from any person not involved in the UA's operation."
+
+Distance from buildings — Section 101.160(a)(2), Page 17
+
+> ES (original): "No se encuentra permitido operar la UA a menos de 30 metros horizontales y verticales de cualquier edificación, sin que puedan superarse los 122 m (400 pies) sobre la superficie del terreno."
+>
+> EN (translation): "It is not permitted to operate the UA less than 30 horizontal and vertical meters from any building, and in no case may the 122 m (400 ft) AGL ceiling be exceeded."
+
+Minimum flight visibility — Section 101.215(a)(6), Page 21
+
+> ES (original): "La visibilidad mínima no debe ser inferior a cinco kilómetros (5 Km), observada desde la ubicación de la estación de control / del piloto a distancia."
+>
+> EN (translation): "Minimum visibility must not be less than five kilometers (5 km), as observed from the location of the control station/remote pilot."
+
+**Pilot fitness**
+
+Alcohol / substances — Section 101.050(a)(1)–(2), Page 13
+
+> ES (original): "Todo piloto a distancia y toda persona que participe en la operación de una UA, no debe operar una UA, ni participar en su operación si se encuentra bajo los efectos del alcohol o sustancias psicotrópicas [ni] dentro de las 12 horas posteriores al consumo de alcohol o sustancias psicotrópicas."
+>
+> EN (translation): "No remote pilot, nor anyone participating in a UA operation, may operate or take part in operating a UA while under the effects of alcohol or psychotropic substances, [nor] within 12 hours after consuming alcohol or psychotropic substances."
+
+Medical/mental fitness — Section 101.120(a), Page 16
+
+> ES (original): "Toda persona que pretenda operar un UAS, debe abstenerse de manipular los controles de vuelo, si conoce o tiene razones para sospechar que tiene una condición física o mental que podría afectar la operación segura."
+>
+> EN (translation): "Anyone intending to operate a UAS must refrain from handling the flight controls if they know or have reason to suspect they have a physical or mental condition that could affect safe operation."
+
+**Accident/incident reporting**
+
+24-hour reporting duty — Section 101.045(a), Page 13
+
+> ES (original): "Todo piloto a distancia, operador UAS o propietario de una aeronave no tripulada; debe informar a la DGAC en un término máximo de 24 horas, por medio del sistema de notificación del Estado (NSSP) todo accidente, incidente o cualquier evento ocurrido durante la operación."
+>
+> EN (translation): "Every remote pilot, UAS operator, or owner of an unmanned aircraft must report to DGAC, within a maximum of 24 hours, through the State notification system (NSSP), any accident, incident, or event occurring during the operation."
+
+### Remote identification — resolved: Open category only, not required for your Specific-category research flights {#sec-general-rules}
+
+Section 101.305(e) — Page 22 (Chapter C, Open Category)
+
+> ES (original): "La UA debe poseer un sistema activo de identificación a distancia y función de geo-barreras."
+>
+> EN (translation): "The UA must have an active remote-identification system and geofencing function."
+
+::: {.callout-important}
+This mandate sits only in Chapter C (101.300–315, Open category). A direct check of Chapter D's airworthiness conditions for the Specific category — **Section 101.415(a)(4)**, the list of systems a UA must carry (C2 link per 101.420, autopilot, satellite navigation, and launch/recovery system if required) — does **not** include active remote ID or geofencing. RDAC 101's text does not impose this requirement on Specific-category operations. This is a confirmed absence, not an unretrieved gap — though it's still worth asking DGAC directly if your specific UOC application gets any pushback on this point, since practice can run ahead of the written text.
+:::
+
+# Where you cannot (or need special permission to) fly
+
+This section matters most if your research involves protected natural areas, indigenous territories, or sites near airports/military or government installations — all common for ecological or rural fieldwork.
+
+## Restricted zones — authorization required {#sec-restricted}
+
+Section 101.190(a) — Pages 19–20. This list is now confirmed complete (it was flagged as possibly cut off in the prior pass; a direct re-check of the source shows it ends at item (6), immediately followed by the prohibited-zone list in (b)):
+
+> ES (original): "(1) Espacios aéreos segregados. (2) Espacios aéreos controlados (Clase B, Clase C, Clase D o Clase E). (3) Espacios aéreos circundantes a hospitales, bases militares y policiales, infraestructura estratégica del Estado. (4) Espacios aéreos determinados como 'ADIZ – Zonas de Identificación de Defensa Aérea'. (5) Espacios aéreos circundantes a una reunión de personas al aire libre como conciertos, festivales, eventos deportivos, entre otros. (6) Espacios aéreos sobre zonas declaradas intangibles o áreas sensibles determinadas por la Autoridad competente, como zonas de conservación para el resguardo y protección de la fauna, flora y cuerpos de agua dulce, así como la protección cultural de asentamientos humanos de comunidades ancestrales."
+>
+> EN (translation): "(1) Segregated airspace. (2) Controlled airspace (Class B, C, D, or E). (3) Airspace surrounding hospitals, military and police bases, and strategic State infrastructure. (4) Airspace designated as an 'ADIZ – Air Defense Identification Zone.' (5) Airspace surrounding outdoor gatherings such as concerts, festivals, sporting events, and similar. (6) Airspace over areas declared 'intangible zones' or sensitive areas designated by the competent Authority, such as conservation zones for the protection of fauna, flora, and freshwater bodies, as well as cultural protection of ancestral community settlements."
+
+Item (1), segregated airspace, has its own request path: municipalities, universities, and research/development centers may request an airspace segregation from DGAC via the procedure in Circular CA-101-A.
+
+::: {.callout-note}
+Item (6) — "zonas declaradas intangibles" — is a legally significant category in Ecuador: it's the term used for protected territories of uncontacted/voluntarily-isolated indigenous peoples (most notably the Zona Intangible Tagaeri Taromenane in the Yasuní region). If your research is anywhere near Amazonian or other indigenous territories, check this designation specifically before planning flights.
+:::
+
+## Prohibited zones — no flight under any circumstance
+
+Section 101.190(b) — Page 20
+
+> ES (original): "(1) Espacios aéreos sobre superficies o áreas declaradas como 'zonas de seguridad del Estado'. (2) Espacios aéreos circundantes a aeródromos controlados, aeródromos no controlados, pistas sin ATS y helipuertos, según lo especificado en 101.195. (3) Espacios aéreos circundantes a instalaciones de la administración del Gobierno Nacional como: Palacio Presidencial, Asamblea Nacional, Función Judicial (todas sus instalaciones a nivel nacional)..."
+>
+> EN (translation): "(1) Airspace over surfaces or areas declared 'State security zones.' (2) Airspace surrounding controlled aerodromes, uncontrolled aerodromes, ATS-less airstrips, and heliports, as specified in Section 101.195. (3) Airspace surrounding National Government administrative facilities such as: the Presidential Palace, National Assembly, and Judicial Branch (all facilities nationwide)..."
+
+The rest of the list (4)–(9): facilities of detention/social rehabilitation; airspace around public emergencies in progress (except responding public-service aircraft); airspace around ongoing military/police operations; NOTAM-designated airspace; airspace around active wildfire firefighting (with crewed aircraft); and airspace near people/property where the operation would demonstrably violate their privacy.
+
+**Aerodrome distance formula**
+Section 101.195(a) — Page 20
+
+> ES (original): "Aeródromo controlado: (1) En un espacio rectangular de 600 metros (0.3 millas náuticas) a cada lado del eje de pista y 3 kilómetros (1.6 millas náuticas) del umbral de cada extremo de pista; (2) 5 kilómetros (2.7 millas náuticas) en los conos de aproximación y salida de la pista... (3) Exceptuando los espacios prohibidos... se puede operar en las proximidades de un aeródromo dentro de un radio de 5 kilómetros..."
+>
+> EN (translation): "Controlled aerodrome: (1) Within a rectangular area 600 m (0.3 NM) on each side of the runway centerline and 3 km (1.6 NM) from each runway-end threshold; (2) 5 km (2.7 NM) in the runway's approach and departure cones... (3) Except for the prohibited spaces above, operation is possible near an aerodrome within a 5 km radius..."
+
+## Special Flight Authorization (Chapter G) — for anything outside standard limits {#sec-special-auth}
+
+If your research requires flying in a restricted zone, beyond standard BVLOS limits, or otherwise outside the default operating envelope, this is the mechanism. Full text is now available.
+
+**Applicability**
+Section 101.700 — Page 34
+
+> ES (original): "(a) Este capítulo prescribe los requisitos para emitir una 'autorización especial' de vuelo UAS, para operaciones que: (1) Excedan las limitaciones establecidas para la categoría abierta. (2) Excedan las limitaciones establecidas para la categoría específica. (3) Se desvíen de cualquier requisito de esta Regulación. (4) Se desvíen de las autorizaciones establecidos en un certificado de operación UAS."
+>
+> EN (translation): "(a) This chapter prescribes the requirements for issuing a 'special authorization' for UAS flight, for operations that: (1) Exceed Open-category limits. (2) Exceed Specific-category limits. (3) Depart from any requirement of this Regulation. (4) Depart from the authorizations established in a UAS operating certificate."
+
+**What DGAC evaluates before granting it**
+Section 101.705 — Page 34
+
+> ES (original): "(a) Una solicitud de autorización especial de vuelo UAS debe contener una descripción completa de la operación propuesta y una justificación que establezca que la operación se puede realizar de manera segura... (b) Previo al otorgamiento... la DGAC evaluará: (1) El cumplimiento del Capítulo B. (2) La evaluación de riesgos y la solidez de las medidas de mitigación... (3) La evidencia presentada por el operador UAS de que se han implementado las medidas de mitigación, a menos que el operador UAS tenga un UOC válido con los privilegios adecuados. (c) La DGAC otorgará la autorización... cuando la evaluación concluya que [...] (3) El operador de UAS ha proporcionado una declaración que confirma que la operación prevista cumple con cualquier Ley aplicable del Estado relacionada con ella, en particular, en materia de privacidad, protección de datos, responsabilidad, seguros, seguridad y protección ambiental."
+>
+> EN (translation): "(a) A special UAS flight authorization request must contain a complete description of the proposed operation and a justification establishing that the operation can be conducted safely... (b) Before granting it... DGAC will evaluate: (1) Compliance with Chapter B. (2) The risk assessment (@sec-risk-c2) and the robustness of proposed mitigation measures. (3) Evidence that mitigation measures have been implemented, unless the operator already holds a valid UOC with the relevant privileges. (c) DGAC will grant the authorization when the evaluation concludes that [...] (3) the UAS operator has provided a declaration confirming the planned operation complies with applicable State law, particularly regarding privacy, data protection, liability, insurance, safety, and environmental protection."
+
+**Application and procedure**
+Sections 101.710, 101.715 — Pages 34–35
+
+> ES (original): "(a) Para solicitar una autorización especial de vuelo UAS, todo operador UAS deberá presentar el formulario de solicitud... ante la DGAC. (b) Al formulario de solicitud se deberá adjuntar los requisitos adicionales exigidos por la DGAC... Estos requisitos adicionales se enumeran en la Circular de Asesoramiento CA-101-A."
+>
+> EN (translation): "(a) To request a special UAS flight authorization, every UAS operator must submit the application form... to DGAC. (b) The application form must be accompanied by the additional requirements DGAC requires... These additional requirements are listed in Advisory Circular CA-101-A." The form itself is available on DGAC's website and in CA-101-A.
+
+**Content and validity**
+Sections 101.725, 101.730 — Page 35
+
+> ES (original): "(a) La autorización especial de vuelo UAS otorgada por la DGAC, contiene: (1) Nombre o razón social del operador UAS. (2) Alcance de la autorización especial. (3) La descripción exacta de la operación autorizada. (4) Vigencia de la autorización especial y número de operaciones autorizadas (limitadas o ilimitadas). (5) El lugar o lugares donde se autoriza la realización de la operación UAS. (6) Prohibiciones, limitaciones y/o condiciones operacionales exigidas por la DGAC. (7) Recomendaciones adicionales."
+>
+> EN (translation): "(a) The special UAS flight authorization granted by DGAC contains: (1) The UAS operator's name. (2) Scope of the special authorization. (3) The exact description of the authorized operation. (4) Validity period and number of authorized operations (limited or unlimited). (5) The location(s) where the UAS operation is authorized. (6) Prohibitions, limitations, and/or operational conditions required by DGAC. (7) Additional recommendations." It is valid only within the terms and dates/periods stated in it.
+
+::: {.callout-important}
+If any part of your fieldwork touches a restricted zone (@sec-restricted) or needs BVLOS beyond standard limits, plan for this application as its own step, separate from your UOC — it needs its own risk-assessment package (@sec-risk-c2) and a specific privacy/data-protection/environmental compliance declaration.
+:::
+
+# Penalties for non-compliance
+
+Falsification of records/certificates — Section 101.055, Page 14
+
+> ES (original): "[La DGAC podrá] suspender o revocar definitivamente cualquier certificado o autorización emitido por la DGAC [por actos fraudulentos]."
+>
+> EN (translation): "[DGAC may] suspend or permanently revoke any certificate or authorization issued by DGAC [for fraudulent acts]."
+
+Alcohol/substance violations — Section 101.050, Page 13
+
+> ES (original): "Suspender o revocar la autorización de piloto a distancia, sin perjuicio de la acción legal."
+>
+> EN (translation): "Suspend or revoke the remote pilot authorization, without prejudice to legal action."
+
+The regulation also points to a separate, dedicated sanctions regulation for the full penalty schedule: "Reglamento para el ejercicio de la potestad sancionadora de las contravenciones aeronáuticas" (Regulation for the Exercise of Sanctioning Authority over Aeronautical Violations). Get a copy of this if you want the complete fine/penalty table — it wasn't part of RDAC 101 itself.
+
+# If you partner with an Ecuadorian host institution
+
+RDAC 101's text does not contain an explicit provision on foreign-entity registration, so the following is practical inference rather than a direct quote — verify it with DGAC or legal counsel before relying on it.
+
+**Without a host institution**
+
+- You, as an individual foreign researcher, would need to independently pursue UAS registration, a Remote Pilot Authorization (using the 101.640 conversion pathway, @sec-pilot-auth), and a UOC in your own name.
+- You would likely need in-person coordination with DGAC in Ecuador for the inspection/verification steps in Section 101.520.
+- You would separately need to secure any environmental/research permits (see below) and handle customs for your equipment on your own.
+
+**With a host institution**
+
+- The host institution can typically act as the "operador UAS" that holds the UOC and registers the aircraft, which is administratively more tractable for an entity with an existing Ecuadorian legal presence (RUC/tax ID, local representative).
+- A related data point (not RDAC 101 itself, but a same-year DGAC operating-permit resolution for a UAS instruction organization) required that certain operating personnel be Ecuadorian nationals. This may or may not generalize to all UOC holders — flag it as something to ask DGAC about directly, since it could affect whether you personally can be the remote pilot of record or need an Ecuadorian co-pilot/operator of record.
+- The host institution can also apply for or co-sponsor the Ministry of Environment (MAAE) scientific-research authorization on your behalf, which is often smoother with an Ecuadorian institutional sponsor.
+
+::: {.callout-note}
+Given the number of moving pieces (registration + pilot authorization/credential conversion + UOC + insurance + possibly a separate environmental permit + customs), securing an Ecuadorian host institution is likely to substantially shorten your compliance timeline, even though it isn't a strict legal requirement found in the text reviewed.
+:::
+
+# Related Ecuadorian law beyond aviation
+
+RDAC 101 governs the drone/airspace side. Three other areas of Ecuadorian law are likely to apply to a foreign researcher's project independently of DGAC compliance.
+
+## Data protection / privacy (LOPDP)
+
+Ecuador's Ley Orgánica de Protección de Datos Personales (LOPDP — Organic Law on Personal Data Protection) applies to any imagery or data your drone captures that includes identifiable people or private property. Ecuadorian reporting on the DGAC's own 2025 privacy guidance for drones describes the operative rule as consent-based: capturing, storing, or distributing personal images or data via drone without express consent is prohibited, and violations can carry administrative or criminal consequences.
+
+Sources: Primicias — "Ecuador: Prohíben uso de drones que vulneren la privacidad de las personas"; Ley Orgánica de Protección de Datos Personales (full text, PDF)
+
+::: {.callout-note}
+If your research involves aerial imagery over inhabited areas, farms, or communities (as opposed to pure wilderness/wildlife with no people in frame), build a consent/notification process into your field protocol — this is a distinct legal requirement from anything in RDAC 101.
+:::
+
+## Scientific research authorization (Ministerio de Ambiente, Agua y Transición Ecológica — MAAE)
+
+Separate from aviation law, Ecuador requires a scientific research authorization from MAAE for research activities — with a specific application track for foreign researchers ("Autorización de investigación científica para extranjeros"). This is very likely to apply if your work involves biodiversity, wildlife, protected natural areas, or natural-resource data collection, which is exactly the kind of use case aerial drone research is often built around.
+
+Official trámite page (could not be fully extracted here — visit directly for current requirements, documents, and fees): gob.ec — Autorización de investigación científica para extranjeros
+
+::: {.callout-note}
+This permit and RDAC 101's airspace rules interact directly: the "zonas declaradas intangibles" and protected-area references in @sec-restricted mean that flying over land requiring an MAAE research permit will often also require DGAC Special Flight Authorization (@sec-special-auth). Plan to apply for both in parallel, not sequentially, given likely lead times.
+:::
+
+## Customs / equipment import
+
+No UAS-specific import provision was found anywhere in the RDAC 101 text reviewed. General Ecuadorian customs rules, administered by SENAE (Servicio Nacional de Aduana del Ecuador), would govern bringing your own drone and related equipment into the country — most likely under a temporary-admission regime for professional/research equipment rather than a permanent import, if you're not planning to leave the equipment in Ecuador.
+
+Sources: SENAE — Régimenes Aduaneros; SENAE — Viajeros por Vía Aérea
+
+::: {.callout-note}
+Confirm the correct customs regime (temporary admission vs. traveler's baggage allowance) with SENAE before travel — bringing research-grade UAS equipment (as opposed to a single consumer drone) may not qualify as ordinary luggage.
+:::
+
+## Immigration/visa status
+
+Outside the scope of both RDAC 101 and this document, but worth flagging: conducting organized research activity in Ecuador as a foreign national typically requires a visa category appropriate to that purpose rather than a tourist visa. Confirm the correct category with an Ecuadorian consulate or your host institution before finalizing travel plans.
+
+# Suggested sequence
+
+1. Decide whether you'll have an Ecuadorian host institution — this changes who holds the UOC and can significantly shorten the process.
+2. If your work touches wildlife, protected areas, or natural resources, start the MAAE scientific-research authorization for foreigners early — it can run in parallel with aviation steps but likely has its own lead time.
+3. Confirm your visa/immigration category matches "research" activity, not tourism.
+4. Register your UAS with DGAC (@sec-compliance).
+5. Apply for your Remote Pilot Authorization, using the Section 101.640 foreign-credential conversion pathway (@sec-pilot-auth).
+6. Apply for your UOC via the Appendix 5 procedure, including your risk analysis and C2-link documentation (@sec-uoc, @sec-risk-c2).
+7. Arrange third-party liability insurance meeting Appendix 3's requirement (@sec-insurance).
+8. If any flights will occur in a restricted zone (protected areas, near aerodromes, etc.) or need BVLOS beyond standard limits, apply for Special Flight Authorization under Chapter G (@sec-special-auth).
+9. Sort out equipment import/customs for anything you're bringing from abroad.
+10. Before every individual flight: check the prohibited/restricted zone list, altitude/distance/visibility minimums, and your reporting obligations.
+
+# What's still worth double-checking directly {#sec-gaps}
+
+Everything cited above with a page number quotes text actually extracted from the source PDF; nothing was invented to fill a gap. A few things are still worth confirming directly with DGAC or via the advisory circulars before you act on them, since they sit outside RDAC 101's own text:
+
+- **Registration fees** — not stated anywhere in RDAC 101 itself.
+- **UOC issuance timeline** — no fixed number of days is given; budget generously given the inspection/verification step.
+- **CA-101-A / CA-101-B / CA-101-C** — these advisory circulars are referenced repeatedly (special-authorization forms, UOC application templates, training-org certification) but weren't available for direct extraction here; request current copies from DGAC or your host institution.
+- **Whether Ecuadorian-national personnel are required for a UOC** — only one indirect data point was found (a training-organization permit, not a general rule); confirm with DGAC directly if this affects whether you can be pilot/operator of record.
+
+# Disclaimer
+
+This document is a research aid, not legal advice. It translates and cites primary-source regulatory text and secondary reporting as of August 2026, but Ecuadorian aviation, environmental, data-protection, customs, and immigration law can change. Before conducting any drone research in Ecuador, confirm current requirements with DGAC, MAAE, SENAE, and — ideally — Ecuadorian legal counsel or your host institution's research-compliance office.

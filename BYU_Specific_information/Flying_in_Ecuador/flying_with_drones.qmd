@@ -1,0 +1,25 @@
+---
+title: "Transporting and Flying with Drones - Notes"
+subtitle: "Compiled notes on rules and regulations with transporting drones"
+author: "Connor Williams"
+date: 2026-08-18
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    theme: cosmo
+    embed-resources: true
+  pdf:
+    toc: true
+    number-sections: true
+    
+---
+
+## Flights — Carrying Batteries / Equipment {#sec-flights}
+
+From the FAA's guidance on lithium battery air travel (relevant if you're flying with drone batteries as a passenger):
+
+> "With airline approval, passengers may also carry up to two spare larger lithium ion batteries (exceeding 101–160 Wh) or Lithium metal batteries (exceeding 2–8 grams)."
+
+— [FAA PackSafe: Lithium Batteries](https://www.faa.gov/hazmat/packsafe/lithium-batteries)
