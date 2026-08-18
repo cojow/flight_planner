@@ -22,12 +22,16 @@ Its main drone-specific regulation, **RDAC 101**, sets out the full set of rules
 A Claude AI translation of relevant parts can be found [here](Ecuador_UAS_Research_Guide.pdf), and is the primary source for information in the document unless stated otherwise.  
 See @sec-sources for all sources.
 
-Are our drones under 250g with the batteries??? This is very important to know. 
+
 
 ::: {.callout-important}
-## Primary vs. secondary sources
+## Things to Still Research
+- Can we qualitfy for the open category? This is much less restricted, and gets around the licencing proplems. But our drones need to be uncer 250g.
+- Are our drones under 250g with the batteries??? This is very important to know.
+- Are there other categories besides open and specific? Like one for research?
 
-Some notes below (tax, general laws, insurance) come from **secondary sources** — third-party drone-law summary sites, not the DGAC itself.  
+- What are the restrictions for flying a UAV around the Amazon rain forest?
+
 :::
 
 
@@ -127,13 +131,14 @@ within a maximum of 24 hours, through the State notification system (NSSP), any 
 - Do not fly in sensitive areas, such as government or military facilities. (Section 101.190(a))
   - **GET A MAP FOR THESE RESTRICTED AREAS**
 - See @sec-rdac101 if we need special flight authorization, section 5.3.
+  - Look into what it says about the Amazon, if anything. 
 
 ### Other Relevant Laws
 See section 8 of the Claude Overview for what I thought was relevant.
 
 
 ## Potential Ecuadorian Host Institution
-While it doesn't seem like it is a requirement to have a local host institution for any of the processes, it would likely make every process easier. It is worth looking into getting a local partner, if we don't have one already. 
+While it doesn't seem like it is a requirement to have a local host institution for any of the processes, it would likely make every process easier. It is worth looking into getting a local partner, if we don't have one already. Might solve our licening problems. 
 
 
 ## Entering the Country with Drones
