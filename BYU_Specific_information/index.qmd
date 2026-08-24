@@ -9,7 +9,8 @@ format:
 ---
 
 - [**Flight Standards**](flight_standards.html) — Licensure, planning, and naming conventions for BYU drone flights.
-- [**How To Get Your Part 107 Licence**](part_107.html) — Steps for obtaining a Part 107 remote pilot certificate.
+- [**How To Get Your Part 107 Certificate**](part_107.html) — Steps for obtaining a Part 107 remote pilot certificate.
 - [**Ecuador Drone (UAS) Laws — Notes**](Flying_in_Ecuador/ecuador_drone_laws.html) — Compiled notes on import tax, general operating rules, insurance, and flight considerations.
+- [**Traveling with Drones**](Flying_in_Ecuador/flying_with_drones.html) — Compiled notes on rules and regulations for transporting drones.
 - [**Flying UAS/Drones in Ecuador for Academic Research**](Flying_in_Ecuador/Ecuador_UAS_Research_Guide.pdf) (PDF) — A translated, cited guide to RDAC 101 and related Ecuadorian law, for a foreign graduate researcher.
-- [**Point Cloud Maker**](https://cojow.github.io/point_cloud_maker/) - Companion 
+- [**Point Cloud Maker**](https://cojow.github.io/point_cloud_maker/) - Companion repository. For extracting buildings from drone images

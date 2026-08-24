@@ -2,7 +2,9 @@
 title: "Flight Standards"
 subtitle: "Licensure, planning, and naming conventions for BYU drone flights"
 author: "Connor Williams"
-date: 2026-08-18
+date-modified: 2026-08-18
+language:
+  title-block-modified: "Last Updated"
 format:
   html:
     toc: true

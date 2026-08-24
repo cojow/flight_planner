@@ -7,8 +7,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Connor Williams">
+<meta name="dcterms.date" content="2026-08-18">
 
-<title>Flight Standards</title>
+<title>Transporting and Flying with Drones - Notes</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -2173,21 +2174,16 @@ vertical-align: -.125em;
     <h2 id="toc-title">Table of contents</h2>
    
   <ul class="collapse">
-  <li><a href="#licensure" id="toc-licensure" class="nav-link active" data-scroll-target="#licensure"><span class="header-section-number">1</span> Licensure</a></li>
-  <li><a href="#general-drone-information" id="toc-general-drone-information" class="nav-link" data-scroll-target="#general-drone-information"><span class="header-section-number">2</span> General Drone Information</a></li>
-  <li><a href="#planning-flights" id="toc-planning-flights" class="nav-link" data-scroll-target="#planning-flights"><span class="header-section-number">3</span> Planning Flights</a></li>
-  <li><a href="#naming-missions" id="toc-naming-missions" class="nav-link" data-scroll-target="#naming-missions"><span class="header-section-number">4</span> Naming Missions</a></li>
-  <li><a href="#naming-photo-folders" id="toc-naming-photo-folders" class="nav-link" data-scroll-target="#naming-photo-folders"><span class="header-section-number">5</span> Naming Photo Folders</a></li>
-  <li><a href="#flight-path-heights-and-angles" id="toc-flight-path-heights-and-angles" class="nav-link" data-scroll-target="#flight-path-heights-and-angles"><span class="header-section-number">6</span> Flight Path Heights and Angles</a></li>
+  <li><a href="#sec-flights" id="toc-sec-flights" class="nav-link active" data-scroll-target="#sec-flights"><span class="header-section-number">1</span> Flights — Carrying Batteries / Equipment</a></li>
   </ul>
-<div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="flight_standards.pdf"><i class="bi bi-file-pdf"></i>PDF</a></li></ul></div></nav>
+<div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="../../flying_with_drones.pdf"><i class="bi bi-file-pdf"></i>PDF</a></li></ul></div></nav>
 </div>
 <main class="content" id="quarto-document-content">
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">Flight Standards</h1>
-<p class="subtitle lead">Licensure, planning, and naming conventions for BYU drone flights</p>
+<h1 class="title">Transporting and Flying with Drones - Notes</h1>
+<p class="subtitle lead">Compiled notes on rules and regulations with transporting drones</p>
 </div>
 
 
@@ -2201,13 +2197,13 @@ vertical-align: -.125em;
           </div>
   </div>
     
-  
     <div>
-    <div class="quarto-title-meta-heading">Last Updated</div>
+    <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date-modified">August 18, 2026</p>
+      <p class="date">August 18, 2026</p>
     </div>
   </div>
+  
     
   </div>
   
@@ -2216,149 +2212,13 @@ vertical-align: -.125em;
 </header>
 
 
-<section id="licensure" class="level2" data-number="1">
-<h2 data-number="1" class="anchored" data-anchor-id="licensure"><span class="header-section-number">1</span> Licensure</h2>
-<p>The flyer must hold a Part 107 license, or have someone actively watching who holds a Part 107 license.</p>
-</section>
-<section id="general-drone-information" class="level2" data-number="2">
-<h2 data-number="2" class="anchored" data-anchor-id="general-drone-information"><span class="header-section-number">2</span> General Drone Information</h2>
-<p>Photos are saved in a folder named <code>DCIM</code>. Each flight is saved using the following filename format:</p>
-<p><code>DJI_[date/time]_[flight number]_[flight plan name]</code></p>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 50%">
-<col style="width: 50%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Segment</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><code>DJI</code></td>
-<td>Name of the drone used</td>
-</tr>
-<tr class="even">
-<td>First number string</td>
-<td>Date and time the flight was run, as <code>YYYY/MM/DD/HH/MM</code></td>
-</tr>
-<tr class="odd">
-<td>Second number string</td>
-<td>Flight number, counted from the very first flight</td>
-</tr>
-<tr class="even">
-<td>Last string</td>
-<td>Name of the flight plan used to take the pictures</td>
-</tr>
-</tbody>
-</table>
-<div class="callout callout-style-default callout-note callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Note
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>Ignore the <code>MRK</code> file unless you know for a fact that you’re using an RTK setup with only one set of pictures. Otherwise, it’s useless.</p>
-</div>
-</div>
-</section>
-<section id="planning-flights" class="level2" data-number="3">
-<h2 data-number="3" class="anchored" data-anchor-id="planning-flights"><span class="header-section-number">3</span> Planning Flights</h2>
-<ul>
-<li>Keep flight altitude relatively low so that analysis doesn’t take a long time.</li>
-<li>DJI Fly controllers struggle with a lot of waypoints — 80+ waypoints causes issues, and more than 99 really slows it down.</li>
-<li>Leave at least 30 seconds between flights. This ensures the photo sorter doesn’t combine separate flights together.</li>
-</ul>
-</section>
-<section id="naming-missions" class="level2" data-number="4">
-<h2 data-number="4" class="anchored" data-anchor-id="naming-missions"><span class="header-section-number">4</span> Naming Missions</h2>
-<p>Follow this format: <code>Street1_Street2</code></p>
-<ul>
-<li><strong>Street1</strong> — the street you are flying the drone down.</li>
-<li><strong>Street2</strong> — the street to the south or west that you are flying, depending on whether the road runs N-S or E-W.</li>
-<li>For roads not laid out N-S or E-W, use the most western or southern street, respectively.</li>
-</ul>
-<section id="examples" class="level3" data-number="4.1">
-<h3 data-number="4.1" class="anchored" data-anchor-id="examples"><span class="header-section-number">4.1</span> Examples</h3>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Section</th>
-<th>Mission Name</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>Red</td>
-<td><code>100N_400E</code></td>
-</tr>
-<tr class="even">
-<td>Purple</td>
-<td><code>500E_Center</code></td>
-</tr>
-<tr class="odd">
-<td>Green</td>
-<td><code>Brair_Cherry</code></td>
-</tr>
-<tr class="even">
-<td>Blue</td>
-<td><code>Cherry_Ash</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="naming-photo-folders" class="level2" data-number="5">
-<h2 data-number="5" class="anchored" data-anchor-id="naming-photo-folders"><span class="header-section-number">5</span> Naming Photo Folders</h2>
-<p>Name the photo folder after the mission it’s composed of (the nadir and oblique flights combined).</p>
-</section>
-<section id="flight-path-heights-and-angles" class="level2" data-number="6">
-<h2 data-number="6" class="anchored" data-anchor-id="flight-path-heights-and-angles"><span class="header-section-number">6</span> Flight Path Heights and Angles</h2>
-<p>These are the heights and angles that have been found to work well for flight paths. This list will update and expand as needed.</p>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Height (ft)</th>
-<th>Location</th>
-<th>Angle (°)</th>
-<th>Overlap</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>70</td>
-<td>Across Street</td>
-<td>40</td>
-<td>?</td>
-</tr>
-<tr class="even">
-<td>200</td>
-<td>Across Street</td>
-<td>72</td>
-<td>?</td>
-</tr>
-</tbody>
-</table>
-<div class="callout callout-style-default callout-note callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Note
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>Overlap values are still to be determined for both flight profiles.</p>
-</div>
-</div>
-<p>For roundabouts, follow the same rules above, but plan them as their own separate flight plan.</p>
+<section id="sec-flights" class="level2" data-number="1">
+<h2 data-number="1" class="anchored" data-anchor-id="sec-flights"><span class="header-section-number">1</span> Flights — Carrying Batteries / Equipment</h2>
+<p>From the FAA’s guidance on lithium battery air travel (relevant if you’re flying with drone batteries as a passenger):</p>
+<blockquote class="blockquote">
+<p>“With airline approval, passengers may also carry up to two spare larger lithium ion batteries (exceeding 101–160 Wh) or Lithium metal batteries (exceeding 2–8 grams).”</p>
+</blockquote>
+<p>— <a href="https://www.faa.gov/hazmat/packsafe/lithium-batteries">FAA PackSafe: Lithium Batteries</a></p>
 </section>
 
 </main>
