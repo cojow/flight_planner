@@ -26,7 +26,7 @@ See @sec-sources for all sources.
 
 ::: {.callout-important}
 ## Things to Still Research
-- Can we qualitfy for the open category? This is much less restricted, and gets around the licencing proplems. But our drones need to be uncer 250g.
+- Can we qualitfy for the open category? This is much less restricted, and gets around the licencing problems. But our drones need to be under 250g.
 - Are our drones under 250g with the batteries??? This is very important to know.
 - Are there other categories besides open and specific? Like one for research?
 

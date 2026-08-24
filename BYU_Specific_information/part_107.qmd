@@ -1,0 +1,82 @@
+---
+title: "How To Get Your Part 107 Licence"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    theme: cosmo
+    embed-resources: true
+  pdf:
+    toc: true
+    number-sections: true
+---
+
+## Preparing for the exam
+
+### TRUST Recreational Drone Certification
+Start with obtaining your TRUST Recreational Drone Certification. [Link](https://trust.pilotinstitute.com/?gc_id=13607090805&h_ga_id=127809592470&h_ad_id=529093306996&h_keyword_id=kwd-365197151701&h_keyword=%2Btrust%20%2Bdrone&h_placement=&gad_source=1&gad_campaignid=13607090805&gbraid=0AAAAACtJPalZDGIH0H5SX6nHsPWMRLQWL&gclid=CjwKCAiAkbbMBhB2EiwANbxtbSJ-P5hQU2vxRQqHQR672Y8qiKLVxT1nLWYp57unT84MqXrT3fgOLhoCLuQQAvD_BwE).
+
+It is not required to obtain your Part 107, but is useful as a first overview of drone regulation. 
+You'll create an account and go though ~20 minutes of training explaining what you can and can't do as a recreational flyer. 
+There are four quizzes you take as you review the material, and at the end you receive a pdf of your certificate (They delete your account after you download the certificate, so make sure you save it somewhere safe.) 
+
+
+### Eligibility
+
+Information about the exam itself can be found [here](https://www.faa.gov/uas/commercial_operators/become_a_drone_pilot).
+It also walks though the whole process. 
+That is the definitive source, and trumps any information found here. 
+
+The general requirements are as follows:
+
+- Be at least 16 years old
+- Be able to read, speak, write, and understand English
+- Be in a physical and mental condition to safely fly a drone
+- Pass the initial aeronautical knowledge exam: "Unmanned Aircraft General – Small (UAG)"
+
+### Studying
+There is a lot out there for test prep. This section is a mix of what I did and the resources from the CE Drone Measurments Class being piloted at BYU. 
+
+- Study for the test intensly several days before you take the test. 
+    There is so much that you need to know only for the test that cramming is what I recommend. 
+    Plan a day for the test, set aside several hours each day before hand for studying, and then schedule the test. 
+- I watched [this guy's](https://www.youtube.com/watch?v=u3AwQZTbtfc) video when I first started studying and right before I took the test.
+    It's a good overview of the topics on the test, but is nowhere near comprehensive. 
+- I watched the 12 study guide videos made by [this guy](https://www.youtube.com/playlist?list=PLRd2JSjVHovGabIuGeoupZgkzGmdys4Ol). 
+    He's pretty long winded and interesting, but he covered most things on the test. 
+    His videos are long, so watch at atleast 1.5x speed. 
+
+Other Resources:
+- [This](https://free-faa-exam.kingschools.com/drone-pilot) is an test exam that might be useful.
+    I didn't use it, so I can't say if it is good or not. 
+
+Important things to note about the exam:
+
+- It costs a couple hundred dollars, like other licecing exams. 
+- You are given 2 hours to take the test. If you've prepared, you shouldn't have much problem completting the test. 
+- There are 60 questions on the test, with the typical format being 3 options per question. 
+- You must get 70% of the questions right to pass. This is 42 questions. 
+- Your licence will be valid for 2 years from licening date. If you maintain it, you won't have to take the test again. 
+- The closest testing center is at the Provo airport through UVU, but there are other ones around
+
+## Registering for the Part 107
+
+### Creating a FAA Account
+
+This will give you a FAA tracking number, which will be needed to register for your exam and licence. 
+
+1. Go to the [iacra website](https://iacra.faa.gov/IACRA/SelectRoles.aspx).
+2. Select Applicant, scrolldown and click "agree to TOS and continue".
+3. Fillout the User Profile Information. Skip the section that says Airman certificate number.
+    Enter personal info, security questions, and create a username and password. 
+4. You will have to set up a authenticator app, either here or when registoring for the exam. 
+
+### Registering for the Exam
+
+1. Go to [psiexams](https://faa.psiexams.com/faa/login).
+2. Sign in using the same login for your FAA account.
+3. Search for and select "Unmanned Aircraft General - Small (UAG)". Confirm that you selected the correct test.
+4. Follow the prompts to fillout the information for signing up for the test. 
+    (I can't reregister for the test to fully outline the process, but it is straight forward)
+ 
