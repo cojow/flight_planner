@@ -2175,12 +2175,10 @@ vertical-align: -.125em;
   <ul class="collapse">
   <li><a href="#licensure" id="toc-licensure" class="nav-link active" data-scroll-target="#licensure"><span class="header-section-number">1</span> Licensure</a></li>
   <li><a href="#general-drone-information" id="toc-general-drone-information" class="nav-link" data-scroll-target="#general-drone-information"><span class="header-section-number">2</span> General Drone Information</a></li>
-  <li><a href="#planning-flights" id="toc-planning-flights" class="nav-link" data-scroll-target="#planning-flights"><span class="header-section-number">3</span> Planning Flights</a></li>
-  <li><a href="#naming-missions" id="toc-naming-missions" class="nav-link" data-scroll-target="#naming-missions"><span class="header-section-number">4</span> Naming Missions</a></li>
-  <li><a href="#naming-photo-folders" id="toc-naming-photo-folders" class="nav-link" data-scroll-target="#naming-photo-folders"><span class="header-section-number">5</span> Naming Photo Folders</a></li>
-  <li><a href="#flight-path-heights-and-angles" id="toc-flight-path-heights-and-angles" class="nav-link" data-scroll-target="#flight-path-heights-and-angles"><span class="header-section-number">6</span> Flight Path Heights and Angles</a></li>
+  <li><a href="#naming-conventions" id="toc-naming-conventions" class="nav-link" data-scroll-target="#naming-conventions"><span class="header-section-number">3</span> Naming Conventions</a></li>
+  <li><a href="#flight-planning" id="toc-flight-planning" class="nav-link" data-scroll-target="#flight-planning"><span class="header-section-number">4</span> Flight Planning</a></li>
   </ul>
-<div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="flight_standards.pdf"><i class="bi bi-file-pdf"></i>PDF</a></li></ul></div></nav>
+<div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="../flight_standards.pdf"><i class="bi bi-file-pdf"></i>PDF</a></li></ul></div></nav>
 </div>
 <main class="content" id="quarto-document-content">
 
@@ -2268,24 +2266,21 @@ Note
 </div>
 </div>
 </section>
-<section id="planning-flights" class="level2" data-number="3">
-<h2 data-number="3" class="anchored" data-anchor-id="planning-flights"><span class="header-section-number">3</span> Planning Flights</h2>
-<ul>
-<li>Keep flight altitude relatively low so that analysis doesn’t take a long time.</li>
-<li>DJI Fly controllers struggle with a lot of waypoints — 80+ waypoints causes issues, and more than 99 really slows it down.</li>
-<li>Leave at least 30 seconds between flights. This ensures the photo sorter doesn’t combine separate flights together.</li>
-</ul>
-</section>
-<section id="naming-missions" class="level2" data-number="4">
-<h2 data-number="4" class="anchored" data-anchor-id="naming-missions"><span class="header-section-number">4</span> Naming Missions</h2>
+<section id="naming-conventions" class="level2" data-number="3">
+<h2 data-number="3" class="anchored" data-anchor-id="naming-conventions"><span class="header-section-number">3</span> Naming Conventions</h2>
+<section id="naming-missions" class="level3" data-number="3.1">
+<h3 data-number="3.1" class="anchored" data-anchor-id="naming-missions"><span class="header-section-number">3.1</span> Naming Missions</h3>
 <p>Follow this format: <code>Street1_Street2</code></p>
 <ul>
 <li><strong>Street1</strong> — the street you are flying the drone down.</li>
-<li><strong>Street2</strong> — the street to the south or west that you are flying, depending on whether the road runs N-S or E-W.</li>
+<li><strong>Street2</strong> — the street to the south or west that you are flying, depending on whether the road runs N-S or E-W.
+<ul>
 <li>For roads not laid out N-S or E-W, use the most western or southern street, respectively.</li>
+</ul></li>
+<li>The Flight Planner will add information about the height, gimbal pitch, and photo overlap to the end.</li>
 </ul>
-<section id="examples" class="level3" data-number="4.1">
-<h3 data-number="4.1" class="anchored" data-anchor-id="examples"><span class="header-section-number">4.1</span> Examples</h3>
+<section id="examples" class="level4" data-number="3.1.1">
+<h4 data-number="3.1.1" class="anchored" data-anchor-id="examples"><span class="header-section-number">3.1.1</span> Examples</h4>
 <table class="caption-top table">
 <thead>
 <tr class="header">
@@ -2314,12 +2309,42 @@ Note
 </table>
 </section>
 </section>
-<section id="naming-photo-folders" class="level2" data-number="5">
-<h2 data-number="5" class="anchored" data-anchor-id="naming-photo-folders"><span class="header-section-number">5</span> Naming Photo Folders</h2>
-<p>Name the photo folder after the mission it’s composed of (the nadir and oblique flights combined).</p>
+<section id="naming-photo-folders" class="level3" data-number="3.2">
+<h3 data-number="3.2" class="anchored" data-anchor-id="naming-photo-folders"><span class="header-section-number">3.2</span> Naming Photo Folders</h3>
+<p>Name the photo folder after the mission it’s composed of (the nadir and oblique flights combined). This should result in a unique name for every folder.</p>
 </section>
-<section id="flight-path-heights-and-angles" class="level2" data-number="6">
-<h2 data-number="6" class="anchored" data-anchor-id="flight-path-heights-and-angles"><span class="header-section-number">6</span> Flight Path Heights and Angles</h2>
+</section>
+<section id="flight-planning" class="level2" data-number="4">
+<h2 data-number="4" class="anchored" data-anchor-id="flight-planning"><span class="header-section-number">4</span> Flight Planning</h2>
+<section id="todo" class="level3" data-number="4.1">
+<h3 data-number="4.1" class="anchored" data-anchor-id="todo"><span class="header-section-number">4.1</span> TODO</h3>
+<p>TO DO: We need to figure out the best overlap for the correct number of images. If 1280 is the depth we are going for in the extractor, we need to limit the photos or we’ll have to deal with large processing times.</p>
+</section>
+<section id="general-notes" class="level3" data-number="4.2">
+<h3 data-number="4.2" class="anchored" data-anchor-id="general-notes"><span class="header-section-number">4.2</span> General Notes</h3>
+<ul>
+<li>Keep flight photo number relatively low so that analysis doesn’t take a long time.</li>
+<li>DJI Fly controllers struggle with a lot of waypoints — 80+ waypoints causes issues, and more than 99 really slows it down.</li>
+<li>Leave at least 30 seconds between flights. This ensures the photo sorter doesn’t combine separate flights together.</li>
+</ul>
+</section>
+<section id="flight-path" class="level3" data-number="4.3">
+<h3 data-number="4.3" class="anchored" data-anchor-id="flight-path"><span class="header-section-number">4.3</span> Flight Path</h3>
+<p>Flight paths ::: {#fig-confusion-matrix-logan}</p>
+<div id="fig-logan_cm" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-logan_cm-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img role="img" src="../runs/detect/other_utah/logan_validation/confusion_matrix.png" class="img-fluid figure-img" style="width:100.0%">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-logan_cm-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure 1: Confusion matrix
+</figcaption>
+</figure>
+</div>
+<p>YOLO confusion matrices for Logan, Utah. :::</p>
+</section>
+<section id="heights-and-angles" class="level3" data-number="4.4">
+<h3 data-number="4.4" class="anchored" data-anchor-id="heights-and-angles"><span class="header-section-number">4.4</span> Heights and Angles</h3>
 <p>These are the heights and angles that have been found to work well for flight paths. This list will update and expand as needed.</p>
 <table class="caption-top table">
 <thead>
@@ -2359,6 +2384,7 @@ Note
 </div>
 </div>
 <p>For roundabouts, follow the same rules above, but plan them as their own separate flight plan.</p>
+</section>
 </section>
 
 </main>
