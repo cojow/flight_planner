@@ -113,6 +113,7 @@ How far each flight line continues past the edge of your drawn area, measured in
 The area is fully covered even at 0, because each photo already images half a footprint beyond the aircraft. 
 The default of 1 adds one spare frame past each edge, which helps stitching at the borders. 
 Raise it if your edges are coming out weak; drop it to 0 to save photos when you are near the DJI Fly 99-photo limit. The resulting distance in feet is shown in the coverage summary.
+* **Split passes at gaps (beta)**: Mapping missions only. Changes how the flight lines are built. Normally each line runs the full width of the area at that point, so on a shape with a hole or a deep notch - a U, a ring, an H - the aircraft flies straight across the gap. With this on, each line is cut into only the pieces that are actually inside your shape, and those pieces are flown as separate passes. On a deep U this cuts about 20% of the photos. On shapes without a gap it changes nothing at all, so it is safe to leave on. It does trade some extra turning for the saved photos, so on a few shapes the total flight distance goes up slightly even as the photo count drops.
 * **Flight Speed (mph)**: Includes auto-calculation for time-based intervals and visual warnings if the speed exceeds the sensor's minimum photo interval. 
 4 mph is recommended when following the drone.
 * **Manual Speed (mph)**: Same as Flight Speed (mph), set manually instead of auto-calculated. 4 mph is recommended when following the drone.
@@ -229,6 +230,11 @@ This will update the thumbnail.
 
 It is recommended to save and update the thumbnails immediately after transferring the missions. To help keep this straight, at the bottom of the DJI FLY Transfer tab, a checklist is generated showing the old mission thumbnail and the new mission name (along with the long string name). 
 
+## Map Data
+The satellite imagery, place labels, and thumbnail street maps come from [Esri ArcGIS Online](https://www.arcgis.com/), which is free to use with attribution (shown in the corner of every map).
+Imagery is served natively up to zoom 19; zooming closer than that upscales the z19 tiles rather than loading sharper ones, so the map goes soft rather than blank.
+
 ## Acknowledgements
 - Luigi Pirelli for providing the photo footprint code base. 
 - Mavenbridge for inspiring the DJI Fly Transfer Code (No MavenBridge code was used in development).
+- Map tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community.
