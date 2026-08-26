@@ -38,21 +38,18 @@ Photos are saved in a folder named `DCIM`. Each flight is saved using the follow
 Ignore the `MRK` file unless you know for a fact that you're using an RTK setup with only one set of pictures. Otherwise, it's useless.
 :::
 
-## Planning Flights
+## Naming Conventions 
 
-- Keep flight altitude relatively low so that analysis doesn't take a long time.
-- DJI Fly controllers struggle with a lot of waypoints — 80+ waypoints causes issues, and more than 99 really slows it down.
-- Leave at least 30 seconds between flights. This ensures the photo sorter doesn't combine separate flights together.
-
-## Naming Missions
+### Naming Missions
 
 Follow this format: `Street1_Street2`
 
 - **Street1** — the street you are flying the drone down.
 - **Street2** — the street to the south or west that you are flying, depending on whether the road runs N-S or E-W.
-- For roads not laid out N-S or E-W, use the most western or southern street, respectively.
+  - For roads not laid out N-S or E-W, use the most western or southern street, respectively.
+- The Flight Planner will add information about the height, gimbal pitch, and photo overlap to the end. 
 
-### Examples
+#### Examples
 
 | Section | Mission Name |
 |---|---|
@@ -61,11 +58,35 @@ Follow this format: `Street1_Street2`
 | Green | `Brair_Cherry` |
 | Blue | `Cherry_Ash` |
 
-## Naming Photo Folders
+### Naming Photo Folders
 
 Name the photo folder after the mission it's composed of (the nadir and oblique flights combined).
+This should result in a unique name for every folder. 
 
-## Flight Path Heights and Angles
+## Flight Planning
+
+### TODO
+
+TO DO: We need to figure out the best overlap for the correct number of images. If 1280 is the depth we are going for in the extractor, we need to limit the photos or we'll have to deal with large processing times.
+
+### General Notes
+
+- Keep flight photo number relatively low so that analysis doesn't take a long time.
+- DJI Fly controllers struggle with a lot of waypoints — 80+ waypoints causes issues, and more than 99 really slows it down.
+- Leave at least 30 seconds between flights. This ensures the photo sorter doesn't combine separate flights together. 
+
+### Flight Path
+
+Flight paths 
+::: {#fig-confusion-matrix-logan}
+
+![Confusion matrix](../runs/detect/other_utah/logan_validation/confusion_matrix.png){#fig-logan_cm width=100%}
+
+YOLO confusion matrices for Logan, Utah.
+:::
+
+
+### Heights and Angles
 
 These are the heights and angles that have been found to work well for flight paths. This list will update and expand as needed.
 

@@ -57,21 +57,25 @@ Do this before you try to schedule anything, since you can't register for the te
 
 There is a lot out there for test prep. This section is a mix of what I did and the resources from the CE Drone Measurements Class being piloted at BYU.
 
+What I did:
+
 - Study for the test intensely several days before you take the test.
     There is so much that you need to know only for the test that cramming is what I recommend.
     Plan a day for the test, set aside several hours each day beforehand for studying, and then schedule the test.
-- I watched ["FREE Part 107 Study Guide - FAA Drone Certification Exam"](https://www.youtube.com/watch?v=u3AwQZTbtfc) when I first started studying and right before I took the test.
+- I watched [Matt Kendall's videos](https://www.youtube.com/watch?v=u3AwQZTbtfc) when I first started studying and right before I took the test.
     It's a good overview of the topics on the test, but is nowhere near comprehensive.
-- I watched the 12 videos in the ["FAA Part 107 Exam Study Guides"](https://www.youtube.com/playlist?list=PLRd2JSjVHovGabIuGeoupZgkzGmdys4Ol) playlist.
+- I watched the 12 videos in [Mike Sytes' Videos](https://www.youtube.com/playlist?list=PLRd2JSjVHovGabIuGeoupZgkzGmdys4Ol) playlist.
     He's pretty long winded and particular, but he covered most things on the test.
     His videos are long, so watch at at least 1.5x speed.
-- Reading sectional charts is the part most people struggle with, so it's worth spending extra time there.
-    A good chunk of the test comes back to pulling information off of a chart, to make sure you can read them. 
+- Reading sectional charts is the part most people struggle with, so it is important to get familiar with them.
+    A good chunk of the test comes back to pulling information off of a chart, to make sure you can read them. The [FAA supplement booklet](https://www.faa.gov/sites/faa.gov/files/training_testing/testing/supplements/sport_rec_private_akts.pdf) has a bunch of charts that you can use.
 
 Other Resources:
 
-- [This](https://free-faa-exam.kingschools.com/drone-pilot) is a practice exam that might be useful.
+- [King School FAA Exam](https://free-faa-exam.kingschools.com/drone-pilot) is a practice exam that might be useful.
     I didn't use it, so I can't say if it is good or not.
+- [Katia Buzz Media](https://www.youtube.com/watch?v=GO1CXPsCKoQ)
+- [Mr. Mig Short Videos](https://www.youtube.com/playlist?list=PLGspbs93n4nP5g4SFPOJswZ21Qv3ynl1K)
 
 Important things to note about the exam:
 
