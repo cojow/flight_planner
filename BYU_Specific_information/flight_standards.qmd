@@ -8,7 +8,7 @@ language:
 format:
   html:
     toc: true
-    toc-depth: 2
+    toc-depth: 4
     number-sections: true
     theme: cosmo
     embed-resources: true
@@ -58,6 +58,18 @@ Follow this format: `Street1_Street2`
 | Green | `Brair_Cherry` |
 | Blue | `Cherry_Ash` |
 
+::: {.columns}
+
+::: {.column width="50%"}
+![](./images/NS_EW_path_example.png){height="300px"}
+:::
+
+::: {.column width="50%"}
+![](./images/diagonal_examples.png){height="300px"}
+:::
+
+:::
+
 ### Naming Photo Folders
 
 Name the photo folder after the mission it's composed of (the nadir and oblique flights combined).
@@ -71,20 +83,44 @@ TO DO: We need to figure out the best overlap for the correct number of images. 
 
 ### General Notes
 
-- Keep flight photo number relatively low so that analysis doesn't take a long time.
-- DJI Fly controllers struggle with a lot of waypoints — 80+ waypoints causes issues, and more than 99 really slows it down.
+- Keep flight photo number relatively low so that analysis doesn't take a long time. (The overlap will determine if enough pictures are being taken for the houses.)
+- DJI Fly controllers struggle with a lot of waypoints — 80+ waypoints causes some issues, and more than 99 really slows it down.
 - Leave at least 30 seconds between flights. This ensures the photo sorter doesn't combine separate flights together. 
 
-### Flight Path
+### Flight Paths
 
-Flight paths 
-::: {#fig-confusion-matrix-logan}
+The flight path that you will draw will be determined by the type of street you are on. 
+In general:
 
-![Confusion matrix](../runs/detect/other_utah/logan_validation/confusion_matrix.png){#fig-logan_cm width=100%}
+- We have two flights per road section, named a flight set. One at ~70 feet and another at ~200 feet. The first is for the image analysis, the second is for the point cloud maker. 
+- The flight path should travel along the shoulder of the road, between the traveled way and parking strip/sidewalk. This reduces the likelyhood of flying over a person, which part 107 doesn't allow.
+- Keep the paths reasonable and logical. One flight set should focus on a single road section, as seen in the naming examples. 
+Since more images means the point cloud maker takes longer, when it doubt, make it shorter. 
+- Do you best to avoid flying on private property. 
 
-YOLO confusion matrices for Logan, Utah.
-:::
+#### Residential/Local Roads
+- Regular
 
+- Curved Road
+
+![](./images/fp_ex_res.png)
+![](./images/fp_ex_res_viewer.png)
+
+#### Arterial/Busier Roads
+- Do not have the drone fly over it, like we do with residential. 
+
+#### Big Buildings and Parking lots
+These, such as stores or church buildings, typically can't follow the standard flight set. 
+We need to see if we put together a flight set for these kinds of buildings. 
+200 feet higher flights should work no problem. 
+
+#### Roundabouts
+Roundabouts are their own road section. 
+
+
+#### Empty Lots/Fields
+
+We do not need to run flights covering these areas. We're concerned about buildings only. 
 
 ### Heights and Angles
 
@@ -99,4 +135,4 @@ These are the heights and angles that have been found to work well for flight pa
 Overlap values are still to be determined for both flight profiles.
 :::
 
-For roundabouts, follow the same rules above, but plan them as their own separate flight plan.
+
