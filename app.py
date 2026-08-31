@@ -13,6 +13,15 @@ import re
 from geopy.geocoders import Nominatim
 import folium
 from folium.plugins import Draw, PolyLineTextPath
+
+# Optional: only the experimental decomposed coverage strategy needs shapely.
+# Imported defensively so a missing install degrades to "that option is
+# unavailable" rather than taking the whole app down on startup.
+try:
+    from shapely.geometry import Polygon as ShapelyPolygon, box as shapely_box
+    SHAPELY_AVAILABLE = True
+except ImportError:
+    SHAPELY_AVAILABLE = False
 from folium.features import DivIcon
 from streamlit_folium import st_folium
 from branca.element import Element
@@ -818,6 +827,55 @@ M_TO_FT = 3.28084
 MPH_TO_MS = 0.44704
 MS_TO_MPH = 2.23694
 
+# ---------------------------------------------------------------------------
+# Basemap tiles
+# ---------------------------------------------------------------------------
+# Esri's ArcGIS Online basemaps, which are free to use with attribution. These
+# replaced mt1.google.com, which is Google's undocumented INTERNAL tile
+# endpoint - it works, but using it outside the Maps Platform API is against
+# their terms, which is a problem the moment this app is shared or published.
+#
+# Google's "lyrs=y" was a single combined satellite+labels hybrid layer. Esri
+# splits those into two services, so the labels go on as a second transparent
+# overlay to keep the same look. Esri also orders its path {z}/{y}/{x}, not
+# the {z}/{x}/{y} most providers use.
+#
+# max_native_zoom is 19, NOT 20. Past 19 Esri serves an identical 2521-byte
+# "no data" placeholder across most of the world - verified byte-for-byte at
+# Provo and rural Nevada; only dense urban areas (e.g. Manhattan) carry real
+# z20. Capping the native zoom at 19 makes Leaflet upscale those tiles for
+# deeper zooms, which looks soft but is never blank.
+ESRI_TILE_BASE = "https://server.arcgisonline.com/ArcGIS/rest/services"
+ESRI_IMAGERY_URL = f"{ESRI_TILE_BASE}/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}"
+ESRI_LABELS_URL = f"{ESRI_TILE_BASE}/Reference/World_Boundaries_and_Places/MapServer/tile/{{z}}/{{y}}/{{x}}"
+ESRI_STREET_TILE_URL = ESRI_TILE_BASE + "/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
+ESRI_ATTR = ("Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, "
+             "and the GIS User Community")
+BASEMAP_MAX_ZOOM = 22
+BASEMAP_MAX_NATIVE_ZOOM = 19
+
+
+def add_basemap(fmap):
+    """
+    Put the shared satellite basemap (imagery + place labels) on a folium map.
+
+    Every map in the app goes through here so the tile source, attribution and
+    zoom caps can't drift apart between the Creator, Editor and Viewer - they
+    were three separately maintained copies of the same TileLayer line before.
+    """
+    folium.TileLayer(
+        tiles=ESRI_IMAGERY_URL, attr=ESRI_ATTR, name="Satellite",
+        max_zoom=BASEMAP_MAX_ZOOM, max_native_zoom=BASEMAP_MAX_NATIVE_ZOOM,
+    ).add_to(fmap)
+    # Labels ride on top of the imagery but still in Leaflet's tile pane, so
+    # they stay underneath the flight path and waypoint markers.
+    folium.TileLayer(
+        tiles=ESRI_LABELS_URL, attr=ESRI_ATTR, name="Place labels",
+        overlay=True, control=False,
+        max_zoom=BASEMAP_MAX_ZOOM, max_native_zoom=BASEMAP_MAX_NATIVE_ZOOM,
+    ).add_to(fmap)
+    return fmap
+
 MISSION_DIR = "missions"
 SURFACES_DIR = "surfaces"
 os.makedirs(MISSION_DIR, exist_ok=True)
@@ -1387,7 +1445,9 @@ def fetch_basemap_image(min_lat, min_lon, max_lat, max_lon, target_px=420):
 
     meters_per_px = 156543.03392 * math.cos(math.radians(lat0))
     zoom = int(round(math.log2(meters_per_px * target_px / span_m)))
-    zoom = max(3, min(20, zoom))
+    # Clamped to the basemap's real coverage: past z19 Esri returns a "no
+    # data" placeholder, which would paste a grey grid behind the thumbnail.
+    zoom = max(3, min(BASEMAP_MAX_NATIVE_ZOOM, zoom))
 
     x0, y0 = latlon_to_global_px(max_lat, min_lon, zoom, tile_size)
     x1, y1 = latlon_to_global_px(min_lat, max_lon, zoom, tile_size)
@@ -1402,7 +1462,7 @@ def fetch_basemap_image(min_lat, min_lon, max_lat, max_lon, target_px=420):
     try:
         for tx in range(tile_x0, tile_x1 + 1):
             for ty in range(tile_y0, tile_y1 + 1):
-                url = f"https://mt1.google.com/vt/lyrs=m&x={tx}&y={ty}&z={zoom}"
+                url = ESRI_STREET_TILE_URL.format(z=zoom, x=tx, y=ty)
                 req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
                 with urllib.request.urlopen(req, timeout=5) as response:
                     tile_img = Image.open(io.BytesIO(response.read())).convert('RGB')
@@ -2037,8 +2097,120 @@ def extract_polygon_from_map_data(map_data):
                 return coords
     return None
 
+def _strip_spans(poly, lo, hi, min_span_ft=1.0):
+    """
+    The disjoint x-intervals the area actually occupies inside the horizontal
+    band [lo, hi], smallest x first.
+
+    This one measurement is the whole difference between the two coverage
+    strategies. The classic sweep takes only the min and max x across a band,
+    so on any shape with a notch - a U, an L, a star - every pass runs straight
+    across the gap and photographs ground that was never drawn. Splitting the
+    band into the spans that are genuinely inside the polygon lets each strip
+    fly only the parts that need covering.
+    """
+    minx, _, maxx, _ = poly.bounds
+    inter = poly.intersection(shapely_box(minx - 1.0, lo, maxx + 1.0, hi))
+    if inter.is_empty:
+        return []
+    spans = []
+    for g in getattr(inter, "geoms", [inter]):
+        if g.is_empty or getattr(g, "area", 0.0) <= 0.0:
+            continue
+        gx0, _, gx1, _ = g.bounds
+        if gx1 - gx0 >= min_span_ft:
+            spans.append((gx0, gx1))
+    spans.sort()
+    return spans
+
+
+def _decomposed_passes(rot_pts, centers, ymin, ymax, half_strip, runout):
+    """
+    Build the pass list by boustrophedon cell decomposition instead of one
+    full-width pass per strip. Returns (path_rot, num_cells).
+
+    Strips are cut into their real spans, then spans are grouped into cells:
+    walking upward, a span that cleanly continues exactly one span from the
+    strip below stays in that cell; anything else - a span splitting in two, two
+    merging into one, or a span appearing from nothing - closes the cells
+    involved and opens fresh ones. Those split/merge events are precisely the
+    critical points of a boustrophedon decomposition. Each cell is then flown
+    serpentine, and the cells are visited nearest-end-first.
+    """
+    poly = ShapelyPolygon(rot_pts)
+    if not poly.is_valid:
+        # Hand-drawn outlines can self-touch; buffer(0) heals the ring without
+        # moving it, and may hand back a MultiPolygon, which the rest handles.
+        poly = poly.buffer(0)
+    if poly.is_empty:
+        return [], 0
+
+    strips = []
+    for k, c in enumerate(centers):
+        lo = ymin if k == 0 else c - half_strip
+        hi = ymax if k == len(centers) - 1 else c + half_strip
+        strips.append(_strip_spans(poly, lo, hi))
+
+    cells, open_cells, prev_spans = [], {}, []
+    for k, spans in enumerate(strips):
+        fwd = {i: [] for i in range(len(prev_spans))}
+        back = {j: [] for j in range(len(spans))}
+        for j, (a0, a1) in enumerate(spans):
+            for i, (b0, b1) in enumerate(prev_spans):
+                if min(a1, b1) - max(a0, b0) > 0:      # the spans overlap in x
+                    fwd[i].append(j)
+                    back[j].append(i)
+        new_open = {}
+        for j, (x0, x1) in enumerate(spans):
+            src = back[j]
+            if len(src) == 1 and len(fwd[src[0]]) == 1 and src[0] in open_cells:
+                ci = open_cells[src[0]]                # clean 1:1 continuation
+            else:
+                cells.append([])                       # split, merge or new
+                ci = len(cells) - 1
+            cells[ci].append((k, x0, x1))
+            new_open[j] = ci
+        open_cells, prev_spans = new_open, spans
+
+    # Serpentine inside each cell, alternating direction strip to strip.
+    cell_runs = []
+    for cell in cells:
+        run = []
+        for idx, (k, x0, x1) in enumerate(cell):
+            y = centers[k]
+            lo, hi = x0 - runout, x1 + runout
+            run.append(((lo, y), (hi, y)) if idx % 2 == 0 else ((hi, y), (lo, y)))
+        if run:
+            cell_runs.append(run)
+
+    # Visit cells nearest-first, entering each from whichever end is closer.
+    ordered, remaining, cur = [], list(range(len(cell_runs))), None
+    while remaining:
+        if cur is None:
+            pick = remaining[0]
+        else:
+            pick = min(remaining, key=lambda i: min(
+                math.hypot(cell_runs[i][0][0][0] - cur[0], cell_runs[i][0][0][1] - cur[1]),
+                math.hypot(cell_runs[i][-1][1][0] - cur[0], cell_runs[i][-1][1][1] - cur[1])))
+        remaining.remove(pick)
+        run = cell_runs[pick]
+        if cur is not None:
+            d_start = math.hypot(run[0][0][0] - cur[0], run[0][0][1] - cur[1])
+            d_end = math.hypot(run[-1][1][0] - cur[0], run[-1][1][1] - cur[1])
+            if d_end < d_start:
+                run = [(b, a) for (a, b) in reversed(run)]
+        ordered.extend(run)
+        cur = ordered[-1][1]
+
+    path_rot = []
+    for a, b in ordered:
+        path_rot += [a, b]
+    return path_rot, len(cell_runs)
+
+
 def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap_pct, side_overlap_pct,
-                                 side="parallel", runout_intervals=1.0, line_bearing_deg=None):
+                                 side="parallel", runout_intervals=1.0, line_bearing_deg=None,
+                                 decompose=False):
     """
     Builds a serpentine (lawnmower) flight path whose camera footprints
     fully cover the drawn boundary polygon, honoring altitude, gimbal
@@ -2155,27 +2327,41 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
     # area was at that pass. The outermost passes still open out to the block
     # edge, since there is no neighbour beyond them.
     half_strip = (centers[1] - centers[0]) / 2.0 if len(centers) > 1 else 0.0
-    path_rot = []
-    for k, c in enumerate(centers):
-        band_lo = ymin if k == 0 else c - half_strip
-        band_hi = ymax if k == len(centers) - 1 else c + half_strip
-        x_lo, x_hi = band_x_range(band_lo, band_hi)
-        # Run-out past each edge, so the boundary is not the very last frame.
-        # The footprint is centred on the drone, so a photo taken AT the
-        # boundary already images fw/2 beyond it and zero run-out still covers
-        # the area - the old fixed fw/2 extension here pushed the drone that
-        # far out again, laying a full extra footprint of photos outside the
-        # area at both ends of every pass without covering any more of it.
-        x_lo -= runout
-        x_hi += runout
-        eastbound = (k % 2 == 0)
-        # Camera looks to the drone's chosen side of travel; place the drone
-        # on the opposite side of the strip so the footprint lands on it.
-        y_drone = c + (side_sign * offset if eastbound else -side_sign * offset)
-        if eastbound:
-            path_rot += [(x_lo, y_drone), (x_hi, y_drone)]
-        else:
-            path_rot += [(x_hi, y_drone), (x_lo, y_drone)]
+
+    num_cells = 1
+    if decompose and SHAPELY_AVAILABLE:
+        # Experimental strategy: cut each strip into the spans that are really
+        # inside the area rather than one full-width pass. Everything above -
+        # sweep bearing, strip centres, run-out - is shared with the classic
+        # path, so the two can be compared like for like.
+        path_rot, num_cells = _decomposed_passes(rot, centers, ymin, ymax, half_strip, runout)
+        if not path_rot:
+            decompose = False       # nothing usable came back; fall through
+
+    if not (decompose and SHAPELY_AVAILABLE):
+        path_rot = []
+        for k, c in enumerate(centers):
+            band_lo = ymin if k == 0 else c - half_strip
+            band_hi = ymax if k == len(centers) - 1 else c + half_strip
+            x_lo, x_hi = band_x_range(band_lo, band_hi)
+            # Run-out past each edge, so the boundary is not the very last
+            # frame. The footprint is centred on the drone, so a photo taken AT
+            # the boundary already images fw/2 beyond it and zero run-out still
+            # covers the area - the old fixed fw/2 extension here pushed the
+            # drone that far out again, laying a full extra footprint of photos
+            # outside the area at both ends of every pass without covering any
+            # more of it.
+            x_lo -= runout
+            x_hi += runout
+            eastbound = (k % 2 == 0)
+            # Camera looks to the drone's chosen side of travel; place the
+            # drone on the opposite side of the strip so the footprint lands
+            # on it.
+            y_drone = c + (side_sign * offset if eastbound else -side_sign * offset)
+            if eastbound:
+                path_rot += [(x_lo, y_drone), (x_hi, y_drone)]
+            else:
+                path_rot += [(x_hi, y_drone), (x_lo, y_drone)]
 
     # Rotate back and unproject.
     ca2, sa2 = math.cos(sweep_ang), math.sin(sweep_ang)
@@ -2186,7 +2372,11 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
         path_coords.append((lat0 + gy / FT_PER_DEG_LAT, lon0 + gx / (FT_PER_DEG_LAT * cos_lat)))
 
     info = dict(geom)
-    info["num_passes"] = len(centers)
+    # Decomposition can emit more than one pass per strip, so the pass count is
+    # taken from the path itself rather than the strip count.
+    info["num_passes"] = len(path_rot) // 2
+    info["num_cells"] = num_cells
+    info["decomposed"] = bool(decompose and SHAPELY_AVAILABLE)
     # Compass bearing the passes actually run along, so the UI can report what
     # the automatic search picked (and seed the manual control from it).
     info["line_bearing_deg"] = (90.0 - math.degrees(sweep_ang)) % 180.0
@@ -3714,6 +3904,16 @@ if page == 'Creator':
             map_runout = st.slider("Edge Run-out (photo intervals)", 0.0, 3.0, value=1.0, step=0.25,
                                    key="map_runout", help=param_help("Edge Run-out (photo intervals)"))
 
+            # Experimental coverage strategy, off by default. It only ever
+            # changes the path on an area whose strips are split into separate
+            # pieces (a U, a ring, an H); on anything else it produces exactly
+            # the same flight plan, so it is safe to leave on.
+            map_decompose = st.checkbox(
+                "Split passes at gaps (beta)", value=False, key="map_decompose",
+                disabled=not SHAPELY_AVAILABLE,
+                help=(param_help("Split passes at gaps (beta)") if SHAPELY_AVAILABLE
+                      else "Needs the shapely package - run: pip install -r requirements.txt"))
+
             map_geom = mapping_camera_geometry(
                 map_alt, map_pitch_val,
                 safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0), side
@@ -3904,7 +4104,7 @@ if page == 'Creator':
         view_center, view_zoom = (st.session_state.get("creator_view")
                                   or [st.session_state.locked_creator_center, 17])
         m = folium.Map(location=view_center, zoom_start=view_zoom, tiles=None)
-        folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m)
+        add_basemap(m)
 
         if c_elev_source == "Local GeoTIFF" and c_tif_path and c_show_bounds:
             bounds = get_tif_bounds_wgs84(c_tif_path)
@@ -3943,7 +4143,7 @@ if page == 'Creator':
                         st.session_state.map_boundary,
                         safe_get_float('map_alt_ft', 100.0), safe_get_float('map_pitch', -90.0),
                         safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0),
-                        side, map_runout, map_bearing
+                        side, map_runout, map_bearing, map_decompose
                     )
                     folium.Polygon(
                         locations=st.session_state.map_boundary, color="#00ffff", weight=3,
@@ -4024,7 +4224,7 @@ if page == 'Creator':
 
             path_coords, map_info = generate_mapping_flight_path(
                 boundary, map_alt, map_pitch_val, map_front_ol, map_side_ol,
-                side, map_runout, map_bearing
+                side, map_runout, map_bearing, map_decompose
             )
 
             if path_coords:
@@ -4051,9 +4251,13 @@ if page == 'Creator':
                     # Show the bearing actually flown either way - on automatic
                     # it is the only place the chosen direction is visible, and
                     # it gives a starting value for the manual slider.
+                    # When decomposition actually split something, say so - on a
+                    # shape with no gaps it is a no-op and shouldn't claim credit.
+                    pass_note = f"{map_info['line_bearing_deg']:.0f}° lines"
+                    if map_info.get("decomposed") and map_info.get("num_cells", 1) > 1:
+                        pass_note += f" · {map_info['num_cells']} regions"
                     c3.metric("Passes", f"{map_info['num_passes']}",
-                              delta=f"{map_info['line_bearing_deg']:.0f}° lines",
-                              delta_color="off")
+                              delta=pass_note, delta_color="off")
                     with c4:
                         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
                         save_clicked = st.button("Save & Generate KMZ", width='stretch', disabled=save_disabled)
@@ -4409,7 +4613,7 @@ elif page == 'Editor':
         with map_layer:
             # Constant view arguments - see the note on the Creator map.
             m_edit = folium.Map(location=st.session_state.locked_editor_center, zoom_start=18, tiles=None)
-            folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_edit)
+            add_basemap(m_edit)
         
             if e_elev_source == "Local GeoTIFF" and e_tif_path and e_show_bounds:
                 bounds = get_tif_bounds_wgs84(e_tif_path)
@@ -4789,7 +4993,7 @@ elif page == 'Viewer  |':
 
                             # Constant view arguments - see the note on the Creator map.
                             m_view = folium.Map(location=st.session_state.locked_viewer_center, zoom_start=19, tiles=None)
-                            folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', max_zoom=22, max_native_zoom=20).add_to(m_view)
+                            add_basemap(m_view)
                         
                             if show_faa_airspace:
                                 uasfm_data = fetch_uasfm_data(st.session_state.locked_viewer_center[0], st.session_state.locked_viewer_center[1])
