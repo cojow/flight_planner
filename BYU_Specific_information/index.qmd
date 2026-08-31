@@ -9,6 +9,7 @@ format:
 ---
 
 - [**Flight Standards**](flight_standards.html) — Licensure, planning, and naming conventions for BYU drone flights.
+- [**Flight Log Tracker**](flight_tracker.html) — How to use the standalone flight-log tracking app.
 - [**How To Get Your Part 107 Certificate**](part_107.html) — Steps for obtaining a Part 107 remote pilot certificate.
 - [**Ecuador Drone (UAS) Laws — Notes**](Flying_in_Ecuador/ecuador_drone_laws.html) — Compiled notes on import tax, general operating rules, insurance, and flight considerations.
 - [**Traveling with Drones**](Flying_in_Ecuador/flying_with_drones.html) — Compiled notes on rules and regulations for transporting drones.

@@ -10,6 +10,8 @@ launch.json
 *__pycache__
 *diagnostic_tests
 *.venv
+README_files
+README.html
 
 #Ignore generated missions
 missions/

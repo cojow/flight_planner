@@ -6,8 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
+<meta name="author" content="Connor Williams">
 
-<title>BYU Specific Information</title>
+<title>Flight Log Tracker</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -18,6 +19,41 @@ ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
 width: 0.8em;
 margin: 0 0.8em 0.2em -1em;  vertical-align: middle;
+}
+
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+}
+pre.numberSource { margin-left: 3em; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
 </style>
 
@@ -2164,24 +2200,53 @@ vertical-align: -.125em;
 
 </head>
 
-<body class="fullcontent quarto-light">
+<body class="quarto-light">
 
 <div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
-
+<div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+  <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul class="collapse">
+  <li><a href="#what-this-is" id="toc-what-this-is" class="nav-link active" data-scroll-target="#what-this-is"><span class="header-section-number">1</span> What This Is</a></li>
+  <li><a href="#one-time-setup-for-box" id="toc-one-time-setup-for-box" class="nav-link" data-scroll-target="#one-time-setup-for-box"><span class="header-section-number">2</span> One-Time Setup (For Box)</a></li>
+  <li><a href="#running-the-tracker" id="toc-running-the-tracker" class="nav-link" data-scroll-target="#running-the-tracker"><span class="header-section-number">3</span> Running the Tracker</a></li>
+  <li><a href="#the-interface" id="toc-the-interface" class="nav-link" data-scroll-target="#the-interface"><span class="header-section-number">4</span> The Interface</a></li>
+  <li><a href="#first-time-configuration" id="toc-first-time-configuration" class="nav-link" data-scroll-target="#first-time-configuration"><span class="header-section-number">5</span> First-Time Configuration</a></li>
+  <li><a href="#uploading-a-completed-flight" id="toc-uploading-a-completed-flight" class="nav-link" data-scroll-target="#uploading-a-completed-flight"><span class="header-section-number">6</span> Uploading a Completed Flight</a></li>
+  <li><a href="#reading-the-map" id="toc-reading-the-map" class="nav-link" data-scroll-target="#reading-the-map"><span class="header-section-number">7</span> Reading the Map</a></li>
+  <li><a href="#the-flight-list" id="toc-the-flight-list" class="nav-link" data-scroll-target="#the-flight-list"><span class="header-section-number">8</span> The Flight List</a></li>
+  <li><a href="#a-note-on-height-pitch-overlap" id="toc-a-note-on-height-pitch-overlap" class="nav-link" data-scroll-target="#a-note-on-height-pitch-overlap"><span class="header-section-number">9</span> A Note on Height / Pitch / Overlap</a></li>
+  <li><a href="#troubleshooting" id="toc-troubleshooting" class="nav-link" data-scroll-target="#troubleshooting"><span class="header-section-number">10</span> Troubleshooting</a></li>
+  </ul>
+<div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="flight_tracker.pdf"><i class="bi bi-file-pdf"></i>PDF</a></li></ul></div></nav>
+</div>
 <main class="content" id="quarto-document-content">
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">BYU Specific Information</h1>
-<p class="subtitle lead">Reference docs for BYU drone research flights. Can be ignored by people not working with Dr. Macfarlane.</p>
+<h1 class="title">Flight Log Tracker</h1>
+<p class="subtitle lead">How to use the standalone flight-log tracking app</p>
 </div>
 
 
 
 <div class="quarto-title-meta">
 
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Connor Williams </p>
+          </div>
+  </div>
     
   
+    <div>
+    <div class="quarto-title-meta-heading">Last Updated</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date-modified">August 24, 2026</p>
+    </div>
+  </div>
     
   </div>
   
@@ -2190,15 +2255,90 @@ vertical-align: -.125em;
 </header>
 
 
+<section id="what-this-is" class="level2" data-number="1">
+<h2 data-number="1" class="anchored" data-anchor-id="what-this-is"><span class="header-section-number">1</span> What This Is</h2>
+<p>A simple app separate from the main Flight Planner. It reads every <code>.kmz</code> flight file in a folder and plots them all on a single map. When connected to a shared folder (from Box, Google Drive, etc.), every user can see the combined history of flights that have actually been flown. It does <strong>not</strong> edit or create missions — it’s read-only (other than saving files you upload into the folder).</p>
+</section>
+<section id="one-time-setup-for-box" class="level2" data-number="2">
+<h2 data-number="2" class="anchored" data-anchor-id="one-time-setup-for-box"><span class="header-section-number">2</span> One-Time Setup (For Box)</h2>
+<ol type="1">
+<li>Install <a href="https://box.com/drive">Box Drive</a> if you don’t already have it, and sign in with your Box account.</li>
+<li>Get added as a collaborator on the shared folder or create your own.</li>
+<li>Once shared, that folder will show up as a normal folder on your computer through Box Drive — usually somewhere like:
 <ul>
-<li><a href="flight_standards.html"><strong>Flight Standards</strong></a> — Licensure, planning, and naming conventions for BYU drone flights.</li>
-<li><a href="flight_tracker.html"><strong>Flight Log Tracker</strong></a> — How to use the standalone flight-log tracking app.</li>
-<li><a href="part_107.html"><strong>How To Get Your Part 107 Certificate</strong></a> — Steps for obtaining a Part 107 remote pilot certificate.</li>
-<li><a href="Flying_in_Ecuador/ecuador_drone_laws.html"><strong>Ecuador Drone (UAS) Laws — Notes</strong></a> — Compiled notes on import tax, general operating rules, insurance, and flight considerations.</li>
-<li><a href="Flying_in_Ecuador/flying_with_drones.html"><strong>Traveling with Drones</strong></a> — Compiled notes on rules and regulations for transporting drones.</li>
-<li><a href="Flying_in_Ecuador/Ecuador_UAS_Research_Guide.pdf"><strong>Flying UAS/Drones in Ecuador for Academic Research</strong></a> (PDF) — A translated, cited guide to RDAC 101 and related Ecuadorian law, for a foreign graduate researcher.</li>
-<li><a href="https://cojow.github.io/point_cloud_maker/"><strong>Point Cloud Maker</strong></a> - Companion repository. For extracting buildings from drone images</li>
+<li>Mac: <code>/Users/&lt;you&gt;/Library/CloudStorage/Box-Box/Flight Logs</code></li>
+<li>Windows: <code>C:\Users\&lt;you&gt;\Box\Flight Logs</code></li>
 </ul>
+The exact path depends on how Box Drive is set up on your machine — just find the folder in Finder/Explorer and note its full path.</li>
+<li><strong>Important:</strong> Box Drive can “stream” files instead of keeping them fully downloaded, which can make the tracker slow to read a folder the first time. Right-click the shared folder in Box Drive and choose “Available Offline” (or the equivalent) so its contents are always kept synced locally. This isn’t required, but it makes things noticeably snappier.</li>
+</ol>
+</section>
+<section id="running-the-tracker" class="level2" data-number="3">
+<h2 data-number="3" class="anchored" data-anchor-id="running-the-tracker"><span class="header-section-number">3</span> Running the Tracker</h2>
+<p>From the flight_planner project folder, with the same Python environment used for the main app, run:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">streamlit</span> run flight_tracker.py</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This opens a new browser tab, separate from the main Flight Planner app. Both apps can run at the same time (they’ll just need different ports if you launch them together — Streamlit will offer you one automatically).</p>
+</section>
+<section id="the-interface" class="level2" data-number="4">
+<h2 data-number="4" class="anchored" data-anchor-id="the-interface"><span class="header-section-number">4</span> The Interface</h2>
+<ul>
+<li><strong>The map</strong>: All flight plans within the folder are visible and displayed on the map. Hover over the line to see information.</li>
+<li><strong>Top-right</strong>: the ⚙️ Settings button opens a small panel with the shared folder path, a Browse button, and the file uploader. Below it is a “Show FAA restrictions” checkbox.</li>
+<li><strong>Bottom-right</strong>: the flight count and a “📋 Flight List” button. This lists the flight date, name, type (Fly or Pilot), height, pitch, overlap, and photo count.</li>
+</ul>
+</section>
+<section id="first-time-configuration" class="level2" data-number="5">
+<h2 data-number="5" class="anchored" data-anchor-id="first-time-configuration"><span class="header-section-number">5</span> First-Time Configuration</h2>
+<p>The first time you run it, open the ⚙️ Settings panel (top-right) and point it at your shared folder:</p>
+<ul>
+<li>Paste the full path to your local Box-synced “Flight Logs” folder into the “Shared flight folder” box, OR</li>
+<li>Click “Browse” to pick it visually.</li>
+</ul>
+<p>The tracker remembers this choice (saved in a small local file called <code>.tracker_config.json</code>) so you won’t need to set it again next time you run it on this machine. Each person sets this once, pointing at their own Box Drive’s copy of the same shared folder.</p>
+<p>The path may be updated as needed.</p>
+</section>
+<section id="uploading-a-completed-flight" class="level2" data-number="6">
+<h2 data-number="6" class="anchored" data-anchor-id="uploading-a-completed-flight"><span class="header-section-number">6</span> Uploading a Completed Flight</h2>
+<p>Open ⚙️ Settings and drag your <code>.kmz</code> file(s) onto the “Upload completed flight(s)” box (or click it to browse), then let Box Drive sync in the background. Anyone else pointed at the same shared folder will see it appear next time they load or refresh the tracker.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>If you upload a file with the exact same name as one that’s already there, it’s saved alongside it with a timestamp added to the name rather than overwriting the existing one — so you’ll never accidentally lose someone else’s upload.</p>
+</div>
+</div>
+</section>
+<section id="reading-the-map" class="level2" data-number="7">
+<h2 data-number="7" class="anchored" data-anchor-id="reading-the-map"><span class="header-section-number">7</span> Reading the Map</h2>
+<p>Each flight shows up as one colored line tracing its path, with small wedges spaced periodically along it showing roughly which way the camera was facing at that point. Hover your mouse over a line to see that flight’s details:</p>
+<ul>
+<li>Name and platform (Fly or Pilot)</li>
+<li>Date flown</li>
+<li>Number of photos</li>
+<li>Height, gimbal pitch, and overlap</li>
+</ul>
+<p>Check “Show FAA restrictions” (top-right) to overlay the same FAA UAS Facility Map (LAANC ceiling) grid the main app’s Creator/Editor/Viewer show — green means no restriction, red means a 0 ft LAANC ceiling.</p>
+</section>
+<section id="the-flight-list" class="level2" data-number="8">
+<h2 data-number="8" class="anchored" data-anchor-id="the-flight-list"><span class="header-section-number">8</span> The Flight List</h2>
+<p>Click “📋 Flight List” (bottom-right) to slide up a panel covering the bottom half of the map, with a sortable table of every flight. Use the search box at the top of that panel to filter by typing part of a flight’s name or its date (e.g. “Testy” or “2026-07”) — either one works in the same box. Press Enter to apply the search. Click the ✕ to close the panel.</p>
+</section>
+<section id="a-note-on-height-pitch-overlap" class="level2" data-number="9">
+<h2 data-number="9" class="anchored" data-anchor-id="a-note-on-height-pitch-overlap"><span class="header-section-number">9</span> A Note on Height / Pitch / Overlap</h2>
+<p>These are read straight from the filename the main app saves missions with (e.g. <code>Mission_Fly_H100A90OL75.kmz</code> = 100 ft, 90 degree pitch, 75% overlap). If a file was renamed to something that doesn’t follow that pattern, the tracker falls back to reading height and pitch directly out of the file — overlap can’t be recovered that way, so it’ll show “n/a” for files renamed outside the app’s convention.</p>
+</section>
+<section id="troubleshooting" class="level2" data-number="10">
+<h2 data-number="10" class="anchored" data-anchor-id="troubleshooting"><span class="header-section-number">10</span> Troubleshooting</h2>
+<p><strong>“No flights found yet”</strong> — double check the folder path is correct and that Box Drive has actually finished syncing the <code>.kmz</code> files down to your machine (see the “Available Offline” tip above).</p>
+<p><strong>A flight is missing from the map / shows under “couldn’t be read”</strong> — the <code>.kmz</code> is either corrupted, empty, or isn’t a mission file the main app generated. The error message next to it in that section explains why.</p>
+<p><strong>Folder path looks wrong after Browse</strong> — the native folder picker returns whatever you selected; if Box Drive shows a slightly different path than you expected, that’s usually just how your OS mounts the Box Drive volume.</p>
+</section>
 
 </main>
 <!-- /main column -->
