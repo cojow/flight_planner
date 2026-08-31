@@ -22,6 +22,10 @@ pip install -r path/to/requirements.txt
 > **Note**: Update path/to/requirements.txt
 > with the relative path to the folder.
 
+> **Note**: On Mac/Linux, the DJI Fly Transfer tab also needs `libmtp` installed as a system library (not a pip package) — `brew install libmtp` on Mac. 
+> Without it, that tab's controller detection silently disables itself with no in-app error. 
+> Windows doesn't need this; `comtypes` (already in requirements.txt) covers it there.
+
 3. Launch the app by running the following in the terminal. 
 The app will open in your web browser using a local host.
 ```
@@ -35,10 +39,9 @@ The mission planner is split into three creation tabs: the *Creator*, the *Edito
 The *Photo Sorter* and *DJI Fly Transfer* are tabs designed specifically for getting around the restrictions and annoyances that come with the more affordable commercial drone that use the  DJI Fly app. These are explained in a later section. 
 
 
-![Creator on app launch](BYU_Specific_information/images/start_overview.png)
-
-
 ### **The Creator**
+
+<img src="BYU_Specific_information/images/creator_overview.png" alt="" width="100%">
 
 #### Selecting a Location
 Once the app is running, the map will be centered at BYU in Provo, Utah. 
@@ -72,7 +75,7 @@ This option allows for very complicated flight plans with hundreds of photos.
 DJI Fly is the stripped-back version used in the commercial series which doesn't easily support flight plans. 
 It is limited to 99 photos per flight plan due to each photo having to be a waypoint. 
 *Know which program your drone takes before planning your flight*
-* **Sensor Mode**: Only applies to Multispectral/enterprise drones. Allows for you to choose between taking RGB, Multispectral, or both kinds of photos per shot. Disabled for DJI Fly flights. 
+* **Sensor Mode**: *Only applies to Multispectral/enterprise drones*. Allows for you to choose between taking RGB, Multispectral, or both kinds of photos per shot. Disabled for DJI Fly flights. 
 
 </td>
 <td width="40%">
@@ -145,6 +148,8 @@ Only applies to DJI Pilot 2 missions, and is greyed out on DJI Fly: a DJI Fly mi
 * **Forward Overlap (%)**: How much of one picture will be in the next one. 
 This and the interval are connected and will change dynamically based on each other. 
 This is also affected by the altitude, but doesn't edit it.
+* **Flight Speed (mph)**: Includes auto-calculation for time-based intervals and visual warnings if the speed exceeds the sensor's minimum photo interval. 
+4 mph is recommended when following the drone.
 * **Set flight line direction**: *Mapping missions only*. 
 Off by default, which lets the app pick the direction that needs the fewest flight lines. 
 Turn it on when you want the lines pointed a particular way - along crop rows, into the wind, or parallel to a runway or field edge. 
@@ -157,9 +162,12 @@ How far each flight line continues past the edge of your drawn area, measured in
 The area is fully covered even at 0, because each photo already images half a footprint beyond the aircraft. 
 The default of 1 adds one spare frame past each edge, which helps stitching at the borders. 
 Raise it if your edges are coming out weak; drop it to 0 to save photos when you are near the DJI Fly 99-photo limit. The resulting distance in feet is shown in the coverage summary.
-* **Split passes at gaps (beta)**: Mapping missions only. Changes how the flight lines are built. Normally each line runs the full width of the area at that point, so on a shape with a hole or a deep notch - a U, a ring, an H - the aircraft flies straight across the gap. With this on, each line is cut into only the pieces that are actually inside your shape, and those pieces are flown as separate passes. On a deep U this cuts about 20% of the photos. On shapes without a gap it changes nothing at all, so it is safe to leave on. It does trade some extra turning for the saved photos, so on a few shapes the total flight distance goes up slightly even as the photo count drops.
-* **Flight Speed (mph)**: Includes auto-calculation for time-based intervals and visual warnings if the speed exceeds the sensor's minimum photo interval. 
-4 mph is recommended when following the drone.
+* **Split passes at gaps (beta)**: *Mapping missions only*. Changes how the flight lines are built. Normally each line runs the full width of the area at that point, so on a shape with a hole or a deep notch - a U, a ring, an H - the aircraft flies straight across the gap.
+With this on, each line is cut into only the pieces that are actually inside your shape, and those pieces are flown as separate passes. 
+On a deep U this cuts about 20% of the photos. On shapes without a gap it changes nothing at all, so it is safe to leave on. 
+It does trade some extra turning for the saved photos, so on a few shapes the total flight distance goes up slightly even as the photo count drops.
+
+
 
 </td>
 <td width="40%">
@@ -188,6 +196,8 @@ Save the flight plan by pressing the "save and generate KMZ" button, also found 
 
 ### **The Viewer**
 
+<img src="BYU_Specific_information/images/viewer_overview.png" alt="" width="100%">
+
 This tab allows the user to view previously made flight plans. 
 Features include:
 
@@ -201,7 +211,11 @@ This may be turned on or off with a toggle to the left.
 FAA restrictions may also be turned on or off with a toggle to the left.
 
 
-### **The Editor**  
+### **The Editor** 
+
+<img src="BYU_Specific_information/images/editor_overview.png" alt="" width="100%">
+
+**DJI_FLY missions are finicky in Editor at the moment**
 
 This tab will allow you to edit previously made flight plans. 
 Many of the same parameters in the creator may be edited here, with exceptions noted below. 
@@ -213,9 +227,7 @@ You can not click and drag the waypoints
 * **Mission Name**: The name of the flight may be edited from the sidebar, just like the other parameters. 
 The suffix for the mission will be reapplied to reflect any changes made to the height, pitch, and overlap. 
 
-
-
-## Using a Enterprise Series Drone (DJI Pilot 2 app)
+## Uploading Missions to a Enterprise Series Drone (DJI Pilot 2)
 *(This app comes with the enterprise-tier controllers, such as RC Plus and the RC Pro Smart, and only works with Enterprise series drones)*
 
 This is a relatively simple process. 
@@ -224,20 +236,33 @@ Second, plug this SD card into your controller, navigate to your flight plans, a
 From here navigate through your SD card storage to your flight plans, select all the ones you want, and upload them. 
 They are now ready to be used to fly the drone.
 
-## Using a Commercial Series Drone (DJI Fly)
-*(This method is currently tested for DJI RC 2 controllers. The phone app is not yet tested.)*
+## Uploading Missions to a Commercial Series Drone (DJI Fly)
+*(This method is currently tested for DJI RC 2 controllers. The phone app is not yet tested, nor a RC controller.)*
 
-As mentioned before, DJI makes it very difficult to upload pre-made flight plans into their commercial drones by heavily locking down their controllers and removing a native import button. They also dump all mission images into one general folder, making it difficult to distinguish between different flight plans. These issues are circumvented by the *Photo Sorter* and *DJI Fly Transfer* tabs. 
+As mentioned before, DJI makes it very difficult to upload pre-made flight plans into their commercial drones by heavily locking down their controllers and removing a native import button. 
+They also dump all mission images into one general folder, making it difficult to distinguish between different flight plans. 
+These issues are circumvented by the *Photo Sorter* and *DJI Fly Transfer* tabs. 
 
 
 ### **Photo Sorter**
-This tab allows you to automatically group mission photos into folders based on the times that they were taken. It uses the following inputs:
+
+<img src="BYU_Specific_information/images/photo_sorter_overview.png" alt="" width="100%">
+
+This tab allows you to automatically group mission photos into folders based on the times that they were taken. 
+It uses the following inputs:'
+
 * **Source Directory**: The location where the drone's image folder is located. 
-* **Output Directory**: Where you want the separated mission folders to be saved. The folders are saved with the date and time of the first image in the folder. 
-* **Target Date**: What date the sorter will look for when grouping missions. Only photos taken on this date will be sorted. 
+* **Output Directory**: Where you want the separated mission folders to be saved. 
+The folders are saved with the date and time of the first image in the folder. 
+* **Target Date**: What date the sorter will look for when grouping missions. 
+Only photos taken on this date will be sorted. 
 * **Time Gap (minutes)**: How long there needs to be between photos for them to be considered as part of different groups/missions. Accepts fractions of a minute - e.g. 0.5 for a 30 second gap. 
 
+
 ### **DJI Fly Transfer**
+
+<img src="BYU_Specific_information/images/DJI_fly_transfer_overview.png" alt="" width="100%">
+
 This tab allows you to transfer DJI Fly missions to a RC 2 controller directly from your computer. 
 It is split into the following sections:
 
@@ -283,10 +308,6 @@ To update them, in the mission history page, click on a mission to have it load,
 This will update the thumbnail. 
 
 It is recommended to save and update the thumbnails immediately after transferring the missions. To help keep this straight, at the bottom of the DJI FLY Transfer tab, a checklist is generated showing the old mission thumbnail and the new mission name (along with the long string name). 
-
-## Map Data
-The satellite imagery, place labels, and thumbnail street maps come from [Esri ArcGIS Online](https://www.arcgis.com/), which is free to use with attribution (shown in the corner of every map).
-Imagery is served natively up to zoom 19; zooming closer than that upscales the z19 tiles rather than loading sharper ones, so the map goes soft rather than blank.
 
 ## Acknowledgements
 - Luigi Pirelli for providing the photo footprint code base. 

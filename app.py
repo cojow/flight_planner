@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import os
 import json
@@ -8,6 +7,8 @@ import urllib.parse
 import math
 import zipfile
 import xml.etree.ElementTree as ET
+import base64
+import mimetypes
 from datetime import datetime, timedelta
 import re
 from geopy.geocoders import Nominatim
@@ -281,7 +282,21 @@ try:
             finally:
                 _libc.free(ctypes.cast(raw_device_list, ctypes.c_void_p))
             if not self.device:
-                raise MTPBridgeError("Failed to open MTP device session.")
+                # The raw-device enumeration above succeeded (the OS sees the
+                # controller on the bus), but libmtp couldn't actually claim
+                # it - almost always because another app already has it
+                # open. On Mac, Image Capture/Preview/Photos auto-launch and
+                # grab any newly connected camera/MTP device before you get
+                # a chance to; on Linux, gvfs/gphoto2 auto-mounting the
+                # device does the same thing. This is the single most common
+                # failure users hit, so name it here rather than in the
+                # generic "device not detected" message above.
+                raise MTPBridgeError(
+                    "Detected the controller, but couldn't open a session with it - it's likely "
+                    "already claimed by another app. On Mac, check for Preview, Photos, or Image "
+                    "Capture (they auto-launch when a camera/MTP device connects) and quit "
+                    "whichever opened, then Scan again without unplugging the controller."
+                )
             return self
 
         def __exit__(self, exc_type, exc_val, exc_tb):
@@ -3528,7 +3543,7 @@ footer {{ display: none !important; }}
 .st-key-page_body h2, .st-key-page_body h3 {{ font-size: 1.15rem !important; }}
 
 /* The script-only embed just below the stylesheet runs the search bar's
-   outside-click listener and renders nothing. components.html(height=0)
+   outside-click listener and renders nothing. st.iframe(height=1)
    already collapses it, but the container still leaves a hairline margin/
    padding gap in some browsers, so this belt-and-suspenders rule zeroes
    that out too. Collapsed via height/overflow rather than display:none so
@@ -3547,20 +3562,18 @@ footer {{ display: none !important; }}
 # exact limitation. Guarded so the (page-persistent) listener is only ever
 # bound once, no matter how many times Streamlit reruns the script.
 #
-# components.html (not st.html/st.markdown) is what this needs: given an HTML
+# st.iframe (not st.html/st.markdown) is what this needs: given an HTML
 # string it embeds it as-is in an iframe that permits JavaScript and
 # same-origin access to the app, whereas st.html sanitises the markup through
 # DOMPurify and would strip the script outright. The markup here is a fixed
 # literal, never user input, so that untrusted-content caveat doesn't apply.
-# (st.iframe loads a URL, not an HTML string, and isn't the right tool here -
-# and st 1.55, what this app targets, doesn't even have it.)
 #
 # This embed is script-only and renders nothing, so it must take up no space:
-# height=0 collapses it, backed up by the CSS rule on
-# .st-key-search_autoclose_script above for the rare browser that still
-# leaves a hairline gap.
+# height=1 (the smallest st.iframe allows - 0 raises) collapses it via the
+# CSS rule on .st-key-search_autoclose_script above, which forces the
+# container itself to zero height regardless of what the iframe requests.
 with st.container(key="search_autoclose_script"):
-    components.html("""
+    st.iframe("""
 <script>
 (function() {
     const doc = window.parent.document;
@@ -3596,7 +3609,7 @@ with st.container(key="search_autoclose_script"):
     });
 })();
 </script>
-""", height=0)
+""", height=1)
 
 HEADING_RE = re.compile(r'^(#{1,6})[ \t]+(.+?)[ \t]*$', re.MULTILINE)
 
@@ -3609,6 +3622,45 @@ def _github_slug(heading_text):
     text = re.sub(r'[*_`]', '', heading_text).strip().lower()
     text = re.sub(r'[^\w\s-]', '', text)
     return re.sub(r'\s+', '-', text)
+
+
+MD_IMAGE_RE = re.compile(r'!\[([^\]]*)\]\(([^)\s]+)\)')
+HTML_IMG_SRC_RE = re.compile(r'(<img\b[^>]*\bsrc\s*=\s*")([^"]+)(")', re.IGNORECASE)
+
+
+def _inline_local_images(text, base_dir):
+    """
+    GitHub serves README.md's images by fetching the real file at its
+    relative path, so `BYU_Specific_information/images/foo.png` just works
+    there. Streamlit's dev server has no route for that path though - it
+    falls back to serving the app's own index.html for anything unmatched
+    (with a 200, not a 404), so the browser tries to decode that HTML as an
+    image and shows a broken icon instead. Swap local image paths for base64
+    data URIs here so the in-app README dialog is self-contained, while
+    leaving the README file itself untouched for GitHub to render normally.
+    """
+    def _data_uri(path):
+        if path.startswith(("http://", "https://", "data:")):
+            return None
+        full_path = os.path.join(base_dir, path)
+        if not os.path.isfile(full_path):
+            return None
+        mime_type = mimetypes.guess_type(full_path)[0] or "application/octet-stream"
+        with open(full_path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("ascii")
+        return f"data:{mime_type};base64,{encoded}"
+
+    def _replace_md(m):
+        data_uri = _data_uri(m.group(2))
+        return f'![{m.group(1)}]({data_uri})' if data_uri else m.group(0)
+
+    def _replace_html(m):
+        data_uri = _data_uri(m.group(2))
+        return f'{m.group(1)}{data_uri}{m.group(3)}' if data_uri else m.group(0)
+
+    text = MD_IMAGE_RE.sub(_replace_md, text)
+    text = HTML_IMG_SRC_RE.sub(_replace_html, text)
+    return text
 
 
 # ==========================================
@@ -3687,6 +3739,8 @@ def _readme_dialog():
     except Exception as e:
         st.error(f"Could not read README.md: {e}")
         return
+
+    text = _inline_local_images(text, os.path.dirname(README_PATH))
 
     # st.markdown only auto-generates heading-anchor ids for standalone
     # st.markdown/st.header calls, not for headings embedded in one big
