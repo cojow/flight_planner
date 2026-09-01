@@ -12,10 +12,8 @@ format:
     number-sections: true
     theme: cosmo
     embed-resources: true
-  pdf:
-    toc: true
-    number-sections: true
 ---
+[To research pages](https://cojow.github.io/flight_planner/BYU_Specific_information/)
 
 ## What This Is
 
@@ -23,7 +21,7 @@ A simple app separate from the main Flight Planner. It reads every `.kmz` flight
 
 ## One-Time Setup (For Box)
 
-1. Install [Box Drive](https://box.com/drive) if you don't already have it, and sign in with your Box account.
+1. Install [Box Drive](https://box.com/drive) if you don't already have it, and sign in with your Box account. (Make sure your Box account is set up with your BYU email, not a personal one.)
 2. Get added as a collaborator on the shared folder or create your own.
 3. Once shared, that folder will show up as a normal folder on your computer through Box Drive — usually somewhere like:
     - Mac: `/Users/<you>/Library/CloudStorage/Box-Box/Flight Logs`

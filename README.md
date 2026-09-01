@@ -1,7 +1,7 @@
 # Flight_planner
 An open-source flight planning software for DJI drones. 
 Plans can be made for both DJI Pilot 2 (Enterprise) and DJI Fly (Commercial) apps.
-Works on both Windows and Mac OS.
+Works on both Windows and Mac OS. [Link to github.](https://github.com/cojow/flight_planner)
 
 ## Tabs
 The app is split into 5 tabs. Click a tab to jump to its section below.
@@ -10,6 +10,8 @@ The app is split into 5 tabs. Click a tab to jump to its section below.
 * [Viewer](#the-viewer)
 * [Photo Sorter](#photo-sorter)
 * [DJI Fly Transfer](#dji-fly-transfer)
+
+Link to the related BYU [research pages](https://cojow.github.io/flight_planner/BYU_Specific_information/).
 
 ## Running the Planner Steps
 1. Download this repository.
@@ -257,7 +259,9 @@ The folders are saved with the date and time of the first image in the folder.
 * **Target Date**: What date the sorter will look for when grouping missions. 
 Only photos taken on this date will be sorted. 
 * **Time Gap (minutes)**: How long there needs to be between photos for them to be considered as part of different groups/missions. Accepts fractions of a minute - e.g. 0.5 for a 30 second gap. 
-
+* **Naming groups**: This checkbox allows you to give a name each photo group found before seperating into independent folders. 
+Shows the first photo in each group.
+Useful if you know the order of your flights. 
 
 ### **DJI Fly Transfer**
 

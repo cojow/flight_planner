@@ -1703,35 +1703,50 @@ def get_exif_datetime(filepath):
         pass
     return None
 
-def st_group_images_by_time(source_folder, output_folder, target_date, gap_minutes=5):
-    """Streamlit-adapted function to filter and group images by time gaps."""
+def default_group_folder_name(index, group):
+    """The auto-generated folder name for one group - shared by the fully
+    automatic sort and as the pre-filled default when naming groups by hand,
+    so a name left untouched in the review UI produces the identical folder
+    name the automatic path would have used."""
+    group_start_datetime = group[0]['time'].strftime("%Y-%m-%d_%H-%M-%S")
+    return f"Group_{index + 1}_{group_start_datetime}"
+
+
+def find_photo_groups(source_folder, target_date, gap_minutes=5):
+    """
+    Scans source_folder for images taken on target_date and splits them into
+    groups wherever the gap between two sequential photos exceeds
+    gap_minutes. Read-only - nothing is copied or created on disk here, so
+    this can run on its own as a preview step before the user decides how
+    (or whether) to name each group.
+    """
     valid_extensions = {'.jpg', '.jpeg', '.png', '.tif', '.tiff'}
-    os.makedirs(output_folder, exist_ok=True)
-    
+
     image_data = []
     try:
         files = os.listdir(source_folder)
     except Exception as e:
         st.error(f"Error accessing source directory: {e}")
-        return
+        return []
 
     progress_bar = st.progress(0, text="Scanning files for EXIF data...")
-    
+
     for i, filename in enumerate(files):
         ext = os.path.splitext(filename)[1].lower()
         if ext in valid_extensions:
             filepath = os.path.join(source_folder, filename)
             taken_time = get_exif_datetime(filepath)
-            
+
             if taken_time and taken_time.date() == target_date:
                 image_data.append({'path': filepath, 'name': filename, 'time': taken_time})
-        
+
         progress_bar.progress((i + 1) / len(files), text=f"Scanning files... ({i+1}/{len(files)})")
-                
+
+    progress_bar.empty()
+
     if not image_data:
-        progress_bar.empty()
         st.warning(f"No images found for {target_date.strftime('%Y-%m-%d')} in the source folder.")
-        return
+        return []
 
     image_data.sort(key=lambda x: x['time'])
 
@@ -1746,30 +1761,40 @@ def st_group_images_by_time(source_folder, output_folder, target_date, gap_minut
         else:
             groups.append(current_group)
             current_group = [image_data[i]]
-            
+
     if current_group:
         groups.append(current_group)
 
-    progress_bar.empty()
     st.info(f"Found {len(groups)} distinct flight groups.")
-    
+    return groups
+
+
+def copy_photo_groups(groups, output_folder, group_names=None):
+    """
+    Copies each group's photos into its own folder under output_folder.
+    group_names, if given, supplies one folder name per group (already
+    sanitized/deduped by the caller) - any entry that's falsy falls back to
+    that group's default auto-generated name, same as the fully automatic
+    path uses for all of them.
+    """
+    os.makedirs(output_folder, exist_ok=True)
+
     copy_progress = st.progress(0, text="Copying images to group folders...")
     total_images = sum(len(g) for g in groups)
     copied = 0
-    
+
     for i, group in enumerate(groups):
-        group_start_datetime = group[0]['time'].strftime("%Y-%m-%d_%H-%M-%S")
-        folder_name = f"Group_{i+1}_{group_start_datetime}"
+        folder_name = (group_names[i] if group_names else None) or default_group_folder_name(i, group)
         folder_path = os.path.join(output_folder, folder_name)
-        
+
         os.makedirs(folder_path, exist_ok=True)
-        
+
         for img in group:
             target_path = os.path.join(folder_path, img['name'])
-            shutil.copy2(img['path'], target_path) 
+            shutil.copy2(img['path'], target_path)
             copied += 1
             copy_progress.progress(copied / total_images, text=f"Copying images... ({copied}/{total_images})")
-            
+
     copy_progress.empty()
     st.success(f"Successfully sorted {total_images} images into {len(groups)} folders at '{output_folder}'.")
 
@@ -3754,6 +3779,38 @@ def _readme_dialog():
 
     st.markdown(text, unsafe_allow_html=True)
 
+    # The #anchor links in the Tabs section (and anywhere else in the
+    # README) rely on the browser's native fragment-navigation scrolling the
+    # nearest scrollable ancestor into view - but the README's actual
+    # scroll container is a nested `.stDialog` div, not the page itself,
+    # and Safari/WebKit has never reliably supported scrolling a *nested*
+    # overflow container this way (Chromium/Firefox do). The link updates
+    # the URL hash but the dialog just doesn't move. Bypassing native
+    # fragment nav entirely and driving the scroll manually with
+    # Element.scrollIntoView() - a much older, universally-supported API -
+    # sidesteps that inconsistency instead of depending on it.
+    st.iframe("""
+<script>
+(function() {
+    const doc = window.parent.document;
+    if (doc.__readmeAnchorScrollBound) return;
+    doc.__readmeAnchorScrollBound = true;
+
+    doc.addEventListener('click', function(e) {
+        const link = e.target.closest('a[href^="#"]');
+        if (!link) return;
+        const dialog = link.closest('.stDialog');
+        if (!dialog) return;  // only intercept links inside the README dialog
+        const id = link.getAttribute('href').slice(1);
+        const target = doc.getElementById(id);
+        if (!target) return;
+        e.preventDefault();
+        target.scrollIntoView({block: 'start'});
+    }, true);
+})();
+</script>
+""", height=1)
+
 
 with st.container(key="app_header"):
     header_title_col, header_tabs_col, header_readme_col = st.columns([1, 4, 0.6], gap="medium")
@@ -5269,6 +5326,8 @@ elif page == 'Photo Sorter':
             st.session_state.sorter_source = os.path.expanduser("~")
         if "sorter_output" not in st.session_state:
             st.session_state.sorter_output = os.path.join(os.path.expanduser("~"), "Output")
+        if "sorter_groups" not in st.session_state:
+            st.session_state.sorter_groups = []
 
         def pick_source_folder():
             folder_path = pick_folder_dialog("Select Source Directory")
@@ -5310,19 +5369,81 @@ elif page == 'Photo Sorter':
             )
         
         st.write("---")
-        submit_btn = st.button("🚀 Sort Photos", width='stretch')
-    
-        if submit_btn:
+        st.checkbox(
+            "Name each group myself before sorting",
+            key="sorter_manual_naming",
+            help="After the groups are found, review each one's first photo and give it a custom "
+                 "folder name before anything gets copied - instead of the automatic Group_1, "
+                 "Group_2... names.",
+        )
+        manual_naming = st.session_state.sorter_manual_naming
+
+        find_btn = st.button("🔍 Find Groups" if manual_naming else "🚀 Sort Photos", width='stretch')
+
+        if find_btn:
             source_dir = st.session_state.sorter_source
             output_dir = st.session_state.sorter_output
-        
+
             if not source_dir or not os.path.exists(source_dir):
                 st.error("The source directory does not exist or is invalid.")
             elif not output_dir:
                 st.error("Please provide an output directory.")
             else:
-                with st.spinner("Processing images..."):
-                    st_group_images_by_time(source_dir, output_dir, target_date, gap_minutes)
+                with st.spinner("Scanning for photo groups..."):
+                    groups = find_photo_groups(source_dir, target_date, gap_minutes)
+                if manual_naming:
+                    # Stashed for the naming review below rather than sorted
+                    # immediately - copying only happens once the user hits
+                    # "Create Folders" there.
+                    st.session_state.sorter_groups = groups
+                elif groups:
+                    with st.spinner("Sorting photos..."):
+                        copy_photo_groups(groups, output_dir)
+
+        if manual_naming and st.session_state.sorter_groups:
+            groups = st.session_state.sorter_groups
+            st.write("---")
+            st.subheader("Name Your Groups")
+            st.caption("Each group's first photo is shown for reference. Leave a name as-is to keep the automatic one.")
+
+            for i, group in enumerate(groups):
+                thumb_col, name_col = st.columns([1, 4])
+                with thumb_col:
+                    try:
+                        thumb = Image.open(group[0]['path'])
+                        thumb.thumbnail((120, 120))
+                        st.image(thumb, width=100)
+                    except Exception:
+                        st.caption("Preview unavailable")
+                with name_col:
+                    st.text_input(
+                        f"Group {i + 1} name ({len(group)} photos)",
+                        value=default_group_folder_name(i, group),
+                        key=f"sorter_group_name_{i}",
+                    )
+
+            if st.button("✅ Create Folders", width='stretch'):
+                raw_names = [st.session_state.get(f"sorter_group_name_{i}", "") for i in range(len(groups))]
+                cleaned_names = [
+                    _WINDOWS_ILLEGAL_FILENAME_CHARS_RE.sub('', n).strip().rstrip('.') or None
+                    for n in raw_names
+                ]
+                final_names = [
+                    cleaned_names[i] or default_group_folder_name(i, groups[i])
+                    for i in range(len(groups))
+                ]
+
+                name_counts = {}
+                for name in final_names:
+                    name_counts[name] = name_counts.get(name, 0) + 1
+                duplicates = sorted({name for name, count in name_counts.items() if count > 1})
+
+                if duplicates:
+                    st.error(f"These group names are used more than once - make each one unique: {', '.join(duplicates)}")
+                else:
+                    with st.spinner("Sorting photos..."):
+                        copy_photo_groups(groups, st.session_state.sorter_output, final_names)
+                    st.session_state.sorter_groups = []
 
     # ==========================================
     # BATCH TRANSFER MODE

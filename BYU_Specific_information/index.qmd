@@ -1,5 +1,5 @@
 ---
-title: "BYU Specific Information"
+title: "BYU Specific Information - Index"
 subtitle: "Reference docs for BYU drone research flights. Can be ignored by people not working with Dr. Macfarlane."
 format:
   html:
@@ -15,3 +15,4 @@ format:
 - [**Traveling with Drones**](Flying_in_Ecuador/flying_with_drones.html) — Compiled notes on rules and regulations for transporting drones.
 - [**Flying UAS/Drones in Ecuador for Academic Research**](Flying_in_Ecuador/Ecuador_UAS_Research_Guide.pdf) (PDF) — A translated, cited guide to RDAC 101 and related Ecuadorian law, for a foreign graduate researcher.
 - [**Point Cloud Maker**](https://cojow.github.io/point_cloud_maker/) - Companion repository. For extracting buildings from drone images
+- [Link to github.](https://github.com/cojow/flight_planner)
