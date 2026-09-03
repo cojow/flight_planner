@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import os
 import json
@@ -11,6 +12,7 @@ import base64
 import mimetypes
 from datetime import datetime, timedelta
 import re
+import uuid
 from geopy.geocoders import Nominatim
 import folium
 from folium.plugins import Draw, PolyLineTextPath
@@ -896,6 +898,46 @@ SURFACES_DIR = "surfaces"
 os.makedirs(MISSION_DIR, exist_ok=True)
 os.makedirs(SURFACES_DIR, exist_ok=True)
 
+# ---------------------------------------------------------------------------
+# Multi-user mode: per-session mission isolation
+# ---------------------------------------------------------------------------
+# A local `streamlit run app.py` is one pilot, one machine, one missions/
+# folder they can also browse in Finder/Explorer - that has to keep working
+# exactly as before. A shared deployment (e.g. a class on Streamlit Community
+# Cloud) is a single running process serving every visitor at once, with no
+# per-user filesystem at all: everyone was pointed at that same missions/
+# folder, so any student could see, overwrite, or delete another student's
+# saved missions, and the same for the shared .creator_presets.json.
+#
+# Off by default, so nothing changes for a local install. An instructor
+# deploying this turns it on with one setting - either an environment
+# variable (FLIGHT_PLANNER_MULTI_USER=1, works on any host) or the same key
+# in .streamlit/secrets.toml (Streamlit Community Cloud's own "Secrets"
+# panel, no shell access needed). SURFACES_DIR is deliberately NOT scoped
+# this way - it holds GeoTIFFs the instructor pre-loads for everyone to read,
+# never written to from inside the app, so there is nothing to isolate.
+def _multi_user_mode():
+    val = os.environ.get("FLIGHT_PLANNER_MULTI_USER")
+    if val is None:
+        try:
+            val = st.secrets.get("FLIGHT_PLANNER_MULTI_USER")
+        except Exception:
+            val = None
+    return str(val).strip().lower() in ("1", "true", "yes", "on")
+
+
+MULTI_USER_MODE = _multi_user_mode()
+
+if MULTI_USER_MODE:
+    # session_state is what's genuinely per-browser-session in Streamlit (the
+    # script itself re-runs top to bottom for every user), so the isolation
+    # anchors on a random id stored there rather than anything filesystem- or
+    # request-derived. Generated once and kept for the life of the tab.
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = uuid.uuid4().hex[:10]
+    MISSION_DIR = os.path.join(MISSION_DIR, "_sessions", st.session_state.session_id)
+    os.makedirs(MISSION_DIR, exist_ok=True)
+
 if "locked_creator_center" not in st.session_state:
     st.session_state.locked_creator_center = [40.246860, -111.648667]
 if "locked_editor_center" not in st.session_state:
@@ -1233,6 +1275,47 @@ def export_mission_kmz_from_strings(template_kml_str, waylines_wpml_str, output_
             kmz.writestr('template.kml', template_kml_str)
             if waylines_wpml_str:
                 kmz.writestr('waylines.wpml', waylines_wpml_str)
+
+def offer_kmz_download(container, scope, filepath=None, filename=None):
+    """
+    "Download KMZ" button for the most recently saved mission in one Creator/
+    Editor flow, so the file actually leaves the server rather than only
+    existing in a folder no one but the app itself can reach.
+
+    Only renders in MULTI_USER_MODE. Locally, the save folder IS the user's
+    own missions/ directory - they're already looking straight at the file in
+    Finder/Explorer, so a second copy offered through the browser's download
+    flow is pure redundancy. In multi-user mode it's the only way a saved
+    mission gets onto a student's own computer at all - there's no
+    filesystem for them to browse to, and once their tab closes the
+    session's mission folder is gone for good (see MULTI_USER_MODE above
+    generate_mapping_flight_path's session_id block). A no-op call is cheap
+    enough that every save flow can call this unconditionally rather than
+    each needing its own MULTI_USER_MODE check.
+
+    Pass filepath/filename right after a successful save to remember it;
+    call with just (container, scope) on every other render to redraw the
+    same button. That split is needed because st.button/this whole save
+    branch only evaluates True on the exact rerun the click happened on - a
+    download button placed only inside that branch would vanish again the
+    instant the user touched anything else, which defeats the purpose for a
+    student who saves a mission and then, say, nudges the altitude field
+    before remembering to grab the file.
+    """
+    if not MULTI_USER_MODE:
+        return
+    key = f"_last_saved_kmz_{scope}"
+    if filepath is not None:
+        st.session_state[key] = {"path": filepath, "name": filename}
+    saved = st.session_state.get(key)
+    if saved and os.path.exists(saved["path"]):
+        with open(saved["path"], "rb") as f:
+            container.download_button(
+                "⬇️ Download KMZ", f.read(), file_name=saved["name"],
+                mime="application/vnd.google-earth.kmz", key=f"dl_{scope}",
+                width='stretch',
+            )
+
 
 def is_kmz_file(filename):
     """
@@ -3568,7 +3651,7 @@ footer {{ display: none !important; }}
 .st-key-page_body h2, .st-key-page_body h3 {{ font-size: 1.15rem !important; }}
 
 /* The script-only embed just below the stylesheet runs the search bar's
-   outside-click listener and renders nothing. st.iframe(height=1)
+   outside-click listener and renders nothing. components.html(height=0)
    already collapses it, but the container still leaves a hairline margin/
    padding gap in some browsers, so this belt-and-suspenders rule zeroes
    that out too. Collapsed via height/overflow rather than display:none so
@@ -3587,18 +3670,23 @@ footer {{ display: none !important; }}
 # exact limitation. Guarded so the (page-persistent) listener is only ever
 # bound once, no matter how many times Streamlit reruns the script.
 #
-# st.iframe (not st.html/st.markdown) is what this needs: given an HTML
+# components.html (not st.html/st.markdown) is what this needs: given an HTML
 # string it embeds it as-is in an iframe that permits JavaScript and
 # same-origin access to the app, whereas st.html sanitises the markup through
 # DOMPurify and would strip the script outright. The markup here is a fixed
 # literal, never user input, so that untrusted-content caveat doesn't apply.
+# (st.iframe loads a URL, not an HTML string, and isn't the right tool here -
+# and the Streamlit version this app targets doesn't even have it, which is
+# exactly the bug that put st.iframe here in the first place: it was reverted
+# to this from a copy that predated the components.html fix - see git history
+# before reapplying that "fix" a third time.)
 #
 # This embed is script-only and renders nothing, so it must take up no space:
-# height=1 (the smallest st.iframe allows - 0 raises) collapses it via the
-# CSS rule on .st-key-search_autoclose_script above, which forces the
-# container itself to zero height regardless of what the iframe requests.
+# height=0 collapses it, backed up by the CSS rule on
+# .st-key-search_autoclose_script above for the rare browser that still
+# leaves a hairline gap.
 with st.container(key="search_autoclose_script"):
-    st.iframe("""
+    components.html("""
 <script>
 (function() {
     const doc = window.parent.document;
@@ -3634,7 +3722,7 @@ with st.container(key="search_autoclose_script"):
     });
 })();
 </script>
-""", height=1)
+""", height=0)
 
 HEADING_RE = re.compile(r'^(#{1,6})[ \t]+(.+?)[ \t]*$', re.MULTILINE)
 
@@ -3789,7 +3877,12 @@ def _readme_dialog():
     # fragment nav entirely and driving the scroll manually with
     # Element.scrollIntoView() - a much older, universally-supported API -
     # sidesteps that inconsistency instead of depending on it.
-    st.iframe("""
+    #
+    # components.html, not st.iframe: same reasoning as the search bar's
+    # auto-close script above - st.iframe loads a URL rather than an HTML
+    # string, isn't in the Streamlit version this app targets, and st.html
+    # would strip the <script> tag via DOMPurify.
+    components.html("""
 <script>
 (function() {
     const doc = window.parent.document;
@@ -3809,7 +3902,7 @@ def _readme_dialog():
     }, true);
 })();
 </script>
-""", height=1)
+""", height=0)
 
 
 with st.container(key="app_header"):
@@ -4423,6 +4516,11 @@ if page == 'Creator':
                                     map_front_ol, thumbnail_path, coords=path_coords, photo_count=est_photos
                                 )
                                 notices.success(f"Saved {final_filename}.kmz to {final_dir}/")
+                                offer_kmz_download(notices, "cmap", final_filepath, f"{final_filename}.kmz")
+
+                    # Redraws the same button on every rerun, not only the one where
+                    # Save was clicked - see offer_kmz_download's docstring.
+                    offer_kmz_download(notices, "cmap")
             else:
                 notices.error(
                     "That shape has no area to map - its points are duplicated or fall on a "
@@ -4502,6 +4600,11 @@ if page == 'Creator':
                             safe_get_float('overlap_pct', 70.0), thumbnail_path, coords=coords, photo_count=est_photos
                         )
                         notices.success(f"Saved {final_filename}.kmz to {final_dir}/")
+                        offer_kmz_download(notices, "cline", final_filepath, f"{final_filename}.kmz")
+
+            # Redrawn on every rerun, not only the one where Save was clicked -
+            # see offer_kmz_download's docstring.
+            offer_kmz_download(notices, "cline")
 
 # --- EDITOR MODE ---
 elif page == 'Editor':
@@ -4924,6 +5027,11 @@ elif page == 'Editor':
                                 os.remove(old_thumbnail)
 
                         notices.success(f"Successfully updated and saved as {final_filename}.kmz in {dir_label}!")
+                        offer_kmz_download(notices, "edit", final_filepath, f"{final_filename}.kmz")
+
+            # Redrawn on every rerun, not only the one where Save was clicked -
+            # see offer_kmz_download's docstring.
+            offer_kmz_download(notices, "edit")
 
 # ==========================================
 # VIEWER MODE

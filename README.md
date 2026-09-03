@@ -34,6 +34,21 @@ The app will open in your web browser using a local host.
 streamlit run path/to/app.py
 ```
 
+## Deploying for a Class or Other Shared Use
+Run this way, on your own machine, everything below doesn't apply - skip to *Using the Flight Planner*.
+
+A normal deployment (e.g. Streamlit Community Cloud) runs the app as one process shared by everyone who opens the link at the same time - there is no separate copy of the server per visitor. Two things follow from that, and this app handles both.
+
+There is no local computer for anyone to save to. The person using it isn't on the same machine as the server, so nothing saved there is reachable by browsing to a folder - and a cloud host's storage is usually wiped on the next restart anyway. Every "Save & Generate KMZ" button is followed by a ⬇️ Download KMZ button so the file comes back down to the visitor's own device instead of staying stranded on the server. It stays available even after saving again or tweaking another setting, not just for the one moment right after clicking Save.
+
+A single shared "missions" folder is a shared folder for everyone, unless told otherwise - every visitor would otherwise see, and be able to overwrite or delete, every other visitor's saved missions and presets. Set the environment variable below to give each visitor their own private, isolated space instead:
+```
+FLIGHT_PLANNER_MULTI_USER=1
+```
+On Streamlit Community Cloud this goes in the app's Settings &rarr; Secrets panel (as `FLIGHT_PLANNER_MULTI_USER = "1"`); anywhere else, set it as a normal environment variable before `streamlit run`. Off by default, so a plain local install is completely unaffected.
+
+With it on, each browser tab gets its own subfolder under `missions/_sessions/`, invisible to every other visitor, and disappears once that tab's session ends. The OS-native folder-browse buttons ("📂") also don't work in this kind of container (there's no desktop to show a folder picker on) - visitors should leave Save Destination on *Root (missions/)* and rely on the download button instead. The DJI Fly Transfer tab needs a USB-connected controller physically plugged into whatever machine is running the app, so it isn't usable in this setup either; that's expected, not a bug, and it fails with a clear message rather than crashing.
+
 
 ## Using the Flight Planner
 The mission planner is split into three creation tabs: the *Creator*, the *Editor*, and the *Viewer*. 
