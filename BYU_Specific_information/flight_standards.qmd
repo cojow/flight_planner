@@ -19,34 +19,44 @@ format:
 
 [To research pages](https://cojow.github.io/flight_planner/BYU_Specific_information/)
 
-## Certificate {#sec-licensure}
+## Licensure/Certificate {#sec-licensure}
 
-The flyer must hold a Part 107 Certificate, or have someone actively watching who holds a Part 107 certificate. See the page [here](https://cojow.github.io/flight_planner/BYU_Specific_information/part_107.html) for information about getting your certificate.
+The flyer must hold a Part 107 Certificate (commonly called a license), or have someone actively watching who holds a Part 107 certificate. See the page [here](https://cojow.github.io/flight_planner/BYU_Specific_information/part_107.html) for information about getting your certificate.
 
 ## Naming Conventions 
 
-### Photo Naming
+### Photos {#sec-photos}
 
-Photos are saved in a folder named `DCIM`. Each flight is saved using the following filename format:
+Photos are saved in a folder named `DCIM`. Each flight is saved using the format below, you will not need to edit the names. 
 
-`DJI_[date/time]_[flight number]_[flight plan name]`
+* DJI Pilot Drones: `DJI_[date/time]_[flight number]_[flight plan name]`
+* DJI Fly Drones: `DJI_[date/time]_[flight number]_D`
 
 | Segment | Meaning |
 |---|---|
 | `DJI` | Name of the drone used |
-| First number string | Date and time the flight was run, as `YYYY/MM/DD/HH/MM` |
-| Second number string | Flight number, counted from the very first flight |
-| Last string | Name of the flight plan used to take the pictures |
-
+| `[date/time]` | Date and time the flight was run, as `YYYY/MM/DD/HH/MM` |
+| `[flight number]` | Flight number, counted from the very first flight |
+| `[flight plan name]` | Name of the flight plan used to take the pictures |
+| `D` | Honestly, not sure. But every picture has it |
 
 DJI Fly drones (the Mini series that we are using) save all of their photos into a single DCIM folder, not separated by flight plans like DJI Pilot 2 drones. This is why the [flight planner](https://github.com/cojow/flight_planner) has a dedicated tab for separating the photos.
 
 
 ::: {.callout-note}
-Ignore the `MRK` file unless you know for a fact that you're using an RTK setup with only one set of pictures. Otherwise, it's useless.
+Ignore the `MRK` file unless you know for a fact that you're using an RTK setup with only one set of pictures. Otherwise, it's useless. The DJI Fly drone doesn't even make this file. 
 :::
 
-### Naming Missions {#sec-naming-missions}
+### Mission Folders {#sec-mission-folders}
+
+By default missions are saved in the root folder `missions` in the same folder as `app.py`. 
+To keep it organized, we want to create a new folder in the missions folder for each area of flights. 
+I'm not sure if we should name them after bounding streets (e.g. 700N_Center_university_700E), notable arterials (e.g. 700N_Center), common names (e.g. Joaquin), numbered sections (e.g. 1,2,3), etc. 
+We will figure this out in a future meeting. 
+
+All missions should be uploaded to the Box folder when they are flown so that we can keep track of them with the flight tracker. See @sec-flight-tracker.
+
+### Missions {#sec-naming-missions}
 
 Follow this format: 
 
@@ -58,6 +68,7 @@ Follow this format:
 | **Street2** | The street to the south or west that you are flying, depending on whether the road runs N-S or E-W. |
 
 *For roads not laid out N-S or E-W, use the most western or southern street, respectively. 
+
 *If a street ends (like in a cul-de-sac), use "END" for Street2. 
 
 The Flight Planner will add information about the height, gimbal pitch, and photo overlap to the end. 
@@ -83,14 +94,14 @@ The Flight Planner will add information about the height, gimbal pitch, and phot
 
 :::
 
-### Naming Photo Folders {#sec-naming-photo-folders}
+### Photo Folders {#sec-naming-photo-folders}
 
-Name the photo folder after the mission it's composed of (the nadir and oblique flights combined).
+Name the photo folder after the mission it's composed of (nadir and oblique flights combined).
 This should result in a unique name for every folder. 
 
-This can be done in the photo sorter if you know the sequence you did the flights in (ideal), or afterwards manually for each folder. 
+This can be done in the photo sorter if you know the sequence you did the flights in (ideal), or manually afterwards sorting for each folder. 
 
-## Flight Planning
+## Flight Planning {#sec-flight-planning}
 
 ::: {.callout-note}
 **TO DO: We need to figure out the best overlap for the correct number of images. If 1280 is the depth we are going for in the extractor, we need to limit the photos or we'll have to deal with large processing times.**
@@ -101,59 +112,103 @@ This can be done in the photo sorter if you know the sequence you did the flight
 - Keep the flight photo count relatively low so that analysis doesn't take a long time. (The overlap will determine if enough pictures are being taken for the houses.)
 - DJI Fly controllers struggle with a lot of waypoints — 80+ waypoints cause some issues, and more than 99 really slows it down.
 - Leave at least 30 seconds between flights. This ensures the photo sorter doesn't combine separate flights together. 
+- Keep a record of when you fly each flight. The order and day of flights is the most important, since this is what you will need to sort the flight plans. You can record the start and end times of each flight, but that might be overkill. 
 
 ### Flight Paths {#sec-flight-paths}
 
-The flight path that you will draw will be determined by the type of street you are on. 
+The flight path that you draw will be determined by the type of street you are on. 
 In general:
 
-- We have two flights per road section, together called a flight set. One at ~70 feet and another at ~200 feet. The first is for the image analysis, the second is for the point cloud maker. 
-- The flight path should travel along the shoulder of the road, between the traveled way and parking strip/sidewalk. This reduces the likelihood of flying over a person, which Part 107 doesn't allow.
+- We have two flights per road section, together called a ****flight set**. One at ~70 feet and another at ~200 feet. The first is for the image analysis, the second is for the point cloud maker. Depending on the road the gimble pitch will vary. See @sec-heights-and-angles.
+- The flight path should travel along the shoulder of the road, between the traveled way and parking strip/sidewalk, when possible. This reduces the likelihood of flying over a person, which Part 107 doesn't allow.
 - Keep the paths reasonable and logical. One flight set should focus on a single road section, as seen in the naming examples. 
 Since more images means the point cloud maker takes longer, when in doubt, make it shorter. 
 - Do your best to avoid flying on private property. (We might want to make cards to give to people who question what we are doing. I've had a couple people inquire, and I've done a small number of flights compared to what we will do.)
+- When roads are curved, do your best to follow the curves with the straight lines. But don't go overboard with the small line segments, the drone likely won't do well. 
 
-#### Residential/Local Roads
-- Regular (30 to 40 feet)
+See the sections below for sepcific guidence for different road types. 
 
-- Curved Road
+| Road Type | Section|
+|---|---|
+| Local Roads | @sec-local-roads |
+| Busy/Arterial Roads|@sec-big-roads |
+| Big Buildings and Parking Lots | @sec-big-buildings |
+| Cul-de-sac | @sec-cul |
 
-![](./images/path_examples/fp_ex_res.png) 
-![](./images/path_examples/fp_ex_res_viewer.png)
 
-#### Arterial/Busier Roads
-- Do not have the drone fly over it, like we do with residential. 
-- 60+ Feet wide???
+#### Residential/Local Roads {#sec-local-roads}
+- These are the most common roads we will deal with. They are regularly 30 to 40 feet wide. 
+- Flying the road across the street from where you are taking the pictures has seen the best results in capturing the fronts of the houses. 
+- We need to verify if the current gimble pitches will work for 30 vs 40 feet. In field adjustments may be needed. 
+
+![Flight path example](./images/path_examples/fp_ex_res.png) 
+
+![Photo cones showing cross street picture capturing](./images/path_examples/fp_ex_res_viewer.png)
+
+#### Busy/Arterial Roads {#sec-big-roads}
+- Less common road type, but houses/buildings are still built on them. They are typically 50-60+ feet wide.
+- Due to their width, it may be better to take the pictures on the same side of the street as the buildings instead of across. We will need to field verify and discuss this.
+- Do not have the drone fly over it, like we do with local roads. This means that there will be double the flight missions per flight set (two for each side of the road).
 
 ::: {.columns}
 
 ::: {.column width="50%"}
-![](./images/path_examples/big_road_ex.png){height="550px"}
+![Flight path example](./images/path_examples/big_road_ex.png){height="550px"}
 :::
 
 ::: {.column width="50%"}
-![](./images/path_examples/big_road_ex_viewer.png){height="550px"}
+![Photo cones showing same side street picture capturing](./images/path_examples/big_road_ex_viewer.png){height="550px"}
 :::
 
 :::
-#### Big Buildings and Parking Lots
-These, such as stores or church buildings, typically can't follow the standard flight set. 
-We need to see if we can put together a flight set for these kinds of buildings. 
-200 feet elevation flights should work no problem. 
+#### Big Buildings and Parking Lots {#sec-big-buildings}
+- We need to put together a flight set for these kinds of buildings, since they are much larger then normal buildings. 
+- They are often accompanied by parking lots, which will necessitate flying the drone in the parking lot instead of the road.
+- We only need the front of the building for our picture analysis, so don't we won't need to worry about the back of buildings.  We will need to make sure the high up photos capture the whole building for to make the point cloud. 
+- We may need to have our own naming conventions for big buildings like this. 
 
-#### Cul-de-sac
-Roundabouts are their own road section. They're difficult to draw a flight path in due to the path being made of lines. They also have wider road sections. Might be best to either have the drone on the same side or in the middle of the cul-de-sac. See @sec-heights-and-angles.
+Here are a couple example of how we could do it (Using Height:70,  Pitch:40, Overlap: 75%):
 
 
-#### Empty Lots/Fields
+::: {.columns}
 
-We do not need to run flights covering these areas. We're concerned about buildings only. 
+::: {.column width="50%"}
+![Big Building Only](./images/path_examples/Big_building_ex_1.png)
+:::
+
+::: {.column width="50%"}
+![](./images/path_examples/Big_building_ex_1_viewer.png)
+:::
+
+::: 
+
+::: {.columns}
+
+::: {.column width="50%"}
+![Big Building and others](./images/path_examples/Big_building_ex_2.png)
+:::
+
+::: {.column width="50%"}
+![](./images/path_examples/Big_building_ex_2_viewer.png)
+:::
+
+::: 
+
+
+#### Cul-de-sac {#sec-cul}
+Roundabouts are their own road section. They're difficult to draw a flight path in due to the path being made of lines. They also have wider road sections. Might be best to either have the drone on the same side or in the middle of the cul-de-sac. See @sec-heights-and-angles. Verify what is best in the field. 
+
+
+#### Empty Lots/Fields {#sec-empty}
+
+- We do not need to run flights covering these areas. We're concerned about buildings only. 
 
 ### Heights and Angles {#sec-heights-and-angles}
 
 These are the heights and angles that have been found to work well for flight paths. 
 This list will update and expand as we fly missions. 
 We will need to verify these numbers in the field. 
+
 
 | Height (ft) | Street Width | Drone Location | Angle (°) | Overlap |
 |---|---|---|---|---|
@@ -165,17 +220,8 @@ We will need to verify these numbers in the field.
 *Is it better to use road type, or street width? A combination of both?
 
 ::: {.callout-note}
-Overlap values are still to be determined/verified for all flight profiles.
+All of these values need to be verified in the field, and may not hold up in all cases. I'm still debating if we want the flight sets to be determined by the road category, or distance from the house a drone is/street width. 
 :::
-
-
-## Mission Saving
-
-### Mission Folders
-
-By default missions are saved in the root folder `missions` in the same folder as `app.py`. To keep it organized, we want to create a new folder in the missions folder for each area of flights. I'm not sure if we should name them after bounding streets (e.g. 700N_Center_university_700E), notable arterials (e.g. 700N_Center), common names (e.g. Joaquin), numbered sections (e.g. 1,2,3), etc. We will figure this out in a future meeting. 
-
-All missions should be uploaded to the Box folder when they are flown so that we can keep track of them with the flight tracker. See @sec-flight-tracker.
 
 ### Uploading {#sec-uploading}
 
@@ -264,3 +310,29 @@ The flight tracker is a companion app to the flight planner. It runs independent
 ### Box
 
 Here is a [link](https://byu.box.com/s/0tkvvoe2zg9b682r8vaxjwa2mwazyday) to the Box folder that we will use to organize all flight plans, taken photos, and annotated photos. If you should have access but don't, contact Connor Williams (willicon@byu.edu).
+
+## TODO {#sec-todo}
+
+Open questions and items still needing field verification.
+
+**Naming**
+
+- The `D` suffix on DJI Fly photo filenames — meaning unknown. Probably not too important. See @sec-photos.
+- Mission folder naming scheme (bounding streets, arterials, common names, or numbered sections) — deferred to a future meeting. See @sec-mission-folders.
+
+**Flight Planning**
+
+- Best photo overlap for the correct number of images, given the "1280 depth" extractor constraint. See @sec-flight-planning.
+
+**Road Types**
+
+- Local roads: whether the current gimbal pitch works for both 30 ft and 40 ft wide streets. See @sec-local-roads.
+- Arterial roads: same side vs. across-street shooting, given the extra width. See @sec-big-roads.
+- Big buildings/parking lots: need an actual flight set designed for these; confirm the high-altitude photos capture the whole building for the point cloud. See @sec-big-buildings.
+- Big buildings: may need their own naming convention.
+- Cul-de-sacs: drone on the same side vs. in the middle. See @sec-cul.
+
+**Heights and Angles**
+
+- All height/angle/overlap values in the table need field verification and may not hold in every case. See @sec-heights-and-angles.
+- Classification basis still undecided for flight sets: road type/category vs. street width vs. some combination.

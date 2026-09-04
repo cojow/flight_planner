@@ -187,6 +187,7 @@ It does trade some extra turning for the saved photos, so on a few shapes the to
 Use this to know if you need to submit an LAANC report before flying. 
 In app submitting is not available, you must use another app to do so.
 
+<img src="BYU_Specific_information/images/FAA_viewer.png" alt="" width="100%">
 
 ##### Main Page Features
 * **Save Destination**: Located above the map. Use the drop down box to choose an existing mission or the default root "missions/" directory. You can create a new folder by pressing the "+" button, or browse to a custom folder location with the file icon. 

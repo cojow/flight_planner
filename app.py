@@ -863,6 +863,12 @@ MS_TO_MPH = 2.23694
 ESRI_TILE_BASE = "https://server.arcgisonline.com/ArcGIS/rest/services"
 ESRI_IMAGERY_URL = f"{ESRI_TILE_BASE}/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}"
 ESRI_LABELS_URL = f"{ESRI_TILE_BASE}/Reference/World_Boundaries_and_Places/MapServer/tile/{{z}}/{{y}}/{{x}}"
+# World_Boundaries_and_Places carries place labels only (cities, towns) - it
+# has no street names, which is what Google's hybrid layer used to supply and
+# what mission naming (Street1_Street2) depends on. World_Transportation is
+# the third layer in Esri's own "Imagery Hybrid" recipe and is what puts road
+# casings and street labels back on the map.
+ESRI_TRANSPORT_URL = f"{ESRI_TILE_BASE}/Reference/World_Transportation/MapServer/tile/{{z}}/{{y}}/{{x}}"
 ESRI_STREET_TILE_URL = ESRI_TILE_BASE + "/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
 ESRI_ATTR = ("Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, "
              "and the GIS User Community")
@@ -872,7 +878,8 @@ BASEMAP_MAX_NATIVE_ZOOM = 19
 
 def add_basemap(fmap):
     """
-    Put the shared satellite basemap (imagery + place labels) on a folium map.
+    Put the shared satellite basemap (imagery + place labels + streets) on a
+    folium map.
 
     Every map in the app goes through here so the tile source, attribution and
     zoom caps can't drift apart between the Creator, Editor and Viewer - they
@@ -886,6 +893,13 @@ def add_basemap(fmap):
     # they stay underneath the flight path and waypoint markers.
     folium.TileLayer(
         tiles=ESRI_LABELS_URL, attr=ESRI_ATTR, name="Place labels",
+        overlay=True, control=False,
+        max_zoom=BASEMAP_MAX_ZOOM, max_native_zoom=BASEMAP_MAX_NATIVE_ZOOM,
+    ).add_to(fmap)
+    # Streets go on last so their labels sit above the place labels rather
+    # than being overdrawn by them. Same tile pane, so still under the path.
+    folium.TileLayer(
+        tiles=ESRI_TRANSPORT_URL, attr=ESRI_ATTR, name="Streets",
         overlay=True, control=False,
         max_zoom=BASEMAP_MAX_ZOOM, max_native_zoom=BASEMAP_MAX_NATIVE_ZOOM,
     ).add_to(fmap)
