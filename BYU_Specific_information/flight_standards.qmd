@@ -98,7 +98,8 @@ The Flight Planner will add information about the height, gimbal pitch, and phot
 
 Name the photo folder after the mission it's composed of, nadir and oblique flights, with the prefix "photo".
 This should result in a unique name for every folder. 
-We will decide in a future meeting if we will group the photos by mission area or not. 
+To maintain consistency, the photo will be group in area folders like the missions. 
+These area folders will have the same name as the missions, but with the prefix "**photo**".
 
 This can be done in the photo sorter if you know the sequence you did the flights in (ideal), or manually afterwards sorting for each folder. 
 
@@ -120,12 +121,15 @@ This can be done in the photo sorter if you know the sequence you did the flight
 The flight path that you draw will be determined by the type of street you are on. 
 In general:
 
-- We have two flights per road section, together called a ****flight set**. One at ~70 feet and another at ~200 feet. The first is for the image analysis, the second is for the point cloud maker. Depending on the road the gimble pitch will vary. See @sec-heights-and-angles.
+- We have two flights per road section, together called a **flight set**. One at ~70 feet and another at ~200 feet. The first is for the image analysis, the second is for the point cloud maker. 
+Depending on the road the gimble pitch will vary. See @sec-heights-and-angles.
 - The flight path should travel along the shoulder of the road, between the traveled way and parking strip/sidewalk, when possible. This reduces the likelihood of flying over a person, which Part 107 doesn't allow.
 - Keep the paths reasonable and logical. One flight set should focus on a single road section, as seen in the naming examples. 
 Since more images means the point cloud maker takes longer, when in doubt, make it shorter. 
-- Do your best to avoid flying on private property. (We might want to make cards to give to people who question what we are doing. I've had a couple people inquire, and I've done a small number of flights compared to what we will do.)
-- When roads are curved, do your best to follow the curves with the straight lines. But don't go overboard with the small line segments, the drone likely won't do well. 
+- Do your best to avoid flying on private property. (We might want to make cards to give to people who question what we are doing. 
+I've had a couple people inquire, and I've done a small number of flights compared to what we will do.)
+- When roads are curved, do your best to follow the curves with the straight lines. 
+But don't go overboard with the small line segments, the drone likely won't do well. 
 
 See the sections below for sepcific guidence for different road types. 
 
@@ -140,7 +144,8 @@ See the sections below for sepcific guidence for different road types.
 #### Residential/Local Roads {#sec-local-roads}
 - These are the most common roads we will deal with. They are regularly 30 to 40 feet wide. 
 - Flying the road across the street from where you are taking the pictures has seen the best results in capturing the fronts of the houses. 
-- We need to verify if the current gimble pitches will work for 30 vs 40 feet. In field adjustments may be needed. 
+- We need to verify if the current gimble pitches will work for 30 vs 40 feet. 
+In field adjustments may be needed. 
 
 ![Flight path example](./images/path_examples/fp_ex_res.png) 
 
@@ -148,8 +153,10 @@ See the sections below for sepcific guidence for different road types.
 
 #### Busy/Arterial Roads {#sec-big-roads}
 - Less common road type, but houses/buildings are still built on them. They are typically 50-60+ feet wide.
-- Due to their width, it may be better to take the pictures on the same side of the street as the buildings instead of across. We will need to field verify and discuss this.
-- Do not have the drone fly over it, like we do with local roads. This means that there will be double the flight missions per flight set (two for each side of the road).
+- Due to their width, it may be better to take the pictures on the same side of the street as the buildings instead of across. 
+We will need to field verify and discuss this.
+- Do not have the drone fly over it, like we do with local roads. 
+This means that there will be double the flight missions per flight set (two for each side of the road).
 
 ::: {.columns}
 
@@ -165,7 +172,8 @@ See the sections below for sepcific guidence for different road types.
 #### Big Buildings and Parking Lots {#sec-big-buildings}
 - We need to put together a flight set for these kinds of buildings, since they are much larger then normal buildings. 
 - They are often accompanied by parking lots, which will necessitate flying the drone in the parking lot instead of the road.
-- We only need the front of the building for our picture analysis, so don't we won't need to worry about the back of buildings.  We will need to make sure the high up photos capture the whole building for to make the point cloud. 
+- We only need the front of the building for our picture analysis, so don't we won't need to worry about the back of buildings.  
+We will need to make sure the high up photos capture the whole building for to make the point cloud. 
 - We may need to have our own naming conventions for big buildings like this. 
 
 Here are a couple example of how we could do it (Using Height:70,  Pitch:40, Overlap: 75%):
@@ -197,7 +205,11 @@ Here are a couple example of how we could do it (Using Height:70,  Pitch:40, Ove
 
 
 #### Cul-de-sac {#sec-cul}
-Roundabouts are their own road section. They're difficult to draw a flight path in due to the path being made of lines. They also have wider road sections. Might be best to either have the drone on the same side or in the middle of the cul-de-sac. See @sec-heights-and-angles. Verify what is best in the field. 
+Roundabouts are their own road section. They're difficult to draw a flight path in due to the path being made of lines. 
+They also have wider road sections at their ends. 
+Thus they will need to be split into two mission set, the road leading to it and the circular part.
+The circular part will have its own angle, while the road will follow the applicable road outline. 
+. See @sec-heights-and-angles. Verify what is best in the field. 
 
 
 #### Empty Lots/Fields {#sec-empty}
@@ -335,8 +347,7 @@ Open questions and items still needing field verification.
 
 **Naming**
 
-- Mission folder naming scheme (bounding streets, arterials, common names, or numbered sections) — deferred to a future meeting. See @sec-mission-folders.
-- Group photos just by mission, or also by mission area like the flight missions. 
+- Mission folder naming scheme (bounding streets, arterials, common names, or numbered sections). See @sec-mission-folders.
 
 **Flight Planning**
 
@@ -348,7 +359,6 @@ Open questions and items still needing field verification.
 - Arterial roads: same side vs. across-street shooting, given the extra width. See @sec-big-roads.
 - Big buildings/parking lots: need an actual flight set designed for these; confirm the high-altitude photos capture the whole building for the point cloud. See @sec-big-buildings.
 - Big buildings: may need their own naming convention.
-- Cul-de-sacs: drone on the same side vs. in the middle. See @sec-cul.
 
 **Heights and Angles**
 

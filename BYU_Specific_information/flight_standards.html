@@ -2396,7 +2396,7 @@ Note
 </section>
 <section id="sec-naming-photo-folders" class="level3" data-number="2.4">
 <h3 data-number="2.4" class="anchored" data-anchor-id="sec-naming-photo-folders"><span class="header-section-number">2.4</span> Photo Folders</h3>
-<p>Name the photo folder after the mission it’s composed of, nadir and oblique flights, with the prefix “photo”. This should result in a unique name for every folder. We will decide in a future meeting if we will group the photos by mission area or not.</p>
+<p>Name the photo folder after the mission it’s composed of, nadir and oblique flights, with the prefix “photo”. This should result in a unique name for every folder. To maintain consistency, the photo will be group in area folders like the missions. These area folders will have the same name as the missions, but with the prefix “<strong>photo</strong>”.</p>
 <p>This can be done in the photo sorter if you know the sequence you did the flights in (ideal), or manually afterwards sorting for each folder.</p>
 </section>
 </section>
@@ -2428,7 +2428,7 @@ Note
 <h3 data-number="3.2" class="anchored" data-anchor-id="sec-flight-paths"><span class="header-section-number">3.2</span> Flight Paths</h3>
 <p>The flight path that you draw will be determined by the type of street you are on. In general:</p>
 <ul>
-<li>We have two flights per road section, together called a ****flight set**. One at ~70 feet and another at ~200 feet. The first is for the image analysis, the second is for the point cloud maker. Depending on the road the gimble pitch will vary. See <a href="#sec-heights-and-angles" class="quarto-xref">Section 3.3</a>.</li>
+<li>We have two flights per road section, together called a <strong>flight set</strong>. One at ~70 feet and another at ~200 feet. The first is for the image analysis, the second is for the point cloud maker. Depending on the road the gimble pitch will vary. See <a href="#sec-heights-and-angles" class="quarto-xref">Section 3.3</a>.</li>
 <li>The flight path should travel along the shoulder of the road, between the traveled way and parking strip/sidewalk, when possible. This reduces the likelihood of flying over a person, which Part 107 doesn’t allow.</li>
 <li>Keep the paths reasonable and logical. One flight set should focus on a single road section, as seen in the naming examples. Since more images means the point cloud maker takes longer, when in doubt, make it shorter.</li>
 <li>Do your best to avoid flying on private property. (We might want to make cards to give to people who question what we are doing. I’ve had a couple people inquire, and I’ve done a small number of flights compared to what we will do.)</li>
@@ -2511,7 +2511,8 @@ Note
 <ul>
 <li>We need to put together a flight set for these kinds of buildings, since they are much larger then normal buildings.</li>
 <li>They are often accompanied by parking lots, which will necessitate flying the drone in the parking lot instead of the road.</li>
-<li>We only need the front of the building for our picture analysis, so don’t we won’t need to worry about the back of buildings. We will need to make sure the high up photos capture the whole building for to make the point cloud.</li>
+<li>We only need the front of the building for our picture analysis, so don’t we won’t need to worry about the back of buildings.<br>
+We will need to make sure the high up photos capture the whole building for to make the point cloud.</li>
 <li>We may need to have our own naming conventions for big buildings like this.</li>
 </ul>
 <p>Here are a couple example of how we could do it (Using Height:70, Pitch:40, Overlap: 75%):</p>
@@ -2542,7 +2543,7 @@ Note
 </section>
 <section id="sec-cul" class="level4" data-number="3.2.4">
 <h4 data-number="3.2.4" class="anchored" data-anchor-id="sec-cul"><span class="header-section-number">3.2.4</span> Cul-de-sac</h4>
-<p>Roundabouts are their own road section. They’re difficult to draw a flight path in due to the path being made of lines. They also have wider road sections. Might be best to either have the drone on the same side or in the middle of the cul-de-sac. See <a href="#sec-heights-and-angles" class="quarto-xref">Section 3.3</a>. Verify what is best in the field.</p>
+<p>Roundabouts are their own road section. They’re difficult to draw a flight path in due to the path being made of lines. They also have wider road sections at their ends. Thus they will need to be split into two mission set, the road leading to it and the circular part. The circular part will have its own angle, while the road will follow the applicable road outline. . See <a href="#sec-heights-and-angles" class="quarto-xref">Section 3.3</a>. Verify what is best in the field.</p>
 </section>
 <section id="sec-empty" class="level4" data-number="3.2.5">
 <h4 data-number="3.2.5" class="anchored" data-anchor-id="sec-empty"><span class="header-section-number">3.2.5</span> Empty Lots/Fields</h4>
@@ -2767,8 +2768,7 @@ Important
 <p>Open questions and items still needing field verification.</p>
 <p><strong>Naming</strong></p>
 <ul>
-<li>Mission folder naming scheme (bounding streets, arterials, common names, or numbered sections) — deferred to a future meeting. See <a href="#sec-mission-folders" class="quarto-xref">Section 2.2</a>.</li>
-<li>Group photos just by mission, or also by mission area like the flight missions.</li>
+<li>Mission folder naming scheme (bounding streets, arterials, common names, or numbered sections). See <a href="#sec-mission-folders" class="quarto-xref">Section 2.2</a>.</li>
 </ul>
 <p><strong>Flight Planning</strong></p>
 <ul>
@@ -2780,7 +2780,6 @@ Important
 <li>Arterial roads: same side vs. across-street shooting, given the extra width. See <a href="#sec-big-roads" class="quarto-xref">Section 3.2.2</a>.</li>
 <li>Big buildings/parking lots: need an actual flight set designed for these; confirm the high-altitude photos capture the whole building for the point cloud. See <a href="#sec-big-buildings" class="quarto-xref">Section 3.2.3</a>.</li>
 <li>Big buildings: may need their own naming convention.</li>
-<li>Cul-de-sacs: drone on the same side vs. in the middle. See <a href="#sec-cul" class="quarto-xref">Section 3.2.4</a>.</li>
 </ul>
 <p><strong>Heights and Angles</strong></p>
 <ul>
