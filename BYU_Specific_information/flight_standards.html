@@ -2174,7 +2174,7 @@ vertical-align: -.125em;
    
   <ul>
   <li><a href="#sec-licensure" id="toc-sec-licensure" class="nav-link active" data-scroll-target="#sec-licensure"><span class="header-section-number">1</span> Licensure/Certificate</a></li>
-  <li><a href="#naming-conventions" id="toc-naming-conventions" class="nav-link" data-scroll-target="#naming-conventions"><span class="header-section-number">2</span> Naming Conventions</a>
+  <li><a href="#sec-naming" id="toc-sec-naming" class="nav-link" data-scroll-target="#sec-naming"><span class="header-section-number">2</span> Naming Conventions</a>
   <ul>
   <li><a href="#sec-photos" id="toc-sec-photos" class="nav-link" data-scroll-target="#sec-photos"><span class="header-section-number">2.1</span> Photos</a></li>
   <li><a href="#sec-mission-folders" id="toc-sec-mission-folders" class="nav-link" data-scroll-target="#sec-mission-folders"><span class="header-section-number">2.2</span> Mission Folders</a></li>
@@ -2217,7 +2217,10 @@ vertical-align: -.125em;
   <li><a href="#companion-apps" id="toc-companion-apps" class="nav-link" data-scroll-target="#companion-apps"><span class="header-section-number">5</span> Companion Apps</a>
   <ul>
   <li><a href="#sec-flight-tracker" id="toc-sec-flight-tracker" class="nav-link" data-scroll-target="#sec-flight-tracker"><span class="header-section-number">5.1</span> Flight Tracker</a></li>
-  <li><a href="#box" id="toc-box" class="nav-link" data-scroll-target="#box"><span class="header-section-number">5.2</span> Box</a></li>
+  <li><a href="#box" id="toc-box" class="nav-link" data-scroll-target="#box"><span class="header-section-number">5.2</span> Box</a>
+  <ul class="collapse">
+  <li><a href="#structure" id="toc-structure" class="nav-link" data-scroll-target="#structure"><span class="header-section-number">5.2.1</span> Structure</a></li>
+  </ul></li>
   </ul></li>
   <li><a href="#sec-todo" id="toc-sec-todo" class="nav-link" data-scroll-target="#sec-todo"><span class="header-section-number">6</span> TODO</a></li>
   </ul>
@@ -2262,8 +2265,8 @@ vertical-align: -.125em;
 <h2 data-number="1" class="anchored" data-anchor-id="sec-licensure"><span class="header-section-number">1</span> Licensure/Certificate</h2>
 <p>The flyer must hold a Part 107 Certificate (commonly called a license), or have someone actively watching who holds a Part 107 certificate. See the page <a href="https://cojow.github.io/flight_planner/BYU_Specific_information/part_107.html">here</a> for information about getting your certificate.</p>
 </section>
-<section id="naming-conventions" class="level2" data-number="2">
-<h2 data-number="2" class="anchored" data-anchor-id="naming-conventions"><span class="header-section-number">2</span> Naming Conventions</h2>
+<section id="sec-naming" class="level2" data-number="2">
+<h2 data-number="2" class="anchored" data-anchor-id="sec-naming"><span class="header-section-number">2</span> Naming Conventions</h2>
 <section id="sec-photos" class="level3" data-number="2.1">
 <h3 data-number="2.1" class="anchored" data-anchor-id="sec-photos"><span class="header-section-number">2.1</span> Photos</h3>
 <p>Photos are saved in a folder named <code>DCIM</code>. Each flight is saved using the format below, you will not need to edit the names.</p>
@@ -2301,7 +2304,7 @@ vertical-align: -.125em;
 </tr>
 <tr class="odd">
 <td><code>D</code></td>
-<td>Honestly, not sure. But every picture has it</td>
+<td>Ignroe it, every picture has it</td>
 </tr>
 </tbody>
 </table>
@@ -2393,7 +2396,7 @@ Note
 </section>
 <section id="sec-naming-photo-folders" class="level3" data-number="2.4">
 <h3 data-number="2.4" class="anchored" data-anchor-id="sec-naming-photo-folders"><span class="header-section-number">2.4</span> Photo Folders</h3>
-<p>Name the photo folder after the mission it’s composed of (nadir and oblique flights combined). This should result in a unique name for every folder.</p>
+<p>Name the photo folder after the mission it’s composed of, nadir and oblique flights, with the prefix “photo”. This should result in a unique name for every folder. We will decide in a future meeting if we will group the photos by mission area or not.</p>
 <p>This can be done in the photo sorter if you know the sequence you did the flights in (ideal), or manually afterwards sorting for each folder.</p>
 </section>
 </section>
@@ -2746,6 +2749,16 @@ Important
 <section id="box" class="level3" data-number="5.2">
 <h3 data-number="5.2" class="anchored" data-anchor-id="box"><span class="header-section-number">5.2</span> Box</h3>
 <p>Here is a <a href="https://byu.box.com/s/0tkvvoe2zg9b682r8vaxjwa2mwazyday">link</a> to the Box folder that we will use to organize all flight plans, taken photos, and annotated photos. If you should have access but don’t, contact Connor Williams (willicon@byu.edu).</p>
+<section id="structure" class="level4" data-number="5.2.1">
+<h4 data-number="5.2.1" class="anchored" data-anchor-id="structure"><span class="header-section-number">5.2.1</span> Structure</h4>
+<p>The Box folder is divided into 4 subdirectories. See for naming conventions not mentioned here.</p>
+<ul>
+<li>Flight Missions: This folder will hold the flight plans of all flown missions. Mission area folders may be placed directly into here with all missions inside of them. This will keep it organized, and allow the flight tracker to work. See <a href="#sec-mission-folders" class="quarto-xref">Section 2.2</a> and <a href="#sec-naming-missions" class="quarto-xref">Section 2.3</a> for naming conventions. <strong>Make sure missions in this folder have actually been flown.</strong></li>
+<li>Flight Photos: Once seperated by the photo sorter, place all photo folders here. See <a href="#sec-naming-photo-folders" class="quarto-xref">Section 2.4</a> for naming conventions.</li>
+<li>Annotated Photos: Photos that have been annotated using Label Studio go here. Make sure each folder includes all parts. See the <a href="https://cojow.github.io/point_cloud_maker/Using_Label_Studio.html">Label Studio</a> standards for more information. These will retain the same name as the folder with the prefix “<strong>photo</strong>” replaced with “<strong>annotated</strong>”.</li>
+<li>Point Clouds and Measurements: This will contain the measurement sheet documents. For now they will also contain atleast the point cloud, as well as the individual houses. The folders will retain the same name as the photo folder with the prefix “<strong>photo</strong>” replaced with “<strong>cloud</strong>”.</li>
+</ul>
+</section>
 </section>
 </section>
 <section id="sec-todo" class="level2" data-number="6">
@@ -2753,8 +2766,8 @@ Important
 <p>Open questions and items still needing field verification.</p>
 <p><strong>Naming</strong></p>
 <ul>
-<li>The <code>D</code> suffix on DJI Fly photo filenames — meaning unknown. Probably not too important. See <a href="#sec-photos" class="quarto-xref">Section 2.1</a>.</li>
 <li>Mission folder naming scheme (bounding streets, arterials, common names, or numbered sections) — deferred to a future meeting. See <a href="#sec-mission-folders" class="quarto-xref">Section 2.2</a>.</li>
+<li>Group photos just by mission, or also by mission area like the flight missions.</li>
 </ul>
 <p><strong>Flight Planning</strong></p>
 <ul>

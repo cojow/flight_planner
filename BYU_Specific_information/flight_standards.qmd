@@ -23,7 +23,7 @@ format:
 
 The flyer must hold a Part 107 Certificate (commonly called a license), or have someone actively watching who holds a Part 107 certificate. See the page [here](https://cojow.github.io/flight_planner/BYU_Specific_information/part_107.html) for information about getting your certificate.
 
-## Naming Conventions 
+## Naming Conventions {#sec-naming}
 
 ### Photos {#sec-photos}
 
@@ -38,7 +38,7 @@ Photos are saved in a folder named `DCIM`. Each flight is saved using the format
 | `[date/time]` | Date and time the flight was run, as `YYYY/MM/DD/HH/MM` |
 | `[flight number]` | Flight number, counted from the very first flight |
 | `[flight plan name]` | Name of the flight plan used to take the pictures |
-| `D` | Honestly, not sure. But every picture has it |
+| `D` | Ignroe it, every picture has it |
 
 DJI Fly drones (the Mini series that we are using) save all of their photos into a single DCIM folder, not separated by flight plans like DJI Pilot 2 drones. This is why the [flight planner](https://github.com/cojow/flight_planner) has a dedicated tab for separating the photos.
 
@@ -96,8 +96,9 @@ The Flight Planner will add information about the height, gimbal pitch, and phot
 
 ### Photo Folders {#sec-naming-photo-folders}
 
-Name the photo folder after the mission it's composed of (nadir and oblique flights combined).
+Name the photo folder after the mission it's composed of, nadir and oblique flights, with the prefix "photo".
 This should result in a unique name for every folder. 
+We will decide in a future meeting if we will group the photos by mission area or not. 
 
 This can be done in the photo sorter if you know the sequence you did the flights in (ideal), or manually afterwards sorting for each folder. 
 
@@ -311,14 +312,30 @@ The flight tracker is a companion app to the flight planner. It runs independent
 
 Here is a [link](https://byu.box.com/s/0tkvvoe2zg9b682r8vaxjwa2mwazyday) to the Box folder that we will use to organize all flight plans, taken photos, and annotated photos. If you should have access but don't, contact Connor Williams (willicon@byu.edu).
 
+#### Structure
+
+The Box folder is divided into 4 subdirectories. See  for naming conventions not mentioned here. 
+
+- Flight Missions: This folder will hold the flight plans of all flown missions. 
+Mission area folders may be placed directly into here with all missions inside of them. 
+This will keep it organized, and allow the flight tracker to work. See @sec-mission-folders and @sec-naming-missions for naming conventions. 
+**Make sure missions in this folder have actually been flown.**
+- Flight Photos: Once seperated by the photo sorter, place all photo folders here. 
+See @sec-naming-photo-folders for naming conventions. 
+- Annotated Photos: Photos that have been annotated using Label Studio go here. Make sure each folder includes all parts. See the [Label Studio](https://cojow.github.io/point_cloud_maker/Using_Label_Studio.html) standards for more information. 
+These will retain the same name as the folder with the prefix "**photo**" replaced with "**annotated**".
+- Point Clouds and Measurements: This will contain the measurement sheet documents.
+For now they will also contain atleast the point cloud, as well as the individual houses. 
+The folders will retain the same name as the photo folder with the prefix "**photo**" replaced with "**cloud**".
+
 ## TODO {#sec-todo}
 
 Open questions and items still needing field verification.
 
 **Naming**
 
-- The `D` suffix on DJI Fly photo filenames — meaning unknown. Probably not too important. See @sec-photos.
 - Mission folder naming scheme (bounding streets, arterials, common names, or numbered sections) — deferred to a future meeting. See @sec-mission-folders.
+- Group photos just by mission, or also by mission area like the flight missions. 
 
 **Flight Planning**
 

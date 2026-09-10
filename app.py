@@ -3758,8 +3758,7 @@ HTML_IMG_SRC_RE = re.compile(r'(<img\b[^>]*\bsrc\s*=\s*")([^"]+)(")', re.IGNOREC
 def _inline_local_images(text, base_dir):
     """
     GitHub serves README.md's images by fetching the real file at its
-    relative path, so `BYU_Specific_information/images/foo.png` just works
-    there. Streamlit's dev server has no route for that path though - it
+    relative path, so `images/foo.png` just works there. Streamlit's dev server has no route for that path though - it
     falls back to serving the app's own index.html for anything unmatched
     (with a 200, not a 404), so the browser tries to decode that HTML as an
     image and shows a broken icon instead. Swap local image paths for base64
