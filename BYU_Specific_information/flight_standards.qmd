@@ -243,12 +243,12 @@ For DJI Mini series drones (DJI Fly).
 - [ ] Remote ID is active on the aircraft.
 
 ::: {.callout-note}
-There is no 250 g exemption under Part 107, so the Minis all need to be registered even though a recreational flyer could skip it.
+There is no 250 g exemption under Part 107, so the Minis all need to be registered.
 :::
 
 #### Missions Built
 
-- [ ] A full flight set exists for each road section — one at ~70 ft and one at ~200 ft. See @sec-flight-paths.
+- [ ] A full flight set exists for each road section. One at ~70 ft and one at ~200 ft. See @sec-flight-paths.
 - [ ] Gimbal pitch matches the height for that flight. See @sec-heights-and-angles.
 - [ ] Every mission is **under 99 photos**. 
 - [ ] Paths run along the road shoulder, not over the traveled way or private property.
@@ -262,13 +262,13 @@ LAANC cannot be submitted from the Flight Planner — you have to file it in ano
 #### Transferred to the Controller
 
 - [ ] Controller powered on and connected to the computer by USB.
-- [ ] Preview (Mac), Android File Transfer, and any other MTP tools are **closed** — they hold the USB device and block the transfer.
-- [ ] Missions pushed across with the DJI Fly Transfer tab. See @sec-uploading.
+- [ ] Preview (Mac), Android File Transfer, and any other MTP tools are **closed**. Won't work if they are open. 
+- [ ] Missions pushed with the DJI Fly Transfer tab. See @sec-uploading.
 - [ ] Load each mission on the controller, back out to the mission history page, and press save.
 - [ ] Missions confirmed against the checklist at the bottom of the DJI Fly Transfer tab.
 
 ::: {.callout-important}
-The controller shows missions as long random strings, not names. The thumbnail is the only practical way to tell them apart in the field, and it does not update on its own — if you skip the refresh you will not know which mission is which.
+The controller shows missions as long random strings(on app) or date/time(on controller), not names. The thumbnail is the only practical way to tell them apart in the field, and it does not update on its own. If you skip the refresh you will not know which mission is which.
 :::
 
 ### On Site
@@ -278,6 +278,7 @@ The controller shows missions as long random strings, not names. The thumbnail i
 - [ ] Drone and controller batteries charged, plus spares.
 - [ ] SD card in the drone with free space, and the previous outing's photos already offloaded.
 - [ ] Propellers checked for chips or cracks.
+- [ ] Battery is securely in its slot. If it is not, it may slide out in the air. 
 
 #### Before Takeoff
 
@@ -292,8 +293,8 @@ Waypoint altitudes are relative to wherever the drone takes off, not to the miss
 
 #### Between Flights
 
-- [ ] At least **30 seconds** between flights. The Photo Sorter splits flights on time gaps, so back-to-back flights get merged into one folder.
-- [ ] Record the order you fly the missions in. It makes naming the groups in the Photo Sorter much faster afterwards.
+- [ ] Keep atleast **30 seconds** between flights. The Photo Sorter splits flights on time gaps, so back-to-back flights get merged into one folder.
+- [ ] Keep a record of the order you fly the missions in. It makes naming the groups in the Photo Sorter much faster afterwards.
 
 ### After Flights
 
