@@ -16,8 +16,17 @@ README.html
 #Ignore generated missions
 missions/
 
+#Ignore generated flight log spreadsheets
+flight_log/
+
 #Machine-specific tracker folder preference
 .tracker_config.json
 
 #User-specific Creator parameter presets
 .creator_presets.json
+
+#Machine-specific pilot name/certificate number, for flight log templates
+.pilot_info.json
+
+#Machine-specific per-folder flight-log generation counters
+.flight_log_counts.json

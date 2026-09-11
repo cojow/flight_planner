@@ -16,6 +16,9 @@ import uuid
 from geopy.geocoders import Nominatim
 import folium
 from folium.plugins import Draw, PolyLineTextPath
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 # Optional: only the experimental decomposed coverage strategy needs shapely.
 # Imported defensively so a missing install degrades to "that option is
@@ -909,8 +912,10 @@ def add_basemap(fmap):
 
 MISSION_DIR = "missions"
 SURFACES_DIR = "surfaces"
+FLIGHT_LOG_DIR = "flight_log"
 os.makedirs(MISSION_DIR, exist_ok=True)
 os.makedirs(SURFACES_DIR, exist_ok=True)
+os.makedirs(FLIGHT_LOG_DIR, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # Multi-user mode: per-session mission isolation
@@ -1372,6 +1377,46 @@ def is_dji_fly_kmz(kmz_path):
             return any(name.startswith('wpmz/') for name in kmz.namelist())
     except Exception:
         return False
+
+def get_kmz_first_waypoint(kmz_path):
+    """
+    (lat, lon) of a mission's first waypoint, or None if it can't be read.
+
+    A minimal, read-only subset of parse_kmz_for_editing's waylines.wpml
+    parsing - just enough to know roughly where a mission is, without pulling
+    in everything else that function computes (speeds, hardware, trigger
+    settings) that a flight-log location lookup has no use for.
+    """
+    try:
+        with zipfile.ZipFile(kmz_path, 'r') as kmz:
+            waylines_file = [n for n in kmz.namelist() if n.endswith('waylines.wpml')][0]
+            root_w = ET.fromstring(kmz.read(waylines_file))
+        c_node = root_w.find('.//{*}Placemark//{*}coordinates')
+        if c_node is None or not c_node.text:
+            return None
+        lon_str, lat_str = c_node.text.strip().split(',')[:2]
+        return float(lat_str), float(lon_str)
+    except Exception:
+        return None
+
+
+@st.cache_data(show_spinner=False, ttl=86400)
+def get_address_from_coords(lat, lon):
+    """
+    General address for a mission's location, via the same Nominatim service
+    get_coords_from_search already uses for the reverse direction. Cached per
+    -coordinate so regenerating a log for a folder whose missions haven't
+    changed doesn't re-hit the network for every mission again.
+    """
+    try:
+        geolocator = Nominatim(user_agent="dji_flight_planner_app")
+        location = geolocator.reverse((lat, lon), exactly_one=True, zoom=17, timeout=10)
+        if location:
+            return location.address
+    except Exception:
+        pass
+    return None
+
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_coords_from_search(query):
@@ -2747,6 +2792,69 @@ def save_creator_presets(presets):
         return f"{type(e).__name__}: {e}"
 
 
+PILOT_INFO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".pilot_info.json")
+
+
+def load_pilot_info():
+    if not os.path.exists(PILOT_INFO_FILE):
+        return {}
+    try:
+        with open(PILOT_INFO_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        st.session_state["_pilot_info_load_error"] = f"{type(e).__name__}: {e}"
+        return {}
+
+
+def save_pilot_info(name, certificate_number):
+    """
+    Writes the pilot name/certificate number file. Returns None on success or
+    the error text on failure - same reasoning as save_creator_presets: a
+    silently swallowed write failure would report "Saved" while leaving
+    nothing on disk for the next launch to load.
+    """
+    try:
+        with open(PILOT_INFO_FILE, 'w', encoding="utf-8") as f:
+            json.dump({"name": name, "certificate_number": certificate_number}, f, indent=2)
+        return None
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+
+
+FLIGHT_LOG_COUNTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".flight_log_counts.json")
+
+
+def load_flight_log_counts():
+    if not os.path.exists(FLIGHT_LOG_COUNTS_FILE):
+        return {}
+    try:
+        with open(FLIGHT_LOG_COUNTS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def next_flight_log_count(folder_path):
+    """
+    Bumps and returns the running "how many logs have been generated for
+    this folder" counter used in the log's filename, keyed by the folder's
+    absolute path so it stays correct regardless of which display label
+    (Root (missions/), a subfolder name, a browsed external path) happened
+    to be showing when it was clicked.
+    """
+    counts = load_flight_log_counts()
+    key = os.path.abspath(folder_path)
+    counts[key] = counts.get(key, 0) + 1
+    try:
+        with open(FLIGHT_LOG_COUNTS_FILE, 'w', encoding="utf-8") as f:
+            json.dump(counts, f, indent=2)
+    except Exception:
+        pass  # Worst case the count doesn't persist - not worth blocking the download over.
+    return counts[key]
+
+
 README_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "README.md")
 # Matches README bullets of the form "* **Widget Label**: explanation text",
 # capturing everything up to the next such bullet (or a blank line/EOF).
@@ -2906,6 +3014,192 @@ def sanitize_filename_component(name):
     """
     cleaned = _WINDOWS_ILLEGAL_FILENAME_CHARS_RE.sub('', name).strip().rstrip('.')
     return cleaned or "Mission"
+
+
+# ==========================================
+# FLIGHT LOG TEMPLATE (DJI Fly Transfer tab)
+# ==========================================
+_FLIGHT_PARAM_SUFFIX_RE = re.compile(r'_H(\d+)A(\d+)OL(\d+)(?:SO\d+)?$')
+
+FLIGHT_LOG_HEADERS = [
+    "Date", "Flight Name", "Aircraft", "Mission Location",
+    "Height (ft)", "Pitch (°)", "Overlap (%)",
+    "Start Time", "Stop Time", "Minutes", "Remarks",
+]
+_FLIGHT_LOG_COL_WIDTHS = [12, 16, 12, 34, 10, 9, 11, 11, 11, 10, 28]
+_FLIGHT_LOG_NAVY = "1F3864"
+_FLIGHT_LOG_GREEN = "C6E0B4"   # auto-filled by the app
+_FLIGHT_LOG_YELLOW = "FFF2CC"  # fill in by hand
+_FLIGHT_LOG_BLUE = "BDD7EE"    # calculated by a formula - don't type over it
+_FLIGHT_LOG_GREY = "595959"
+
+
+def parse_flight_params_from_name(base_name):
+    """
+    (height_ft, pitch_deg, overlap_pct) parsed from a mission's own
+    "_H<height>A<pitch>OL<overlap>(SO<side-overlap>)" filename suffix - the
+    exact suffix strip_flight_suffix() removes. Returns (None, None, None)
+    if the name doesn't carry one (e.g. it was renamed outside the app's
+    convention).
+    """
+    m = _FLIGHT_PARAM_SUFFIX_RE.search(base_name)
+    if not m:
+        return None, None, None
+    return int(m.group(1)), int(m.group(2)), int(m.group(3))
+
+
+def gather_flight_log_rows(folder, kmz_filenames, progress=None):
+    """
+    One row per mission KMZ in `folder`, with everything knowable before the
+    mission has actually been flown filled in: the name (mission-name
+    portion of the filename, stripped of its _Fly/_Pilot + _HxxAxxOLxx
+    suffix), the platform, its planned height/pitch/overlap (parsed from
+    that same suffix), and a general address reverse-geocoded from its first
+    waypoint. Date/times/minutes/remarks are left for the pilot to fill in
+    after flying.
+
+    `progress`, if given, is called with (index, total, filename) before
+    each mission is processed, so the caller can drive a progress bar - this
+    loop is Nominatim-rate-limited (sleeps between lookups), so a folder with
+    many missions takes real, visible time.
+    """
+    rows = []
+    for i, fname in enumerate(kmz_filenames):
+        if progress:
+            progress(i, len(kmz_filenames), fname)
+        full_path = os.path.join(folder, fname)
+        base_name = os.path.splitext(fname)[0]
+        height, pitch, overlap = parse_flight_params_from_name(base_name)
+        flight_name = strip_flight_suffix(base_name)
+
+        location = None
+        coords = get_kmz_first_waypoint(full_path)
+        if coords:
+            location = get_address_from_coords(*coords)
+            time.sleep(1)  # Nominatim usage policy: max ~1 request/second.
+
+        rows.append({
+            "flight_name": flight_name,
+            "aircraft": "DJI Fly",
+            "location": location or "",
+            "height": height,
+            "pitch": pitch,
+            "overlap": overlap,
+        })
+    return rows
+
+
+def build_flight_log_workbook(rows, pilot_name, certificate_number):
+    """
+    The actual downloadable flight-log spreadsheet - layout and legend match
+    the reviewed mockup (green = auto-filled by the app, yellow = fill in by
+    hand), plus a third color for Minutes, which is a live formula off
+    Start/Stop Time rather than another hand-filled cell (blue = calculated,
+    don't type over it) - driven by real mission data instead of the
+    mockup's four illustrative examples.
+    """
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Flight Log"
+    last_col = get_column_letter(len(FLIGHT_LOG_HEADERS))
+
+    thin = Side(style="thin", color="B7B7B7")
+    box = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def set_cell(coord, value, *, bold=False, italic=False, size=11, color="000000",
+                 fill=None, align=None, valign=None, border=False, wrap=False, underline=False):
+        c = ws[coord]
+        c.value = value
+        c.font = Font(name="Arial", bold=bold, italic=italic, size=size, color=color,
+                       underline="single" if underline else None)
+        if fill:
+            c.fill = PatternFill("solid", fgColor=fill)
+        if align or valign or wrap:
+            c.alignment = Alignment(horizontal=align, vertical=valign, wrap_text=wrap)
+        if border:
+            c.border = box
+        return c
+
+    ws.merge_cells(f"A1:{last_col}1")
+    set_cell("A1", "sUAS Pilot Logbook", bold=True, size=16, underline=True, align="left")
+    ws.merge_cells(f"A2:{last_col}2")
+    set_cell("A2", "Downloaded pre-filled from the Flight Planner's DJI Fly Transfer tab, one row per mission in the source folder.",
+              italic=True, size=9, color=_FLIGHT_LOG_GREY)
+
+    set_cell("B4", "", fill=_FLIGHT_LOG_GREEN, border=True)
+    set_cell("C4", "Auto-filled by the app", italic=True, size=9, color=_FLIGHT_LOG_GREY)
+    set_cell("E4", "", fill=_FLIGHT_LOG_YELLOW, border=True)
+    set_cell("F4", "Fill in by hand after the flight", italic=True, size=9, color=_FLIGHT_LOG_GREY)
+    set_cell("H4", "", fill=_FLIGHT_LOG_BLUE, border=True)
+    set_cell("I4", "Calculated - don't edit", italic=True, size=9, color=_FLIGHT_LOG_GREY)
+
+    set_cell("B6", "Pilot:", bold=True, align="right")
+    set_cell("C6", pilot_name, fill=_FLIGHT_LOG_GREEN, border=True)
+    set_cell("B7", "Certificate Number:", bold=True, align="right")
+    set_cell("C7", certificate_number, fill=_FLIGHT_LOG_GREEN, border=True)
+    set_cell("B8", "Log Start Date:", bold=True, align="right")
+    set_cell("C8", "", fill=_FLIGHT_LOG_YELLOW, border=True)
+    set_cell("B9", "Log End Date:", bold=True, align="right")
+    set_cell("C9", "", fill=_FLIGHT_LOG_YELLOW, border=True)
+
+    header_row = 14
+    data_first_row = header_row + 1
+    data_last_row = data_first_row + max(len(rows), 1) - 1
+
+    set_cell("F6", "Total Hours:", bold=True, align="right")
+    set_cell("G6", f"=SUM(J{data_first_row}:J{data_last_row})/60", align="center", border=True)
+    set_cell("F7", "Total Flights:", bold=True, align="right")
+    set_cell("G7", f"=COUNTA(A{data_first_row}:A{data_last_row})", align="center", border=True)
+    ws["G6"].number_format = "0.0"
+    ws["G7"].number_format = "0"
+
+    for i, (h, w) in enumerate(zip(FLIGHT_LOG_HEADERS, _FLIGHT_LOG_COL_WIDTHS), start=1):
+        col = get_column_letter(i)
+        set_cell(f"{col}{header_row}", h, bold=True, color="FFFFFF", fill=_FLIGHT_LOG_NAVY,
+                  align="center", valign="center", wrap=True, border=True)
+        ws.column_dimensions[col].width = w
+    ws.row_dimensions[header_row].height = 30
+
+    for offset, row in enumerate(rows):
+        r = data_first_row + offset
+        set_cell(f"A{r}", "", fill=_FLIGHT_LOG_YELLOW, border=True, align="center")                     # Date
+        set_cell(f"B{r}", row["flight_name"], fill=_FLIGHT_LOG_GREEN, border=True, align="center")      # Flight Name
+        set_cell(f"C{r}", row["aircraft"], fill=_FLIGHT_LOG_GREEN, border=True, align="center")         # Aircraft
+        set_cell(f"D{r}", row["location"], fill=_FLIGHT_LOG_GREEN, border=True, align="left")           # Mission Location
+        set_cell(f"E{r}", row["height"], fill=_FLIGHT_LOG_GREEN, border=True, align="center")           # Height
+        set_cell(f"F{r}", row["pitch"], fill=_FLIGHT_LOG_GREEN, border=True, align="center")            # Pitch
+        set_cell(f"G{r}", row["overlap"], fill=_FLIGHT_LOG_GREEN, border=True, align="center")          # Overlap
+        set_cell(f"H{r}", "", fill=_FLIGHT_LOG_YELLOW, border=True, align="center")                     # Start Time
+        set_cell(f"I{r}", "", fill=_FLIGHT_LOG_YELLOW, border=True, align="center")                     # Stop Time
+        ws[f"H{r}"].number_format = "h:mm AM/PM"
+        ws[f"I{r}"].number_format = "h:mm AM/PM"
+        # MOD(..., 1) rather than a plain subtraction so a flight that
+        # crosses midnight (stop time earlier in the day than start time)
+        # still comes out positive instead of a stray negative minute count.
+        set_cell(f"J{r}", f'=IF(OR(H{r}="",I{r}=""),"",MOD(I{r}-H{r},1)*1440)',
+                  fill=_FLIGHT_LOG_BLUE, border=True, align="center")                                    # Minutes (calculated)
+        ws[f"J{r}"].number_format = "0.0"
+        set_cell(f"K{r}", "", fill=_FLIGHT_LOG_YELLOW, border=True, align="left")                       # Remarks
+        ws.row_dimensions[r].height = 18
+
+    # No missions - leave one bordered, fully-manual row so the sheet still
+    # looks like a template rather than a table with a header and nothing else.
+    if not rows:
+        r = data_first_row
+        for col_letter in ["A", "H", "I", "K"]:
+            set_cell(f"{col_letter}{r}", "", fill=_FLIGHT_LOG_YELLOW, border=True)
+        for col_letter in ["B", "C", "D", "E", "F", "G"]:
+            set_cell(f"{col_letter}{r}", "", border=True)
+        ws[f"H{r}"].number_format = "h:mm AM/PM"
+        ws[f"I{r}"].number_format = "h:mm AM/PM"
+        set_cell(f"J{r}", f'=IF(OR(H{r}="",I{r}=""),"",MOD(I{r}-H{r},1)*1440)',
+                  fill=_FLIGHT_LOG_BLUE, border=True, align="center")
+        ws[f"J{r}"].number_format = "0.0"
+
+    ws.freeze_panes = f"A{data_first_row}"
+    ws.sheet_view.showGridLines = False
+    return wb
+
 
 def line_intersection_local(p_a, bearing_a, p_b, bearing_b):
     """
@@ -3918,12 +4212,74 @@ def _readme_dialog():
 """, height=0)
 
 
+# Loaded once per session (not re-read on every rerun) so editing the file by
+# hand while the app is running doesn't fight with in-progress edits in the
+# dialog below - same reasoning as the other persisted-to-disk settings in
+# this app (Creator presets, tracker folder path).
+if "pilot_name" not in st.session_state:
+    _pilot_info = load_pilot_info()
+    st.session_state.pilot_name = _pilot_info.get("name", "")
+    st.session_state.pilot_cert = _pilot_info.get("certificate_number", "")
+
+
+@st.dialog("Pilot Info")
+def _pilot_info_dialog():
+    st.write("Saved on this computer and reused every time a flight log template is generated, so you only enter it once.")
+    name = st.text_input("Pilot Name", value=st.session_state.pilot_name, key="pilot_name_input")
+    cert = st.text_input("Certificate Number", value=st.session_state.pilot_cert, key="pilot_cert_input")
+    if st.button("💾 Save", width='stretch'):
+        err = save_pilot_info(name, cert)
+        if err:
+            st.error(f"Could not save: {err}")
+        else:
+            st.session_state.pilot_name = name
+            st.session_state.pilot_cert = cert
+            st.success("Saved.")
+
+    st.write("---")
+    # Streamlit only supports one open dialog at a time, so a second
+    # @st.dialog can't be nested inside this one for the confirmation step -
+    # it's handled as an inline reveal within this same dialog instead.
+    #
+    # No explicit st.rerun() anywhere below: every branch here already runs
+    # inside a button's on-click handler, which Streamlit reruns on its own -
+    # calling st.rerun() *inside an open dialog* closes it instead of just
+    # refreshing its contents (unlike the plain implicit rerun a click
+    # already triggers), which was closing this dialog the instant "Reset
+    # All Local Settings" was clicked instead of revealing the confirm step.
+    if not st.session_state.get("_show_reset_confirm"):
+        if st.button("⚠️ Reset All Local Settings", width='stretch'):
+            st.session_state._show_reset_confirm = True
+    else:
+        st.warning(
+            "This permanently deletes your saved pilot info, Creator parameter presets, "
+            "and flight-log folder counters from this computer. This cannot be undone."
+        )
+        reset_cancel_col, reset_ok_col = st.columns(2)
+        if reset_cancel_col.button("Cancel", width='stretch'):
+            st.session_state._show_reset_confirm = False
+        if reset_ok_col.button("Yes, Reset Everything", type="primary", width='stretch'):
+            for f in (PILOT_INFO_FILE, CREATOR_PRESETS_FILE, FLIGHT_LOG_COUNTS_FILE):
+                try:
+                    if os.path.exists(f):
+                        os.remove(f)
+                except Exception:
+                    pass
+            st.session_state.pilot_name = ""
+            st.session_state.pilot_cert = ""
+            st.session_state._show_reset_confirm = False
+            st.success("All local settings have been reset.")
+
+
 with st.container(key="app_header"):
-    header_title_col, header_tabs_col, header_readme_col = st.columns([1, 4, 0.6], gap="medium")
+    header_title_col, header_tabs_col, header_pilot_col, header_readme_col = st.columns([1, 4, 0.6, 0.6], gap="medium")
     with header_title_col:
         st.markdown("# DJI Flight Planner")
     with header_tabs_col:
         page = st.radio("Navigation", ["Creator", "Editor", "Viewer  |", "Photo Sorter", "DJI Fly Transfer"], horizontal=True, label_visibility="collapsed")
+    with header_pilot_col:
+        if st.button("🪪 Pilot", width='stretch', help="Set the pilot name and certificate number used on flight log templates"):
+            _pilot_info_dialog()
     with header_readme_col:
         if st.button("📖 README", width='stretch'):
             _readme_dialog()
@@ -5782,6 +6138,46 @@ elif page == 'DJI Fly Transfer':
             # checklist of exactly what was just transferred rather than leaving
             # the user to remember on their own.
             if st.session_state.get("last_transfer_checklist"):
+                # The flight log should reflect what's actually on the
+                # controller now, not every KMZ sitting in the source folder
+                # (that folder can hold missions from unrelated batches, old
+                # tests, etc.) - so it only appears once there's a completed
+                # transfer to draw from, and uses that same checklist as its
+                # mission list rather than re-scanning active_dir.
+                transferred_kmz_names = [kmz_name for kmz_name, target_uuid in st.session_state.last_transfer_checklist]
+
+                st.write("---")
+                if st.button("⬇️ Download Flight Log", width='stretch',
+                             help="Generates a flight-log spreadsheet pre-filled with the missions just transferred above."):
+                    if not st.session_state.pilot_name.strip():
+                        st.warning("Set your pilot name using the 🪪 Pilot button in the header before downloading a flight log.")
+                    else:
+                        log_progress = st.progress(0, text="Looking up mission locations...")
+
+                        def _log_progress(i, total, fname):
+                            log_progress.progress(i / total, text=f"Looking up {fname}...")
+
+                        rows = gather_flight_log_rows(active_dir, transferred_kmz_names, progress=_log_progress)
+                        log_progress.progress(1.0, text="Building spreadsheet...")
+
+                        wb = build_flight_log_workbook(rows, st.session_state.pilot_name, st.session_state.pilot_cert)
+
+                        pilot_component = sanitize_filename_component(st.session_state.pilot_name).replace(" ", "_")
+                        folder_component = sanitize_filename_component(os.path.basename(os.path.normpath(active_dir)) or "missions")
+                        count = next_flight_log_count(active_dir)
+                        log_filename = f"Flight_Log_{pilot_component}_{folder_component}_{count}.xlsx"
+                        log_path = os.path.join(FLIGHT_LOG_DIR, log_filename)
+                        wb.save(log_path)
+
+                        log_progress.empty()
+                        st.success(f"Saved **{log_filename}** to the local `{FLIGHT_LOG_DIR}/` folder with {len(rows)} mission(s) pre-filled.")
+                        with open(log_path, "rb") as f:
+                            st.download_button(
+                                "💾 Save a copy from the browser", f.read(), file_name=log_filename,
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key="dl_flight_log",
+                            )
+
                 st.write("---")
                 st.subheader("📋 Manual Thumbnail Refresh Checklist")
                 st.info(

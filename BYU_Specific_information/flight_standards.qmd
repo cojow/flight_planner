@@ -243,9 +243,10 @@ See the [DJI Fly Transfer](https://cojow.github.io/flight_planner/#dji-fly-trans
 
 ## Pre Flight Checklist
 
-For DJI Mini series drones (DJI Fly). 
+For DJI Mini series drones (DJI Fly).
+Download the printable checklist as a PDF [here](https://cojow.github.io/flight_planner/BYU_Specific_information/flight_checklist.pdf).
 
-### Before Flights
+### General
 
 #### Legal & Registration
 
@@ -257,6 +258,14 @@ For DJI Mini series drones (DJI Fly).
 ::: {.callout-note}
 There is no 250 g exemption under Part 107, so the Minis all need to be registered.
 :::
+
+### Before Flights
+
+#### Gear
+
+- [ ] Drone and controller batteries charged, plus spares.
+- [ ] SD card in the drone with free space, and the previous outing's photos already offloaded.
+- [ ] Propellers checked for chips or cracks.
 
 #### Missions Built
 
@@ -283,21 +292,28 @@ LAANC cannot be submitted from the Flight Planner — you have to file it in ano
 The controller shows missions as long random strings(on app) or date/time(on controller), not names. The thumbnail is the only practical way to tell them apart in the field, and it does not update on its own. If you skip the refresh you will not know which mission is which.
 :::
 
-### On Site
+### On Site Before Takeoff
 
-#### Gear
+#### Drone Check
 
-- [ ] Drone and controller batteries charged, plus spares.
-- [ ] SD card in the drone with free space, and the previous outing's photos already offloaded.
-- [ ] Propellers checked for chips or cracks.
+- [ ] Insert a charged battery and confirm it clicks/locks in place
 - [ ] Battery is securely in its slot. If it is not, it may slide out in the air. 
-
-#### Before Takeoff
-
 - [ ] Daylight, clear visibility, wind within the aircraft's limits.
+- [ ] Note any potential obsticals or things that may interfear with the flight plan. 
 - [ ] No bystanders under the flight path.
 - [ ] Correct mission selected — check the thumbnail.
 - [ ] **Take off as close as possible to the first waypoint.**
+
+#### Start Up Check
+
+- [ ] Power on the RC first, then power on the drone
+- [ ] Open flight app and confirm live video feed is active
+- [ ] Wait for GPS lock — confirm satellite count is 8 or higher
+- [ ] Check compass and IMU calibration status — recalibrate if prompted
+- [ ] Set Return-to-Home altitude above the tallest obstacle in the flight path
+- [ ] Check RC signal strength and confirm controls are responding
+- [ ] Arm motors briefly to confirm all props spin freely and evenly
+- [ ] Do a low 6-foot hover for 10–15 seconds to check stability before flying out
 
 ::: {.callout-important}
 Waypoint altitudes are relative to wherever the drone takes off, not to the mission or to sea level. Launching from a spot noticeably higher or lower than the first waypoint shifts the whole flight up or down by that difference.

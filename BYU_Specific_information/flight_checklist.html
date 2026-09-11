@@ -6,8 +6,9 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
+<meta name="author" content="Connor Williams">
 
-<title>BYU Specific Information - Index</title>
+<title>Pre-Flight Checklist</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -2164,24 +2165,37 @@ vertical-align: -.125em;
 
 </head>
 
-<body class="fullcontent quarto-light">
+<body class="quarto-light">
 
 <div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
-
+<div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+<div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="flight_checklist.pdf"><i class="bi bi-file-pdf"></i>PDF</a></li></ul></div></div>
 <main class="content" id="quarto-document-content">
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">BYU Specific Information - Index</h1>
-<p class="subtitle lead">Reference docs for BYU drone research flights. Can be ignored by people not working with Dr. Macfarlane.</p>
+<h1 class="title">Pre-Flight Checklist</h1>
+<p class="subtitle lead">Field checklist for DJI Mini series (DJI Fly) flights</p>
 </div>
 
 
 
 <div class="quarto-title-meta">
 
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Connor Williams </p>
+          </div>
+  </div>
     
   
+    <div>
+    <div class="quarto-title-meta-heading">Last Updated</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date-modified">September 11, 2026</p>
+    </div>
+  </div>
     
   </div>
   
@@ -2190,17 +2204,122 @@ vertical-align: -.125em;
 </header>
 
 
-<ul>
-<li><a href="flight_standards.html"><strong>Flight Standards</strong></a> — Licensure, planning, and naming conventions for BYU drone flights.</li>
-<li><a href="flight_checklist.pdf"><strong>Pre-Flight Checklist</strong></a> (PDF) — Printable field checklist excerpted from Flight Standards.</li>
-<li><a href="flight_tracker.html"><strong>Flight Log Tracker</strong></a> — How to use the standalone flight-log tracking app.</li>
-<li><a href="part_107.html"><strong>How To Get Your Part 107 Certificate</strong></a> — Steps for obtaining a Part 107 remote pilot certificate.</li>
-<li><a href="Flying_in_Ecuador/ecuador_drone_laws.html"><strong>Ecuador Drone (UAS) Laws — Notes</strong></a> — Compiled notes on import tax, general operating rules, insurance, and flight considerations.</li>
-<li><a href="Flying_in_Ecuador/flying_with_drones.html"><strong>Traveling with Drones</strong></a> — Compiled notes on rules and regulations for transporting drones.</li>
-<li><a href="Flying_in_Ecuador/Ecuador_UAS_Research_Guide.pdf"><strong>Flying UAS/Drones in Ecuador for Academic Research</strong></a> (PDF) — A translated, cited guide to RDAC 101 and related Ecuadorian law, for a foreign graduate researcher.</li>
-<li><a href="https://cojow.github.io/point_cloud_maker/"><strong>Point Cloud Maker</strong></a> - Companion repository. For extracting buildings from drone images</li>
-<li><a href="https://github.com/cojow/flight_planner">Link to github.</a></li>
+<p>For DJI Mini series drones (DJI Fly). Excerpted from the full <a href="https://cojow.github.io/flight_planner/BYU_Specific_information/flight_standards.html">Flight Standards</a> document — see that page for the reasoning behind each item, naming conventions, and flight-planning guidance.</p>
+<section id="before-flights" class="level2">
+<h2 class="anchored" data-anchor-id="before-flights">Before Flights</h2>
+<section id="gear" class="level3">
+<h3 class="anchored" data-anchor-id="gear">Gear</h3>
+<ul class="task-list">
+<li><label><input type="checkbox">Drone and controller batteries charged, plus spares.</label></li>
+<li><label><input type="checkbox">SD card in the drone with free space, and the previous outing’s photos already offloaded.</label></li>
+<li><label><input type="checkbox">Propellers checked for chips or cracks.</label></li>
 </ul>
+</section>
+<section id="missions-built" class="level3">
+<h3 class="anchored" data-anchor-id="missions-built">Missions Built</h3>
+<ul class="task-list">
+<li><label><input type="checkbox">A full flight set exists for each road section. One at ~70 ft and one at ~200 ft. See <a href="https://cojow.github.io/flight_planner/BYU_Specific_information/flight_standards.html#sec-flight-paths">Flight Paths</a>.</label></li>
+<li><label><input type="checkbox">Gimbal pitch matches the height for that flight. See <a href="https://cojow.github.io/flight_planner/BYU_Specific_information/flight_standards.html#sec-heights-and-angles">Heights and Angles</a>.</label></li>
+<li><label><input type="checkbox">Every mission is <strong>under 99 photos</strong>.</label></li>
+<li><label><input type="checkbox">Paths run along the road shoulder, not over the traveled way or private property.</label></li>
+<li><label><input type="checkbox">Missions are named according to the <a href="https://cojow.github.io/flight_planner/BYU_Specific_information/flight_standards.html#sec-naming-missions">mission naming convention</a>.</label></li>
+<li><label><input type="checkbox">Airspace checked with <strong>Show FAA Airspace Restrictions</strong> in the Creator, and LAANC filed if the ceiling requires it.</label></li>
+</ul>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Important
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>LAANC cannot be submitted from the Flight Planner — you have to file it in another app before you fly.</p>
+</div>
+</div>
+</section>
+<section id="transferred-to-the-controller" class="level3">
+<h3 class="anchored" data-anchor-id="transferred-to-the-controller">Transferred to the Controller</h3>
+<ul class="task-list">
+<li><label><input type="checkbox">Controller powered on and connected to the computer by USB.</label></li>
+<li><label><input type="checkbox">Preview (Mac), Android File Transfer, and any other MTP tools are <strong>closed</strong>. Won’t work if they are open.</label></li>
+<li><label><input type="checkbox">Missions pushed with the DJI Fly Transfer tab. See <a href="https://cojow.github.io/flight_planner/BYU_Specific_information/flight_standards.html#sec-uploading">Uploading</a>.</label></li>
+<li><label><input type="checkbox">Load each mission on the controller, back out to the mission history page, and press save.</label></li>
+<li><label><input type="checkbox">Missions confirmed against the checklist at the bottom of the DJI Fly Transfer tab.</label></li>
+</ul>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Important
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The controller shows missions as long random strings (on app) or date/time (on controller), not names. The thumbnail is the only practical way to tell them apart in the field, and it does not update on its own. If you skip the refresh you will not know which mission is which.</p>
+</div>
+</div>
+</section>
+</section>
+<section id="on-site-before-takeoff" class="level2">
+<h2 class="anchored" data-anchor-id="on-site-before-takeoff">On Site Before Takeoff</h2>
+<section id="drone-check" class="level3">
+<h3 class="anchored" data-anchor-id="drone-check">Drone Check</h3>
+<ul class="task-list">
+<li><label><input type="checkbox">Insert a charged battery and confirm it clicks/locks in place</label></li>
+<li><label><input type="checkbox">Battery is securely in its slot. If it is not, it may slide out in the air.</label></li>
+<li><label><input type="checkbox">Daylight, clear visibility, wind within the aircraft’s limits.</label></li>
+<li><label><input type="checkbox">Note any potential obstacles or things that may interfere with the flight plan.</label></li>
+<li><label><input type="checkbox">No bystanders under the flight path.</label></li>
+<li><label><input type="checkbox">Correct mission selected — check the thumbnail.</label></li>
+<li><label><input type="checkbox"><strong>Take off as close as possible to the first waypoint.</strong></label></li>
+</ul>
+</section>
+<section id="start-up-check" class="level3">
+<h3 class="anchored" data-anchor-id="start-up-check">Start Up Check</h3>
+<ul class="task-list">
+<li><label><input type="checkbox">Power on the RC first, then power on the drone</label></li>
+<li><label><input type="checkbox">Open flight app and confirm live video feed is active</label></li>
+<li><label><input type="checkbox">Wait for GPS lock — confirm satellite count is 8 or higher</label></li>
+<li><label><input type="checkbox">Check compass and IMU calibration status — recalibrate if prompted</label></li>
+<li><label><input type="checkbox">Set Return-to-Home altitude above the tallest obstacle in the flight path</label></li>
+<li><label><input type="checkbox">Check RC signal strength and confirm controls are responding</label></li>
+<li><label><input type="checkbox">Arm motors briefly to confirm all props spin freely and evenly</label></li>
+<li><label><input type="checkbox">Do a low 6-foot hover for 10–15 seconds to check stability before flying out</label></li>
+</ul>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Important
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Waypoint altitudes are relative to wherever the drone takes off, not to the mission or to sea level. Launching from a spot noticeably higher or lower than the first waypoint shifts the whole flight up or down by that difference.</p>
+</div>
+</div>
+</section>
+<section id="between-flights" class="level3">
+<h3 class="anchored" data-anchor-id="between-flights">Between Flights</h3>
+<ul class="task-list">
+<li><label><input type="checkbox">Keep at least <strong>30 seconds</strong> between flights. The Photo Sorter splits flights on time gaps, so back-to-back flights get merged into one folder.</label></li>
+<li><label><input type="checkbox">Keep a record of the order you fly the missions in. It makes naming the groups in the Photo Sorter much faster afterwards.</label></li>
+</ul>
+</section>
+</section>
+<section id="after-flights" class="level2">
+<h2 class="anchored" data-anchor-id="after-flights">After Flights</h2>
+<ul class="task-list">
+<li><label><input type="checkbox">Photos pulled off and split with the Photo Sorter.</label></li>
+<li><label><input type="checkbox">Folders named after their mission. See <a href="https://cojow.github.io/flight_planner/BYU_Specific_information/flight_standards.html#sec-naming-photo-folders">Photo Folders</a>.</label></li>
+<li><label><input type="checkbox">Missions uploaded to Box so the flight tracker picks them up. See <a href="https://cojow.github.io/flight_planner/BYU_Specific_information/flight_standards.html#sec-flight-tracker">Flight Tracker</a>.</label></li>
+<li><label><input type="checkbox">Photos uploaded to Box folder.</label></li>
+</ul>
+</section>
 
 </main>
 <!-- /main column -->

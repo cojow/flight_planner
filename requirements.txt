@@ -9,4 +9,5 @@ shapely>=2.0.0
 geopy>=2.4.1
 matplotlib>=3.7.0
 Pillow>=10.0.0
+openpyxl>=3.1.0
 comtypes>=1.2.0; sys_platform == "win32"
