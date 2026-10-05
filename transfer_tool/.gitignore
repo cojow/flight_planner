@@ -1,0 +1,5 @@
+# PyInstaller output - rebuilt per platform, never committed
+build/
+dist/
+*.spec
+__pycache__/

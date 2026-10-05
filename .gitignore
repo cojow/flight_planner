@@ -26,8 +26,6 @@ flight_log/
 .creator_presets.json
 
 
-# Until it is finished
-transfer_tool/
 
 #Machine-specific pilot name/certificate number, for flight log templates
 .pilot_info.json
