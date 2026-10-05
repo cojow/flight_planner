@@ -28,18 +28,17 @@ Plan a mission on the website, download the `.kmz`, then transfer it here.
    helper *replaces* an existing mission rather than creating a new one, so
    there has to be one to overwrite. Anything works - fly two points in your
    driveway and save it.
-3. Plug the controller into the computer and switch it on. On the
-   controller's screen, set the USB connection to **File Transfer** - it
-   starts in charge-only mode and will not hand over any files until you do.
-4. On a Mac, **quit Preview, Photos, and Image Capture** if any are open.
+3. On a Mac, **quit Preview, Photos, and Image Capture** if any are open.
    macOS only lets one program talk to the controller at a time, and Preview
    alone being open is enough to stop the transfer.
-5. In the helper: **Choose .kmz...**, then **Scan controller**, pick a slot,
-   then **Transfer to controller**.
+4. Plug the controller into the computer and switch it on.
+5. In the helper: **Choose .kmz...** for a single mission, or **Choose
+   folder...** to pick from a folder you have been saving missions into. Then
+   **Scan controller**, pick a slot, then **Transfer to controller**.
 6. Open the mission list in DJI Fly. If the mission is not there straight
    away, back out of the list and open it again.
 
-The preview thumbnail next to each slot shows the mission currently in it, so
+The preview picture next to each slot shows the mission currently in it, so
 you can see what you are about to overwrite.
 
 ### Controller support
@@ -70,7 +69,7 @@ built-in screen) are also untested.
 
 ### If it cannot find the controller (RC 2)
 
-Two things account for nearly every failure, and neither is guessable from
+One thing accounts for nearly every failure, and it is not guessable from
 the error, which surfaces as an unhelpful "could not claim interface" from
 deep inside libmtp:
 
@@ -81,11 +80,6 @@ deep inside libmtp:
   Preview, Photos, or Image Capture themselves - those are real apps with
   windows and possibly unsaved work, so closing them is left to you. When a
   scan fails, the helper checks which of them is running and names it.
-- **Set the controller's USB connection to File Transfer.** The RC 2 is an
-  Android device and comes up in charge-only mode: it appears over USB, and
-  the helper will even identify it as a DJI Controller 2, while still
-  refusing all file access. Look for the USB notification on the controller's
-  own screen.
 
 Also worth checking:
 
