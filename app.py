@@ -3850,6 +3850,31 @@ SIDEBAR_W = "300px"
 # map area's fixed top offset always agree with each other.
 HEADER_H = "72px"
 
+# --- Floating panel colours ---------------------------------------------
+# Every panel that floats over the map paints its own background rather than
+# inheriting the page's, so each one has to be told what the theme is. These
+# were hardcoded white, which in dark mode left Streamlit's near-white body
+# text sitting on a white panel - unreadable, and only on those panels.
+# st.context.theme reruns the app when the theme changes, so this follows an
+# in-app theme switch rather than only the operating system's setting.
+try:
+    _DARK_THEME = st.context.theme.type == "dark"
+except Exception:
+    # Older Streamlit, or no browser context yet (e.g. "streamlit run" doing
+    # a bare script pass): light is Streamlit's own default, so match it.
+    _DARK_THEME = False
+
+if _DARK_THEME:
+    HUD_BG = "rgba(14,17,23,0.96)"        # Streamlit's dark page background
+    HUD_BG_SOFT = "rgba(14,17,23,0.86)"   # same, for panels that sit lighter over the map
+    HUD_TEXT = "#FAFAFA"
+    HUD_SHADOW = "rgba(0,0,0,0.55)"       # a soft shadow vanishes against a dark map
+else:
+    HUD_BG = "rgba(255,255,255,0.96)"
+    HUD_BG_SOFT = "rgba(255,255,255,0.82)"
+    HUD_TEXT = "#31333F"
+    HUD_SHADOW = "rgba(0,0,0,0.18)"
+
 st.markdown(f"""
 <style>
 html, body {{ overflow: hidden !important; }}
@@ -3871,8 +3896,8 @@ footer {{ display: none !important; }}
     position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important;
     z-index: 1000010 !important; display: flex !important; align-items: center !important;
     gap: 16px !important; padding: 10px 16px !important;
-    background: rgba(255,255,255,0.96) !important; backdrop-filter: blur(6px);
-    box-shadow: 0 2px 10px rgba(0,0,0,0.18) !important;
+    background: {HUD_BG} !important; backdrop-filter: blur(6px);
+    box-shadow: 0 2px 10px {HUD_SHADOW} !important;
 }}
 .st-key-app_header [data-testid="stHorizontalBlock"] {{ width: 100% !important; align-items: center !important; }}
 .st-key-app_header h1 {{ font-size: 1.6rem !important; margin: 0 !important; white-space: nowrap !important; }}
@@ -3898,8 +3923,8 @@ footer {{ display: none !important; }}
     position: static !important; width: 100% !important;
     display: flex !important; align-items: flex-start !important;
     gap: 24px !important; flex-wrap: wrap !important; padding: 12px 16px !important;
-    background: rgba(255,255,255,0.95) !important; backdrop-filter: blur(6px);
-    box-shadow: 0 2px 10px rgba(0,0,0,0.18) !important;
+    background: {HUD_BG} !important; backdrop-filter: blur(6px);
+    box-shadow: 0 2px 10px {HUD_SHADOW} !important;
     z-index: 1 !important;
 }}
 .st-key-map_area .st-key-top_bar [data-testid="stHorizontalBlock"] {{ flex: 1 1 auto !important; }}
@@ -3922,7 +3947,7 @@ footer {{ display: none !important; }}
     height: auto !important; width: auto !important; z-index: 5 !important; pointer-events: none !important;
 }}
 .st-key-notices {{
-    background: rgba(255,255,255,0.82) !important; backdrop-filter: blur(3px);
+    background: {HUD_BG_SOFT} !important; backdrop-filter: blur(3px);
     padding: 4px 16px !important; width: 100% !important; box-sizing: border-box !important;
 }}
 .st-key-notices > div {{ width: 100% !important; }}
@@ -3940,19 +3965,19 @@ footer {{ display: none !important; }}
 .st-key-screen_center {{
     position: fixed !important; bottom: 16px !important; right: 16px !important; z-index: 1000006 !important;
     width: fit-content !important; max-width: calc(100vw - {SIDEBAR_W} - 32px) !important;
-    background: rgba(255,255,255,0.82) !important; backdrop-filter: blur(3px);
-    padding: 4px 12px !important; border-radius: 8px !important; box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+    background: {HUD_BG_SOFT} !important; backdrop-filter: blur(3px);
+    padding: 4px 12px !important; border-radius: 8px !important; box-shadow: 0 2px 8px {HUD_SHADOW} !important;
 }}
-.st-key-screen_center [data-testid="stMarkdownContainer"] div {{ font-size: 0.8rem !important; color: #31333F !important; white-space: nowrap !important; }}
+.st-key-screen_center [data-testid="stMarkdownContainer"] div {{ font-size: 0.8rem !important; color: {HUD_TEXT} !important; white-space: nowrap !important; }}
 
 /* Floating side panel for secondary content (e.g. the Editor's coordinate
    table) - right-aligned so it never collides with the sidebar. */
 .st-key-side_panel {{
     position: fixed !important; top: 245px !important; right: 16px !important; z-index: 1000004 !important;
     width: 400px !important; max-height: calc(100vh - 265px) !important; overflow-y: auto !important;
-    background: rgba(255,255,255,0.95) !important; backdrop-filter: blur(6px);
+    background: {HUD_BG} !important; backdrop-filter: blur(6px);
     border-radius: 12px !important; padding: 14px 16px !important;
-    box-shadow: 0 4px 18px rgba(0,0,0,0.22) !important;
+    box-shadow: 0 4px 18px {HUD_SHADOW} !important;
 }}
 
 /* Small "jump to address" toggle button, bottom-left of the map, next to
@@ -3968,8 +3993,8 @@ footer {{ display: none !important; }}
     position: fixed !important; bottom: 0 !important; left: {SIDEBAR_W} !important; right: 0 !important;
     width: auto !important;
     z-index: 1000007 !important; padding: 14px 16px !important;
-    background: rgba(255,255,255,0.96) !important; backdrop-filter: blur(6px);
-    box-shadow: 0 -2px 10px rgba(0,0,0,0.18) !important;
+    background: {HUD_BG} !important; backdrop-filter: blur(6px);
+    box-shadow: 0 -2px 10px {HUD_SHADOW} !important;
 }}
 
 /* Photo Sorter / DJI Fly Transfer have no map, so they scroll normally, but
