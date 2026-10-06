@@ -2802,6 +2802,30 @@ def major_waypoint_indices(points, turn_deg=20.0, max_run=12):
     return sorted(set(filled))
 
 
+def format_flight_time(distance_ft, speed_ms):
+    """
+    Rough time in the air for a path flown at a steady speed, or None when
+    there is nothing to time.
+
+    Deliberately rough, and always short of reality: it is the path divided by
+    the cruise speed, so it counts none of the climb to altitude, the descent
+    and landing, the return home, or the slowing the aircraft does at each
+    waypoint - which on a DJI Fly mission is at every photo. Useful for "does
+    this fit in a battery", not for a schedule.
+    """
+    if not distance_ft or not speed_ms or speed_ms <= 0:
+        return None
+    seconds = (distance_ft * FT_TO_M) / speed_ms
+    # Kept short: this sits in a narrow metric column under the distance, and
+    # anything longer is truncated with an ellipsis rather than wrapped.
+    if seconds < 60:
+        return f"~{int(round(seconds))} s"
+    minutes, rest = divmod(int(round(seconds)), 60)
+    if minutes < 60:
+        return f"~{minutes} min {rest:02d} s"
+    hours, minutes = divmod(minutes, 60)
+    return f"~{hours} h {minutes:02d} min"
+
 def count_mapping_photos(path_coords, interval_ft, connector_segments, is_dji_fly=True):
     """
     Number of photos a mapping path will actually take, so the Creator's
@@ -4177,6 +4201,24 @@ footer {{ display: none !important; }}
 }}
 .st-key-map_area .st-key-top_bar [data-testid="stHorizontalBlock"] {{ flex: 1 1 auto !important; }}
 
+/* The read-outs carry a second line now - a rough flight time under the
+   distance - so the whole metric comes down a size to pay for it and the bar
+   keeps the height it had. Line heights are set explicitly, not just font
+   sizes: the default leading is what actually decides these boxes, so
+   shrinking the type alone leaves the height where it was. */
+.st-key-top_bar [data-testid="stMetricLabel"],
+.st-key-top_bar [data-testid="stMetricLabel"] * {{
+    font-size: 0.78rem !important; line-height: 1.15 !important;
+}}
+.st-key-top_bar [data-testid="stMetricValue"] {{
+    font-size: 1.25rem !important; line-height: 1.2 !important; padding-bottom: 0 !important;
+}}
+.st-key-top_bar [data-testid="stMetricDelta"] {{
+    font-size: 0.72rem !important; line-height: 1.15 !important; padding: 0 !important;
+}}
+/* delta_color="off" greys the text but Streamlit still reserves its arrow. */
+.st-key-top_bar [data-testid="stMetricDelta"] svg {{ display: none !important; }}
+
 /* Cascade a definite height down through every wrapper div between
    map_layer and the actual map iframe, so `height: 100%` resolves at each
    level instead of the iframe falling back to its 150px UA default. */
@@ -5301,7 +5343,8 @@ if page == 'Creator':
 
                 with top_hud:
                     c1, c2, c3, c4 = st.columns([1.2, 1.2, 1, 1.6])
-                    c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft")
+                    c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft",
+                              delta=format_flight_time(total_dist_ft, speed_m), delta_color="off")
                     c2.metric("Estimated Photos", f"{est_photos} / 99" if is_dji_fly else f"{est_photos}")
                     # Show the bearing actually flown either way - on automatic
                     # it is the only place the chosen direction is visible, and
@@ -5435,7 +5478,8 @@ if page == 'Creator':
 
         with top_hud:
             c1, c2, c3, c4 = st.columns([1.2, 1.2, 1, 1])
-            c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft")
+            c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft",
+                      delta=format_flight_time(total_dist_ft, speed_m), delta_color="off")
             c2.metric("Estimated Photos", f"{est_photos}" + (" / 99" if is_dji_fly else ""))
             with c3:
                 st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
@@ -5859,7 +5903,8 @@ elif page == 'Editor':
             est_photos = count_corridor_photos(final_coords, e_gap_m, e_is_dji_fly, e_start_wp)
             
             c1, c2, c3 = st.columns(3)
-            c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft")
+            c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft",
+                      delta=format_flight_time(total_dist_ft, e_speed_m), delta_color="off")
             c2.metric("Estimated Photos", f"{est_photos}" + (" / 99" if e_is_dji_fly else ""))
             c3.metric("Flight Speed", f"{e_speed_m * MS_TO_MPH:.1f} mph")
 
