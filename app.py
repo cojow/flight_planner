@@ -3000,13 +3000,25 @@ def safe_get_float(key, default_val):
     except (TypeError, ValueError):
         return default_val
 
+# The two kinds of mission the Creator plans. Mapping leads because it is the
+# usual job - an area to cover - and the flight line is the special case.
+MISSION_TYPE_MAPPING = "Mapping mission"
+MISSION_TYPE_LINE = "Flight line mission"
+MISSION_TYPES = [MISSION_TYPE_MAPPING, MISSION_TYPE_LINE]
+MISSION_TYPE_CAPTIONS = [
+    "Draw the area to cover. The flight path is worked out for you from "
+    "altitude, gimbal pitch and overlap, and may run slightly outside the shape.",
+    "Draw the path to fly. You place the line and the drone follows it, taking "
+    "photos along the way - for corridors like a street of house fronts.",
+]
+
 CREATOR_PRESETS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".creator_presets.json")
 
 # Every Creator sidebar parameter a preset can capture/restore - deliberately
-# excludes the Filename field, per the user's request. Includes mapping_mode
-# itself, so loading a preset also switches between mapping/line mode.
+# excludes the Filename field, per the user's request. Includes the mission
+# type itself, so loading a preset also switches between the two kinds.
 CREATOR_PRESET_KEYS = [
-    "mapping_mode", "hw_choice", "cam_choice",
+    "mission_type", "hw_choice", "cam_choice",
     "trans_speed_mph", "safe_takeoff_ft",
     "alt_ft", "map_alt_ft",
     "c_source", "c_tif", "c_bounds",
@@ -4581,7 +4593,15 @@ if page == 'Creator':
     # same script run, so the "Load" button just stashes the preset here and
     # reruns, and this is where it actually gets applied.
     if st.session_state.get("_c_pending_preset"):
-        for k, v in st.session_state.pop("_c_pending_preset").items():
+        pending = st.session_state.pop("_c_pending_preset")
+        # Presets saved before the mission type was a choice carry the old
+        # mapping_mode flag instead. Translate rather than ignore, or an old
+        # mapping preset silently loads as a flight line.
+        if "mission_type" not in pending and "mapping_mode" in pending:
+            pending = dict(pending)
+            pending["mission_type"] = (
+                MISSION_TYPE_MAPPING if pending.pop("mapping_mode") else MISSION_TYPE_LINE)
+        for k, v in pending.items():
             st.session_state[k] = v
 
     # A deleted preset's name is still sitting in the select box's state, and
@@ -4625,14 +4645,26 @@ if page == 'Creator':
                 st.rerun()
 
     with st.sidebar:
-        mapping_mode = st.checkbox(
-            "Change to a mapping mission", value=False, key="mapping_mode",
-            help="Draw the area you want mapped instead of a flight line. The flight "
-                 "path is auto-calculated from altitude, gimbal pitch, and frontal/side "
-                 "overlap, and may extend outside the drawn boundary."
+        st.header("1. Mission Type")
+        # Captions rather than a tooltip per option: Streamlit hangs its "?" on
+        # the control, not on each choice, and a description you have to hover
+        # to find is no use to someone deciding which of the two they want.
+        # The "?" is still here, and repeats both in one place.
+        # The label stays visible because Streamlit hangs the "?" on it - with
+        # the label collapsed the tooltip is still in the page at zero size,
+        # which is no help to anyone.
+        mission_type = st.radio(
+            "What are you planning?", MISSION_TYPES, key="mission_type",
+            captions=MISSION_TYPE_CAPTIONS,
+            help="**Mapping mission** - " + MISSION_TYPE_CAPTIONS[0]
+                 + "\n\n**Flight line mission** - " + MISSION_TYPE_CAPTIONS[1],
         )
+        # The rest of the Creator still asks this as a yes/no, and so do saved
+        # presets, so the radio is translated back to it here rather than
+        # rewritten through twenty-odd branches.
+        mapping_mode = mission_type == MISSION_TYPE_MAPPING
 
-        st.header("1. Hardware & Payload")
+        st.header("2. Hardware & Payload")
         # Both platforms plan either kind of mission - mapping used to be
         # forced onto DJI Fly, which capped an area mission at 99 photos no
         # matter which aircraft was actually flying it.
@@ -4655,7 +4687,7 @@ if page == 'Creator':
         camera_type = CAM_VAL_MAP[cam_choice]
         min_photo_interval_sec = 2.0 if "narrow_band" in camera_type else 0.7
 
-        st.header("2. Global Config")
+        st.header("3. Global Config")
         mission_name = sanitize_filename_component(st.text_input("Filename", "Mission_Flight", help=param_help("Filename")))
 
         with st.expander("💾 Parameter Presets"):
@@ -4689,10 +4721,10 @@ if page == 'Creator':
         safe_takeoff_ft = st.number_input("Safe Takeoff Alt (ft)", value=60.0, step=1.0, key="safe_takeoff_ft", help=param_help("Safe Takeoff Alt (ft)"))
 
         if mapping_mode:
-            st.header("3. Mapping Settings")
+            st.header("4. Mapping Settings")
             st.number_input("Relative Altitude (ft)", value=100.0, key="map_alt_ft", step=1.0, help=param_help("Relative Altitude (ft)"))
         else:
-            st.header("3. Waypoint Settings")
+            st.header("4. Waypoint Settings")
             st.number_input("Relative Altitude (ft)", value=60.0, key="alt_ft", step=1.0, on_change=sync_geometry, help=param_help("Relative Altitude (ft)"))
         st.info("❗Elevation is relative to the take off point, NOT the mission start point.")
 
@@ -4746,7 +4778,7 @@ if page == 'Creator':
             side = st.selectbox("Camera side of flight path", MAPPING_CAMERA_SIDES,
                                 key="map_side", help=param_help("Camera side of flight path"))
 
-            st.header("4. Coverage & Speed")
+            st.header("5. Coverage & Speed")
             st.number_input("Frontal Overlap (%)", min_value=0.0, max_value=95.0, value=75.0, step=1.0, key="map_front_ol")
             st.number_input("Side Overlap (%)", min_value=0.0, max_value=95.0, value=65.0, step=1.0, key="map_side_ol")
 
@@ -4823,7 +4855,7 @@ if page == 'Creator':
             side = st.selectbox("Camera side of flight path", LINE_CAMERA_SIDES, key="side",
                                 on_change=sync_geometry, help=param_help("Side of flight path"))
 
-            st.header("4. Trigger & Speed")
+            st.header("5. Trigger & Speed")
             # DJI Fly puts one photo on every waypoint and the generator forces
             # the start index to 0, so the control does nothing there - greyed
             # out rather than left to imply an effect it can't have.
@@ -4867,7 +4899,7 @@ if page == 'Creator':
                     fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode())
                     st.info(f"Current Overlap: {format_overlap(fw, current_gap)}")
 
-        st.header("5. Visuals")
+        st.header("6. Visuals")
         show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="creator_faa_toggle", help=param_help("Show FAA Airspace Restrictions"))
         if show_faa_airspace:
             st.write("#### Update restrictions of map center")
