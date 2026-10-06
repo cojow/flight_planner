@@ -6200,11 +6200,11 @@ elif page == 'Viewer  |':
                         else:
                             interval_ft = 0.0
 
-                        fw_ft = finite_center_footprint(meta['pitch'], meta['alt'] * M_TO_FT, flown_yaw_mode)
-                        overlap_text = format_overlap(fw_ft, interval_ft)
-
                         # Which way the camera looked, from the angle between the
-                        # gimbal yaw and the direction of travel.
+                        # gimbal yaw and the direction of travel. Worked out
+                        # before the overlap read-out below, which needs the aim:
+                        # the along-track footprint overlap is measured against
+                        # is a different shape for an along-path aim.
                         yaw_offsets = [
                             ((wp_data[i]['target_yaw'] - get_bearing(
                                 (wp_data[i]['lat'], wp_data[i]['lon']),
@@ -6225,6 +6225,9 @@ elif page == 'Viewer  |':
                                 cam_side = "Right of path" if avg_off > 0 else "Left of path"
                         else:
                             cam_side = "Unknown"
+
+                        fw_ft = finite_center_footprint(meta['pitch'], meta['alt'] * M_TO_FT, flown_yaw_mode)
+                        overlap_text = format_overlap(fw_ft, interval_ft)
 
                         st.sidebar.write(f"Hardware Platform: {hw_key}")
                         st.sidebar.write(f"Camera Sensor: {cam_display}")
