@@ -2825,6 +2825,152 @@ def count_mapping_photos(path_coords, interval_ft, connector_segments, is_dji_fl
         total += int(seg_ft / interval_ft) + 1 if interval_ft > 0 else 0
     return total
 
+# Waypoints per piece when an over-long mapping mission is saved in parts.
+# On DJI Fly every photo is its own waypoint, and the controllers start
+# struggling past about this many - well below the 99 the app refuses at, so
+# a mission split this way is comfortably flyable rather than merely legal.
+SPLIT_WAYPOINT_TARGET = 80
+
+
+def count_mapping_waypoints(path_coords, interval_ft, is_dji_fly=True):
+    """
+    Waypoints a mapping path will actually write - what the controller counts,
+    and what the 80-waypoint split targets.
+
+    Not the same as the photo count: DJI Fly writes a waypoint for every
+    densified point, including the corners of the turns between passes, which
+    take no picture. A part packed to 80 photos is a handful of waypoints over
+    80, which is the opposite of the point.
+    """
+    if not path_coords or len(path_coords) < 2:
+        return len(path_coords or ())
+    if not is_dji_fly:
+        # Pilot flies the corners it is given and triggers by interval.
+        return len(path_coords)
+    return len(interpolate_path(path_coords, max(1.0, interval_ft * FT_TO_M)))
+
+def _split_polyline_evenly(coords, pieces):
+    """
+    `coords` cut into `pieces` sub-paths of equal length along the line,
+    each starting where the previous ended so no ground is skipped.
+
+    Used only for a single mapping pass that is too long to be a part on its
+    own - a straight strip, so the cut points are interpolated between the
+    vertices they fall between.
+    """
+    if pieces <= 1 or len(coords) < 2:
+        return [coords]
+    spans = [get_haversine_dist(coords[i], coords[i + 1]) for i in range(len(coords) - 1)]
+    total = sum(spans)
+    if total <= 0:
+        return [coords]
+
+    def point_at(distance):
+        walked = 0.0
+        for i, span in enumerate(spans):
+            if walked + span >= distance or i == len(spans) - 1:
+                frac = 0.0 if span <= 0 else max(0.0, min(1.0, (distance - walked) / span))
+                lat = coords[i][0] + (coords[i + 1][0] - coords[i][0]) * frac
+                lon = coords[i][1] + (coords[i + 1][1] - coords[i][1]) * frac
+                return (lat, lon)
+            walked += span
+        return coords[-1]
+
+    cuts = [point_at(total * k / pieces) for k in range(pieces + 1)]
+    cuts[0], cuts[-1] = coords[0], coords[-1]
+    return [[cuts[k], cuts[k + 1]] for k in range(pieces)]
+
+
+def _pack_ranges(ranges, piece, waypoints, max_waypoints):
+    """
+    Greedily group consecutive photo ranges into pieces of at most
+    max_waypoints, where `piece` builds a (coords, connectors) pair for a span
+    of ranges and `waypoints` counts what that span would write.
+    """
+    packed = []
+    current_first = current_last = ranges[0]
+    for next_range in ranges[1:]:
+        if waypoints(current_first, next_range) > max_waypoints:
+            packed.append(piece(current_first, current_last))
+            current_first = current_last = next_range
+        else:
+            current_last = next_range
+    packed.append(piece(current_first, current_last))
+    return packed
+
+def split_mapping_path(path_coords, connector_segments, interval_ft,
+                       is_dji_fly=True, max_waypoints=SPLIT_WAYPOINT_TARGET):
+    """
+    Break a mapping path into consecutive pieces of at most max_waypoints
+    photos each, as [(coords, connector_segments), ...].
+
+    Cuts fall on the turns between passes, never inside one, so every piece is
+    a whole number of passes and the ground each covers is a clean block.
+    The turn that joined two pieces is dropped with the cut - it was only
+    transit between passes, and the drone is landing between parts anyway.
+
+    A pass that is longer than max_waypoints on its own can't be packed with
+    anything, so it is cut into equal pieces along its own length. That is the
+    one place a boundary lands inside a strip, and it is unavoidable: the
+    alternative is a part that misses the waypoint target by whatever the
+    pass happens to be.
+
+    Returns a single piece unchanged when nothing needs splitting, so callers
+    can use it unconditionally.
+    """
+    ranges = photo_index_ranges(len(path_coords), connector_segments)
+    if not ranges:
+        return [(path_coords, connector_segments)]
+
+    skip = set(connector_segments or ())
+
+    def piece(first_range, last_range):
+        start, end = first_range[0], last_range[1]
+        coords = path_coords[start:end + 1]
+        connectors = [j - start for j in sorted(skip) if start <= j < end]
+        return coords, connectors
+
+    def waypoints(first_range, last_range):
+        coords, _connectors = piece(first_range, last_range)
+        return count_mapping_waypoints(coords, interval_ft, is_dji_fly)
+
+    # A pass too long to pack is replaced by several shorter stand-ins, each
+    # covering a slice of the same strip, so the packing below never has to
+    # deal with a range it cannot fit.
+    oversized = []
+    for first, last in ranges:
+        coords = path_coords[first:last + 1]
+        connectors = [j - first for j in sorted(skip) if first <= j < last]
+        count = count_mapping_waypoints(coords, interval_ft, is_dji_fly)
+        if count <= max_waypoints:
+            oversized.append(((first, last), None))
+            continue
+        chunks = int(math.ceil(count / float(max_waypoints)))
+        for piece_coords in _split_polyline_evenly(coords, chunks):
+            oversized.append((None, (piece_coords, [])))
+
+    # Nothing packs across a stand-in, so any run of them is emitted as-is and
+    # the ordinary ranges around them are packed as before.
+    pending = list(oversized)
+    if any(entry[0] is None for entry in pending):
+        out = []
+        run = []
+        for index_range, standalone in pending:
+            if standalone is not None:
+                if run:
+                    out.extend(_pack_ranges(run, piece, waypoints, max_waypoints))
+                    run = []
+                out.append(standalone)
+            else:
+                run.append(index_range)
+        if run:
+            out.extend(_pack_ranges(run, piece, waypoints, max_waypoints))
+        return out
+
+    # Same packing the oversized path above uses, so there is one rule for how
+    # passes are grouped rather than two that can drift.
+    return _pack_ranges(ranges, piece, waypoints, max_waypoints)
+
 # ==========================================
 # SESSION STATE INITIALIZATION & SAFE CALLBACKS
 # ==========================================
@@ -5089,7 +5235,35 @@ if page == 'Creator':
                 # equivalent cap, so an area mission flown on Pilot is only
                 # bounded by battery.
                 save_disabled = False
-                if is_dji_fly and est_photos > 99:
+                # Offered before the 99-photo error, because taking it makes
+                # that error moot: every part written is at or under the
+                # target, so there is nothing left to override.
+                split_parts = False
+                # Offered on the waypoint count, which is what the controller
+                # struggles with and what the parts are packed against - a few
+                # more than the photo count, because the turns between passes
+                # are waypoints that take no picture.
+                est_waypoints = count_mapping_waypoints(path_coords, gap_ft, is_dji_fly)
+                if is_dji_fly and est_waypoints > SPLIT_WAYPOINT_TARGET:
+                    split_parts = notices.checkbox(
+                        f"This mission is {est_waypoints} waypoints - save it in parts of "
+                        f"about {SPLIT_WAYPOINT_TARGET}?",
+                        key="cmap_split_parts",
+                        help="Writes one mission per part, named Part_1_, Part_2_ and so on. "
+                             "Parts are cut at the turns between passes, so each one covers a "
+                             "whole block of the area.",
+                    )
+                    if split_parts:
+                        preview = split_mapping_path(
+                            path_coords, map_info["connector_segments"], gap_ft, is_dji_fly)
+                        notices.info(
+                            f"Will save {len(preview)} missions, "
+                            f"Part_1_ to Part_{len(preview)}_, of "
+                            + ", ".join(str(count_mapping_waypoints(c, gap_ft, is_dji_fly))
+                                        for c, k in preview)
+                            + " waypoints."
+                        )
+                if is_dji_fly and est_photos > 99 and not split_parts:
                     notices.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please shrink the area, raise the altitude, reduce the overlaps, or switch to DJI Pilot 2.")
                     save_disabled = not render_99_override(notices, "cmap", est_photos)
 
@@ -5142,13 +5316,38 @@ if page == 'Creator':
                             elif save_option == "Create New Folder...": final_dir = os.path.join(MISSION_DIR, new_dir_name)
                             else: final_dir = os.path.join(MISSION_DIR, save_option)
 
-                            try:
-                                template_kml, waylines_wpml = generate_native_kmz_contents(path_coords, cfg, c_elev_source, c_tif_path)
-                            except ElevationLookupError as e:
-                                notices.error(f"Save aborted: {e}")
+                            # One piece unless splitting was asked for, so the
+                            # ordinary save walks this loop exactly once.
+                            if split_parts:
+                                pieces = split_mapping_path(
+                                    path_coords, map_info["connector_segments"], gap_ft, is_dji_fly)
                             else:
-                                os.makedirs(final_dir, exist_ok=True)
-                                final_filepath = os.path.join(final_dir, f"{final_filename}.kmz")
+                                pieces = [(path_coords, map_info["connector_segments"])]
+
+                            os.makedirs(final_dir, exist_ok=True)
+                            saved_names = []
+                            for part_no, (part_coords, part_connectors) in enumerate(pieces, start=1):
+                                # Each part is its own mission: its own turns,
+                                # its own photo ranges, its own waypoint count
+                                # on the thumbnail.
+                                part_cfg = dict(cfg)
+                                part_cfg["no_photo_segments"] = part_connectors
+                                part_cfg["photo_index_ranges"] = photo_index_ranges(
+                                    len(part_coords), part_connectors)
+                                part_photos = count_mapping_photos(
+                                    part_coords, gap_ft, part_connectors, is_dji_fly)
+                                part_prefix = f"Part_{part_no}_" if len(pieces) > 1 else ""
+                                part_name = f"{part_prefix}{prefixed_name}"
+                                part_filename = f"{part_prefix}{final_filename}"
+
+                                try:
+                                    template_kml, waylines_wpml = generate_native_kmz_contents(
+                                        part_coords, part_cfg, c_elev_source, c_tif_path)
+                                except ElevationLookupError as e:
+                                    notices.error(f"Save aborted: {e}")
+                                    break
+
+                                final_filepath = os.path.join(final_dir, f"{part_filename}.kmz")
                                 export_mission_kmz_from_strings(
                                     template_kml_str=template_kml,
                                     waylines_wpml_str=waylines_wpml,
@@ -5157,11 +5356,21 @@ if page == 'Creator':
                                 )
                                 thumbnail_path = kmz_companion_path(final_filepath)
                                 generate_name_thumbnail(
-                                    prefixed_name, map_alt, map_pitch_val,
-                                    map_front_ol, thumbnail_path, coords=path_coords, photo_count=est_photos
+                                    part_name, map_alt, map_pitch_val,
+                                    map_front_ol, thumbnail_path,
+                                    coords=part_coords, photo_count=part_photos
                                 )
-                                notices.success(f"Saved {final_filename}.kmz to {final_dir}/")
-                                offer_kmz_download(notices, "cmap", final_filepath, f"{final_filename}.kmz")
+                                saved_names.append(f"{part_filename}.kmz")
+                                offer_kmz_download(notices, "cmap", final_filepath, f"{part_filename}.kmz")
+
+                            if saved_names:
+                                if len(saved_names) == 1:
+                                    notices.success(f"Saved {saved_names[0]} to {final_dir}/")
+                                else:
+                                    notices.success(
+                                        f"Saved {len(saved_names)} parts to {final_dir}/: "
+                                        + ", ".join(saved_names)
+                                    )
 
                     # Redraws the same button on every rerun, not only the one where
                     # Save was clicked - see offer_kmz_download's docstring.
