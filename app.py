@@ -1024,12 +1024,22 @@ MIN_MAPPING_PITCH_DEG = VERT_HALF_FOV_DEG + 5.0
 #     the shape of the drawn area instead of being pushed sideways. It also
 #     puts the sensor's long axis across-track, widening the swath by
 #     SENSOR_W/SENSOR_H (~33% here) for proportionally fewer flight lines.
+#   "backwards" - camera looks back along the flight line, so the drone
+#     flies tail-first. Geometrically this is "parallel" mirrored: the
+#     footprint is the same shape and size, so coverage, spacing and overlap
+#     are identical, and only the along-track offset changes sign (the camera
+#     images ground behind the drone rather than ahead of it).
 #   "right"/"left" - camera looks across the flight line to that side, the
 #     corridor-mission aim. The tilt now falls across-track, so the imaged
 #     strip sits off to one side and the flight lines have to be offset to
 #     compensate - which, because the offset flips with each direction
 #     change, visibly distorts the path away from the drawn shape.
-MAPPING_CAMERA_SIDES = ["parallel", "right", "left"]
+MAPPING_CAMERA_SIDES = ["parallel", "backwards", "right", "left"]
+
+# The same choice for corridor/line missions. "right" leads because it is the
+# long-standing default there and every mission saved before the other aims
+# existed is a "right" one.
+LINE_CAMERA_SIDES = ["right", "left", "parallel", "backwards"]
 
 # Smallest drawn area worth sweeping, in square feet. Anything at or below this
 # is a degenerate shape rather than a small one - duplicate vertices, or points
@@ -1040,9 +1050,48 @@ MAPPING_CAMERA_SIDES = ["parallel", "right", "left"]
 MIN_MAPPABLE_AREA_FT2 = 1.0
 
 
-def mapping_yaw_mode(side):
-    """Which footprint geometry a mapping camera side implies."""
-    return "forward" if side == "parallel" else "perpendicular"
+def camera_yaw_mode(side):
+    """
+    Which footprint geometry a camera aim implies.
+
+    "forward" and "backward" are mirror images of each other - same footprint,
+    opposite along-track offset - and both differ from "perpendicular", which
+    tilts across the flight line instead of along it.
+    """
+    if side == "parallel":
+        return "forward"
+    if side == "backwards":
+        return "backward"
+    return "perpendicular"
+
+
+def line_yaw_mode(side_key="side"):
+    """
+    Footprint geometry for whichever aim a mission form currently has set.
+
+    The overlap <-> photo-interval conversions are sized from the along-track
+    footprint, and that footprint is a different shape depending on where the
+    camera points - so they have to ask, rather than assume the sideways aim
+    every line mission used to have.
+    """
+    return camera_yaw_mode(st.session_state.get(side_key, "right"))
+
+
+def camera_yaw_for(bearing, side, yaw_mode=None):
+    """
+    Gimbal yaw (deg, 0-360) for a leg flown on `bearing`, for one camera aim.
+
+    The single definition of what each aim means in headings, so the mission
+    writer, the editor's preview and anything else asking the question cannot
+    drift apart - they did before, which is how an aim could be written into a
+    mission without the overlap maths knowing about it.
+    """
+    mode = yaw_mode or camera_yaw_mode(side)
+    if mode == "forward":
+        return bearing % 360
+    if mode == "backward":
+        return (bearing + 180) % 360
+    return (bearing + 90) % 360 if side == "right" else (bearing - 90) % 360
 
 CAM_DISPLAY_MAP = {
     "visible": "RGB Only",
@@ -2208,6 +2257,10 @@ def footprint_extents_ft(alt_ft, pitch, side="right", yaw_mode="perpendicular"):
 
     yaw_mode picks how the camera is aimed relative to the direction of
     travel, and must match what generate_native_kmz_contents actually writes:
+    - "backward": the same geometry mirrored - camera aimed back along the
+      direction of travel ("backwards" in the UI), so the drone flies
+      tail-first. Footprint dimensions are identical to "forward"; only
+      along_offset_ft changes sign.
     - "forward": camera aimed along the direction of travel ("parallel" in the
       UI). Puts the sensor's LONG axis across-track - a 33% wider swath for
       the same altitude, so proportionally fewer flight lines and photos. It
@@ -2230,6 +2283,8 @@ def footprint_extents_ft(alt_ft, pitch, side="right", yaw_mode="perpendicular"):
     """
     if yaw_mode == "forward":
         yaw = 90.0  # flight line runs east, so "forward" is east
+    elif yaw_mode == "backward":
+        yaw = 270.0  # ...and "backward" is west: "forward" mirrored
     else:
         yaw = 180.0 if side == "right" else 0.0
     pts = project_footprint_ft(alt_ft, pitch, yaw)
@@ -2237,7 +2292,7 @@ def footprint_extents_ft(alt_ft, pitch, side="right", yaw_mode="perpendicular"):
         return None
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
-    if yaw_mode == "forward":
+    if yaw_mode in ("forward", "backward"):
         # Tilt runs along-track: parallel edges lie across-track.
         along_ft = max(xs) - min(xs)
         cross_ft = _min_section_width_ft(pts)
@@ -2270,7 +2325,7 @@ def mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct
     footprint stretches toward infinity as the camera approaches the
     horizon, so overlap and spacing derived from it stop meaning anything.
     """
-    yaw_mode = mapping_yaw_mode(side)
+    yaw_mode = camera_yaw_mode(side)
     clamped_pitch = -min(90.0, max(MIN_MAPPING_PITCH_DEG, abs(pitch)))
     extents = footprint_extents_ft(alt_ft, clamped_pitch, side, yaw_mode)
     if extents is None:
@@ -2933,7 +2988,7 @@ def param_help(label):
     return PARAM_HELP.get(label)
 
 
-def finite_center_footprint(pitch, alt):
+def finite_center_footprint(pitch, alt, yaw_mode="perpendicular"):
     """
     Along-track footprint in feet, or None when this tilt has no bounded ground
     footprint at all.
@@ -2953,7 +3008,7 @@ def finite_center_footprint(pitch, alt):
     """
     if pitch == 0:
         return None
-    extents = footprint_extents_ft(alt, pitch)
+    extents = footprint_extents_ft(alt, pitch, yaw_mode=yaw_mode)
     return extents[0] if extents else None
 
 def format_overlap(fw_ft, gap_ft):
@@ -2983,22 +3038,22 @@ def format_overlap(fw_ft, gap_ft):
 def sync_dist_to_overlap():
     # No finite footprint -> overlap is undefined; leave the field alone rather
     # than writing a meaningless 99.9%.
-    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
+    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode())
     if fw:
         st.session_state.overlap_pct = max(0.0, min(((fw - safe_get_float('t_dist_val', 9.0)) / fw) * 100, 99.9))
 
 def sync_overlap_to_dist():
-    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
+    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode())
     if fw:
         st.session_state.t_dist_val = fw * (1 - (safe_get_float('overlap_pct', 70.0) / 100))
 
 def sync_gap_to_overlap():
-    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
+    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode())
     if fw:
         st.session_state.overlap_pct = max(0.0, min(((fw - safe_get_float('target_gap_ft', 26.2)) / fw) * 100, 99.9))
 
 def sync_overlap_to_gap():
-    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
+    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode())
     if fw:
         st.session_state.target_gap_ft = fw * (1 - (safe_get_float('overlap_pct', 70.0) / 100))
 
@@ -3010,22 +3065,22 @@ def sync_geometry():
 
 def e_sync_dist_to_overlap():
     # As on the Creator side: skip entirely when there is no finite footprint.
-    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
+    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'))
     if fw:
         st.session_state.e_overlap_pct = max(0.0, min(((fw - safe_get_float('e_t_dist_val', 9.0)) / fw) * 100, 99.9))
 
 def e_sync_overlap_to_dist():
-    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
+    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'))
     if fw:
         st.session_state.e_t_dist_val = fw * (1 - (safe_get_float('e_overlap_pct', 70.0) / 100))
 
 def e_sync_gap_to_overlap():
-    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
+    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'))
     if fw:
         st.session_state.e_overlap_pct = max(0.0, min(((fw - safe_get_float('e_target_gap_ft', 26.2)) / fw) * 100, 99.9))
 
 def e_sync_overlap_to_gap():
-    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
+    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'))
     if fw:
         st.session_state.e_target_gap_ft = fw * (1 - (safe_get_float('e_overlap_pct', 70.0) / 100))
 
@@ -3558,13 +3613,13 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
 
     # Must stay in step with footprint_extents_ft's yaw_mode - the overlap and
     # line spacing a mapping mission is built from assume this exact aim.
-    yaw_mode = cfg.get("camera_yaw_mode", "perpendicular")
+    # Derived from the aim when absent, which is every mission saved before
+    # the line missions carried this - those are all "right", for which the
+    # two agree anyway.
+    yaw_mode = cfg.get("camera_yaw_mode") or camera_yaw_mode(cfg.get("side", "right"))
 
     def aim(bearing):
-        if yaw_mode == "forward":
-            yaw = bearing % 360
-        else:
-            yaw = (bearing + 90) % 360 if cfg['side'] == "right" else (bearing - 90) % 360
+        yaw = camera_yaw_for(bearing, cfg.get('side', 'right'), yaw_mode)
         return int(yaw - 360 if yaw > 180 else yaw)
 
     yaws = [aim(get_bearing(coords[i], coords[i+1])) for i in range(len(coords) - 1)]
@@ -4596,7 +4651,7 @@ if page == 'Creator':
             # horizon, so the footprint has no far edge - and any overlap
             # figure derived from it is fiction. The field is disabled rather
             # than left to produce one.
-            c_overlap_ok = finite_center_footprint(current_pitch, current_alt) is not None
+            c_overlap_ok = finite_center_footprint(current_pitch, current_alt, line_yaw_mode()) is not None
             if not c_overlap_ok:
                 st.warning(
                     f"At {current_pitch:.0f}° the camera is tilted less than its own "
@@ -4606,7 +4661,14 @@ if page == 'Creator':
                     "the photo interval directly. Tilt to about -28° or steeper to use overlap."
                 )
 
-            side = st.selectbox("Side of flight path", ["right", "left"], key="side", help=param_help("Side of flight path"))
+            # A preset saved before "parallel"/"backwards" existed can hold an
+            # aim that is still valid, so this list only ever grows.
+            # Resyncs overlap like pitch and altitude do: the aim decides which
+            # way the footprint is stretched, so the along-track extent that
+            # overlap is measured against changes with it - by more than a
+            # factor of two between the sideways and along-path aims.
+            side = st.selectbox("Camera side of flight path", LINE_CAMERA_SIDES, key="side",
+                                on_change=sync_geometry, help=param_help("Side of flight path"))
 
             st.header("4. Trigger & Speed")
             # DJI Fly puts one photo on every waypoint and the generator forces
@@ -4649,7 +4711,7 @@ if page == 'Creator':
                     manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, value=6.0, step=1.0, key="manual_mph_time", help=param_help("Manual Speed (mph)"))
                     speed_m = manual_mph * MPH_TO_MS
                     current_gap = speed_m * M_TO_FT * t_val_sec
-                    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0))
+                    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode())
                     st.info(f"Current Overlap: {format_overlap(fw, current_gap)}")
 
         st.header("5. Visuals")
@@ -5141,6 +5203,7 @@ if page == 'Creator':
                     cfg = {
                         "safe_takeoff_ft": safe_takeoff_ft, "trans_speed_mph": trans_speed_mph,
                         "alt_ft": safe_get_float('alt_ft', 50.0), "pitch": safe_get_float('pitch', -60.0), "side": side,
+                        "camera_yaw_mode": camera_yaw_mode(side),
                         "trigger_type": st.session_state.get('trigger_type', 'distance'),
                         "interval_ft": safe_get_float('t_dist_val', 9.0) if st.session_state.get('trigger_type', 'distance') == "distance" else 0.0,
                         "interval_sec": t_val_sec if st.session_state.get('trigger_type', 'distance') == "time" else 0.0,
@@ -5327,7 +5390,7 @@ elif page == 'Editor':
 
             # Same rule as the Creator: no bounded footprint, no meaningful
             # overlap figure, so the field is disabled instead of inventing one.
-            e_overlap_ok = finite_center_footprint(current_e_pitch, current_e_alt) is not None
+            e_overlap_ok = finite_center_footprint(current_e_pitch, current_e_alt, line_yaw_mode('e_side')) is not None
             if not e_overlap_ok:
                 st.warning(
                     f"At {current_e_pitch:.0f}° the camera is tilted less than its own "
@@ -5337,7 +5400,8 @@ elif page == 'Editor':
                     "the photo interval directly. Tilt to about -28° or steeper to use overlap."
                 )
             
-            e_side = st.selectbox("Yaw Side", ["right", "left"], help=param_help("Yaw Side"))
+            e_side = st.selectbox("Yaw Side", LINE_CAMERA_SIDES, key="e_side",
+                                  on_change=e_sync_geometry, help=param_help("Yaw Side"))
 
             st.header("3. Trigger Settings")
             # Same as the Creator: inert on DJI Fly, so don't offer it.
@@ -5378,7 +5442,7 @@ elif page == 'Editor':
                     st.info(f"Auto-Calculated Speed: {e_speed_m * MS_TO_MPH:.1f} mph")
                 else:
                     e_speed_m = st.number_input("Manual Speed (mph)", min_value=2.3, value=safe_e_speed, step=1.0, help=param_help("Manual Speed (mph)")) * MPH_TO_MS
-                    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0))
+                    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'))
                     st.info(f"Current Overlap: {format_overlap(fw, e_speed_m * M_TO_FT * e_tval_sec)}")
 
             st.header("4. Visuals")
@@ -5437,7 +5501,7 @@ elif page == 'Editor':
             yaws = []
             for i in range(len(current_coords) - 1):
                 ref_bearing = get_bearing(current_coords[i], current_coords[i+1])
-                yaws.append((ref_bearing + 90) % 360 if e_side == "right" else (ref_bearing - 90) % 360)
+                yaws.append(camera_yaw_for(ref_bearing, e_side))
 
             cum_dist = [0.0]
             total_dist_ft = 0.0
@@ -5560,7 +5624,8 @@ elif page == 'Editor':
                 with notices.spinner("Calculating terrain elevations and generating KMZ..."):
                     new_cfg = {
                         "safe_takeoff_ft": e_safe, "trans_speed_mph": e_trans, "alt_ft": safe_get_float('e_alt_ft', 50.0),
-                        "pitch": safe_get_float('e_pitch', -60.0), "side": e_side, "trigger_type": st.session_state.get('e_trigger_type', 'distance'),
+                        "pitch": safe_get_float('e_pitch', -60.0), "side": e_side,
+                        "camera_yaw_mode": camera_yaw_mode(e_side), "trigger_type": st.session_state.get('e_trigger_type', 'distance'),
                         "interval_ft": safe_get_float('e_t_dist_val', 9.0) if st.session_state.get('e_trigger_type', 'distance') == "distance" else 0.0, 
                         "interval_sec": safe_get_float('e_t_time_val', 2.0) if st.session_state.get('e_trigger_type', 'distance') == "time" else 0.0, 
                         "speed_m": e_speed_m, "photo_start_wp": int(e_start_wp), "camera_type": e_camera_type,
@@ -5919,7 +5984,7 @@ elif page == 'Viewer  |':
                         else:
                             interval_ft = 0.0
 
-                        fw_ft = finite_center_footprint(meta['pitch'], meta['alt'] * M_TO_FT)
+                        fw_ft = finite_center_footprint(meta['pitch'], meta['alt'] * M_TO_FT, flown_yaw_mode)
                         overlap_text = format_overlap(fw_ft, interval_ft)
 
                         # Which way the camera looked, from the angle between the
@@ -5930,10 +5995,16 @@ elif page == 'Viewer  |':
                                 (wp_data[i+1]['lat'], wp_data[i+1]['lon'])) + 180) % 360) - 180
                             for i in range(len(wp_data) - 1)
                         ]
+                        flown_yaw_mode = "perpendicular"
                         if yaw_offsets:
                             avg_off = sum(yaw_offsets) / len(yaw_offsets)
-                            if sum(abs(o) for o in yaw_offsets) / len(yaw_offsets) < 45:
+                            mean_abs = sum(abs(o) for o in yaw_offsets) / len(yaw_offsets)
+                            if mean_abs < 45:
                                 cam_side = "Parallel (along path)"
+                                flown_yaw_mode = "forward"
+                            elif mean_abs > 135:
+                                cam_side = "Backwards (against path)"
+                                flown_yaw_mode = "backward"
                             else:
                                 cam_side = "Right of path" if avg_off > 0 else "Left of path"
                         else:
