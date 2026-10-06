@@ -68,6 +68,34 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("dji_fly_transfer")
 
 
+def embed_html(html, height):
+    """
+    Put a literal HTML/JS snippet on the page inside an iframe.
+
+    st.iframe is the current call: st.components.v1.html was deprecated in
+    Streamlit 1.56 and warns on every run until it is gone. Both take the
+    same HTML string - anything st.iframe can't read as a URL or a path is
+    embedded as raw markup - so the snippets themselves needed no changes.
+
+    Dispatched at runtime rather than just calling st.iframe, because
+    requirements.txt still allows Streamlit back to 1.37 and this app has
+    twice been broken by an st.iframe call landing on a version without it.
+    Running an older Streamlit now costs a deprecation warning rather than a
+    crashed page.
+
+    Not st.html: that sanitises through DOMPurify and drops <script>, and two
+    of the three snippets are nothing but a script.
+    """
+    if hasattr(st, "iframe"):
+        # st.iframe takes positive pixel heights only - height=0 raises. The
+        # script-only embeds pass 0 to take up no space; they sit in keyed
+        # containers that the stylesheet collapses anyway, so one pixel here
+        # is hidden by the same rule that was already backing up height=0.
+        st.iframe(html, height=max(1, height))
+    else:
+        components.html(html, height=height)
+
+
 # --- RASTERIO SAFELOAD ---
 try:
     import rasterio
@@ -4004,13 +4032,15 @@ footer {{ display: none !important; }}
 .st-key-page_body h1 {{ font-size: 1.5rem !important; }}
 .st-key-page_body h2, .st-key-page_body h3 {{ font-size: 1.15rem !important; }}
 
-/* The script-only embed just below the stylesheet runs the search bar's
-   outside-click listener and renders nothing. components.html(height=0)
-   already collapses it, but the container still leaves a hairline margin/
-   padding gap in some browsers, so this belt-and-suspenders rule zeroes
-   that out too. Collapsed via height/overflow rather than display:none so
-   the iframe is still rendered and its script is guaranteed to execute. */
-.st-key-search_autoclose_script {{
+/* Two script-only embeds render nothing and must take up no space: the
+   search bar's outside-click listener below, and the README dialog's anchor
+   scroll handler. This is now what actually hides them rather than a backup
+   for it - st.iframe has no zero height to ask for (it rejects 0 outright),
+   so embed_html gives them one pixel and this takes it away again, along
+   with the hairline margin/padding gap the container leaves in some
+   browsers. Collapsed via height/overflow rather than display:none so the
+   iframe is still rendered and its script is guaranteed to execute. */
+.st-key-search_autoclose_script, .st-key-readme_anchor_script {{
     height: 0 !important; min-height: 0 !important; overflow: hidden !important;
     margin: 0 !important; padding: 0 !important;
 }}
@@ -4024,23 +4054,25 @@ footer {{ display: none !important; }}
 # exact limitation. Guarded so the (page-persistent) listener is only ever
 # bound once, no matter how many times Streamlit reruns the script.
 #
-# components.html (not st.html/st.markdown) is what this needs: given an HTML
+# An iframe embed (not st.html/st.markdown) is what this needs: given an HTML
 # string it embeds it as-is in an iframe that permits JavaScript and
 # same-origin access to the app, whereas st.html sanitises the markup through
 # DOMPurify and would strip the script outright. The markup here is a fixed
 # literal, never user input, so that untrusted-content caveat doesn't apply.
-# (st.iframe loads a URL, not an HTML string, and isn't the right tool here -
-# and the Streamlit version this app targets doesn't even have it, which is
-# exactly the bug that put st.iframe here in the first place: it was reverted
-# to this from a copy that predated the components.html fix - see git history
-# before reapplying that "fix" a third time.)
 #
-# This embed is script-only and renders nothing, so it must take up no space:
-# height=0 collapses it, backed up by the CSS rule on
-# .st-key-search_autoclose_script above for the rare browser that still
+# It goes through embed_html rather than either iframe call directly. Earlier
+# attempts to switch this to st.iframe were reverted twice because that call
+# did not exist on the Streamlit this app targets; st.iframe does take an HTML
+# string, but it is version-dependent, so the dispatch lives in one helper
+# instead of being re-litigated at each call site - see embed_html.
+#
+# This embed is script-only and renders nothing, so it must take up no space.
+# st.iframe rejects height=0, so embed_html asks for the smallest legal height
+# and the CSS rule on .st-key-search_autoclose_script above collapses it -
+# which also covers the browsers that still
 # leaves a hairline gap.
 with st.container(key="search_autoclose_script"):
-    components.html("""
+    embed_html("""
 <script>
 (function() {
     const doc = window.parent.document;
@@ -4076,7 +4108,7 @@ with st.container(key="search_autoclose_script"):
     });
 })();
 </script>
-""", height=0)
+""", 0)
 
 HEADING_RE = re.compile(r'^(#{1,6})[ \t]+(.+?)[ \t]*$', re.MULTILINE)
 
@@ -4231,11 +4263,11 @@ def _readme_dialog():
     # Element.scrollIntoView() - a much older, universally-supported API -
     # sidesteps that inconsistency instead of depending on it.
     #
-    # components.html, not st.iframe: same reasoning as the search bar's
-    # auto-close script above - st.iframe loads a URL rather than an HTML
-    # string, isn't in the Streamlit version this app targets, and st.html
-    # would strip the <script> tag via DOMPurify.
-    components.html("""
+    # embed_html, not st.html: st.html sanitises through DOMPurify and would
+    # strip this <script> outright. Keyed so the stylesheet can collapse it -
+    # it renders nothing, and st.iframe has no zero height to ask for.
+    with st.container(key="readme_anchor_script"):
+        embed_html("""
 <script>
 (function() {
     const doc = window.parent.document;
@@ -4255,7 +4287,7 @@ def _readme_dialog():
     }, true);
 })();
 </script>
-""", height=0)
+""", 0)
 
 
 # Loaded once per session (not re-read on every rerun) so editing the file by
@@ -4543,7 +4575,7 @@ if page == 'Creator':
                 f"Run-out past each edge: {map_geom['interval_ft'] * map_runout:.0f} ft"
             )
 
-            manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=4.0, key="map_speed_mph", help=param_help("Flight Speed (mph)"))
+            manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=6.0, key="map_speed_mph", help=param_help("Flight Speed (mph)"))
             speed_m = manual_mph * MPH_TO_MS
             max_speed_m = (map_geom['interval_ft'] * FT_TO_M) / min_photo_interval_sec
             if speed_m > max_speed_m:
@@ -4595,7 +4627,7 @@ if page == 'Creator':
                                 on_change=sync_overlap_to_dist, disabled=not c_overlap_ok,
                                 help=(param_help("Forward Overlap (%)") if c_overlap_ok else
                                       "Unavailable at this gimbal pitch - see the notice above."))
-                manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=4.0, key="manual_mph_dist", help=param_help("Flight Speed (mph)"))
+                manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=6.0, key="manual_mph_dist", help=param_help("Flight Speed (mph)"))
                 speed_m = manual_mph * MPH_TO_MS
 
                 gap_m = max(1.0, safe_get_float('t_dist_val', 9.0) * FT_TO_M)
