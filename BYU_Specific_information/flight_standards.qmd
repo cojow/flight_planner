@@ -367,13 +367,9 @@ These will retain the same name as the folder with the prefix "**photo**" replac
 For now they will also contain atleast the point cloud, as well as the individual houses. 
 The folders will retain the same name as the photo folder with the prefix "**photo**" replaced with "**cloud**".
 
-## Statistical Methods and Questions {#stats}
+## Methods and Questions {#stats}
 
-We are going to use Random Sampling to fly sections of the city. 
-Then we will scale it up from there to get an estimate of the entire city. 
-This section will update as we look into the literature and find the best way to do this. 
-
-
+### Relevent Questions
 
 - Research Questions
   - How are drones currently used in Transportation? 
@@ -388,6 +384,38 @@ This section will update as we look into the literature and find the best way to
   Are there variables that we can't direclty get, then to find correlations? 
 
 
+### A Possible Methodology 
+
+1. **Sampling frame.** 
+Sample areas and fly every street inside each sampled area. 
+We can either divide areas into grids, or use existing US census Blocks. Brewer (paper doing similar things) used census blocks, and it is related to ACS. However other places will lack these blocks. 
+
+2. **Stratify and sample**. 
+Stratified random sample of areas, using current imagery to define strata, plus a small stratum for areas that look undeveloped.
+
+3. **High and low flight over the streets**
+Build the point cloud from our High Nadir images. 
+From this we'll get volume, area footprint, and house location.
+Use Object detection on Low images. Potential items: cars (count. Maybe as the paper by Gebru talks about, type or age), garage doors, RVs and boats, solar panels, window AC units.
+We can also look into extracting other features (stated by Engstrom and Watmough): roof material, yard size, ground and vegetation condition, pools, solar panels, vehicles in driveways. 
+Other factors could be exterior materials, maintenance level (the Milà finding), landscaping and lawn condition, fences.
+We can also find a way to count dwellings (not just buildings) to get our population estimates.
+Indicators could include: number of front doors, mailboxes and electric meters. 
+We want to separate duplexes, multifamily buildings, and basement apartments from single-family homes.
+
+4. **Calibration.**
+We need to link our data to existing data to see how it compares. 
+Using ACS and popsim? 
+Maybe the Utah County Tax Parcel data set?
+Brewer has a NAIP-only approach, which we could use as a baseline to show what the drone adds.
+
+
+6. **Scale up** 
+Estimate per stratum we defined and expand by the number of areas in each stratum.
+Then we compare citywide results against census figures?
+Or something else.
+
+
 ## TODO {#sec-todo}
 
 **Flight Planning**
@@ -396,7 +424,6 @@ This section will update as we look into the literature and find the best way to
 
 **Road Types**
 
-- Local roads: Can we generalize this? Use one pitch per height? See @sec-local-roads.
 - Arterial roads: same side vs. across-street shooting, given the extra width. Maybe just a different gimbal pitch? See @sec-big-roads.
 - Big buildings/parking lots: need an actual flight set designed for these; confirm the high-altitude photos capture the whole building for the point cloud. See @sec-big-buildings.
 - Big buildings: may need their own naming convention.
