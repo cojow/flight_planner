@@ -2513,9 +2513,9 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
     """
     Builds a serpentine (lawnmower) flight path whose camera footprints
     fully cover the drawn boundary polygon, honoring altitude, gimbal
-    pitch, and frontal/side overlap. The outermost passes image the boundary
-    down the middle of the frame rather than at its edge, so each outer strip
-    hangs half outside the drawn shape. The drone path itself runs a little
+    pitch, and frontal/side overlap. The outermost passes sit a quarter of a
+    strip inside the boundary, so the edge is imaged well inside the frame
+    rather than at its margin, and a quarter-strip hangs outside the shape. The drone path itself runs a little
     outside the boundary: each pass spans the area's width across the strip
     it covers, plus runout_intervals photo intervals at either end so the
     boundary itself is not the last frame (0 still covers the area, since
@@ -2593,23 +2593,28 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
     height = ymax - ymin
 
     # Imaged-strip centers, evenly respaced (actual side overlap comes out
-    # >= requested). The outermost strips are CENTRED on the boundary rather
-    # than tucked inside it, so each edge is imaged down the middle of a photo
-    # instead of at the very margin of one - half of each outer strip falls
-    # outside the drawn shape, which is the price of the edge being covered
-    # even when the aircraft drifts, the ground rises, or the shape was drawn
-    # a little tight. It costs a pass at each side.
+    # >= requested). The outermost strips sit a QUARTER of a strip inside the
+    # boundary, so each edge lands halfway between the middle of the outer
+    # frame and its margin, with the other quarter-strip hanging outside the
+    # drawn shape. That keeps a real margin at the edge for the aircraft
+    # drifting, the ground rising, or the shape being drawn a little tight,
+    # without the pass count that putting the edge dead centre would cost:
+    # moving the outer strips out by d costs about 2d/spacing passes, so a
+    # half-strip move is roughly 2/(1 - side overlap) extra passes - three at
+    # the default 65% - where a quarter-strip move is about half that.
     #
     # An area narrower than one strip is the exception: a single pass down the
     # middle already images it edge to edge, so splitting that into two passes
-    # on the edges would double the photos to cover ground that is already
+    # nearer the edges would add photos to cover ground that is already
     # covered.
     if fh >= height:
         centers = [(ymin + ymax) / 2.0]
     else:
-        n_passes = math.ceil(height / spacing) + 1
-        step = height / (n_passes - 1)
-        centers = [ymin + k * step for k in range(n_passes)]
+        inset = fh / 4.0
+        span = height - 2.0 * inset
+        n_passes = math.ceil(span / spacing) + 1
+        step = span / (n_passes - 1)
+        centers = [ymin + inset + k * step for k in range(n_passes)]
 
     def band_x_range(lo, hi):
         """x-extent of the boundary within the horizontal band [lo, hi]."""
