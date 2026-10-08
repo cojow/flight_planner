@@ -2379,6 +2379,27 @@ def extract_polygon_from_map_data(map_data):
                 return coords
     return None
 
+# Leaflet serialises coordinates to six decimals, so a boundary that has been
+# out to the map and back is only ever equal to the stored one at that
+# precision - about 4 inches on the ground, far below anything that matters
+# here. Comparing the raw floats would see a difference that isn't there, and
+# the Creator stores-and-reruns on any difference: a boundary carrying more
+# precision than six places would rerun forever.
+BOUNDARY_PRECISION = 6
+
+
+def same_boundary(a, b):
+    """Whether two boundaries are the same shape, at map precision."""
+    if a is None or b is None:
+        return a is b
+    if len(a) != len(b):
+        return False
+    return all(
+        round(a_lat, BOUNDARY_PRECISION) == round(b_lat, BOUNDARY_PRECISION)
+        and round(a_lon, BOUNDARY_PRECISION) == round(b_lon, BOUNDARY_PRECISION)
+        for (a_lat, a_lon), (b_lat, b_lon) in zip(a, b)
+    )
+
 def extract_line_from_map_data(map_data):
     """
     Pulls the most recently drawn line from an st_folium result as a list of
@@ -5169,17 +5190,38 @@ if page == 'Creator':
             # Area-drawing tools only; the flight line is computed, not drawn.
             # Omitted entirely in measure mode - see the note by measure_mode's
             # definition on why "no draw tool present" is how that's enforced.
+            # The stored boundary goes INTO the draw control's own editable
+            # group rather than onto the map beside it, which is what makes it
+            # editable after a rerun. Re-rendering the map wipes whatever was
+            # drawn client-side, so the shape has to be rebuilt from session
+            # state every time; rebuilt as a plain layer it was a picture of a
+            # polygon that the edit tool had no handle on, and the only way to
+            # change an area was to clear it and draw again.
+            #
+            # st_folium rebuilds all_drawings from this group's toGeoJSON() on
+            # every draw:edited, so dragging a vertex comes back through
+            # extract_polygon_from_map_data like a freshly drawn shape - no
+            # separate edit path to keep in step.
+            boundary_group = folium.FeatureGroup(name="Area to map")
+            if st.session_state.map_boundary:
+                folium.Polygon(
+                    locations=st.session_state.map_boundary, color="#00ffff", weight=3,
+                    fill=True, fill_opacity=0.08, tooltip="Area to map - use the edit tool to reshape"
+                ).add_to(boundary_group)
+            boundary_group.add_to(m)
+
             if not st.session_state.measure_mode:
-                Draw(export=False, draw_options={
+                Draw(export=False, feature_group=boundary_group, draw_options={
                     'polyline': False,
                     'polygon': {'shapeOptions': {'color': '#00ffff', 'weight': 3}},
                     'rectangle': {'shapeOptions': {'color': '#00ffff', 'weight': 3}},
                     'circle': False, 'circlemarker': False, 'marker': False,
                 }).add_to(m)
 
-            # Overlay the stored boundary and its computed serpentine path. The
-            # boundary lives in our own session key (not just the Draw layer)
-            # because re-rendering the map wipes client-side drawings.
+            # The computed path is drawn straight onto the map, NOT into the
+            # group above: everything in that group is serialised back as a
+            # drawing, and a flight path reported as one would be read as the
+            # area on the next pass.
             if st.session_state.map_boundary:
                 try:
                     preview_path, _preview_info = generate_mapping_flight_path(
@@ -5188,10 +5230,6 @@ if page == 'Creator':
                         safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0),
                         side, map_runout, map_bearing, map_decompose
                     )
-                    folium.Polygon(
-                        locations=st.session_state.map_boundary, color="#00ffff", weight=3,
-                        fill=True, fill_opacity=0.08, tooltip="Area to map"
-                    ).add_to(m)
                     if preview_path:
                         path_line = folium.PolyLine(preview_path, color="#ff8800", weight=3, tooltip="Computed flight path").add_to(m)
                         PolyLineTextPath(path_line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '18', 'fill-opacity': '0.4'}).add_to(m)
@@ -5281,8 +5319,11 @@ if page == 'Creator':
                     st.session_state.measure_points.append((clicked["lat"], clicked["lng"]))
                     st.rerun()
         elif mapping_mode:
+            # Covers a reshape as well as a fresh draw: the edit tool now has
+            # the stored boundary to work on, and an edited shape comes back
+            # through all_drawings exactly like a newly drawn one.
             detected_boundary = extract_polygon_from_map_data(map_data)
-            if detected_boundary and detected_boundary != st.session_state.map_boundary:
+            if detected_boundary and not same_boundary(detected_boundary, st.session_state.map_boundary):
                 st.session_state.map_boundary = detected_boundary
                 st.rerun()  # re-render immediately so the computed path overlay appears
         else:
