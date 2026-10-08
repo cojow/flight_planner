@@ -2513,7 +2513,9 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
     """
     Builds a serpentine (lawnmower) flight path whose camera footprints
     fully cover the drawn boundary polygon, honoring altitude, gimbal
-    pitch, and frontal/side overlap. The drone path itself runs a little
+    pitch, and frontal/side overlap. The outermost passes image the boundary
+    down the middle of the frame rather than at its edge, so each outer strip
+    hangs half outside the drawn shape. The drone path itself runs a little
     outside the boundary: each pass spans the area's width across the strip
     it covers, plus runout_intervals photo intervals at either end so the
     boundary itself is not the last frame (0 still covers the area, since
@@ -2590,14 +2592,24 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
     ymin, ymax = min(ys), max(ys)
     height = ymax - ymin
 
-    # Imaged-strip centers: evenly respaced so the first/last strips exactly
-    # reach the boundary's extents (actual side overlap comes out >= requested).
+    # Imaged-strip centers, evenly respaced (actual side overlap comes out
+    # >= requested). The outermost strips are CENTRED on the boundary rather
+    # than tucked inside it, so each edge is imaged down the middle of a photo
+    # instead of at the very margin of one - half of each outer strip falls
+    # outside the drawn shape, which is the price of the edge being covered
+    # even when the aircraft drifts, the ground rises, or the shape was drawn
+    # a little tight. It costs a pass at each side.
+    #
+    # An area narrower than one strip is the exception: a single pass down the
+    # middle already images it edge to edge, so splitting that into two passes
+    # on the edges would double the photos to cover ground that is already
+    # covered.
     if fh >= height:
         centers = [(ymin + ymax) / 2.0]
     else:
-        n_passes = math.ceil((height - fh) / spacing) + 1
-        step = (height - fh) / (n_passes - 1)
-        centers = [ymin + fh / 2.0 + k * step for k in range(n_passes)]
+        n_passes = math.ceil(height / spacing) + 1
+        step = height / (n_passes - 1)
+        centers = [ymin + k * step for k in range(n_passes)]
 
     def band_x_range(lo, hi):
         """x-extent of the boundary within the horizontal band [lo, hi]."""
@@ -3057,7 +3069,7 @@ CREATOR_PRESET_KEYS = [
     "t_dist_val", "overlap_pct", "manual_mph_dist",
     "t_val_sec", "auto_speed", "target_gap_ft", "manual_mph_time",
     "map_front_ol", "map_side_ol", "map_speed_mph",
-    "map_fix_bearing", "map_bearing", "map_runout",
+    "map_fix_bearing", "map_bearing", "map_runout_on", "map_runout",
 ]
 
 
@@ -4841,8 +4853,17 @@ if page == 'Creator':
                 map_bearing = float(st.slider("Flight Line Bearing (°)", 0, 179, value=90, key="map_bearing",
                                               help=param_help("Flight Line Bearing (°)")))
 
-            map_runout = st.slider("Edge Run-out (photo intervals)", 0.0, 3.0, value=1.0, step=0.25,
-                                   key="map_runout", help=param_help("Edge Run-out (photo intervals)"))
+            # Off by default: with the outer passes now centred on the
+            # boundary, the ends of each pass already carry a photo centred on
+            # the edge, so run-out is extra coverage rather than the thing
+            # making the edge work.
+            map_runout_on = st.checkbox("Add edge run-out", value=False, key="map_runout_on",
+                                        help="Fly each pass past the boundary before turning, so "
+                                             "the edge is not the last frame. Off by default.")
+            map_runout = 0.0
+            if map_runout_on:
+                map_runout = st.slider("Edge Run-out (photo intervals)", 0.0, 3.0, value=1.0, step=0.25,
+                                       key="map_runout", help=param_help("Edge Run-out (photo intervals)"))
 
             # Experimental coverage strategy, off by default. It only ever
             # changes the path on an area whose strips are split into separate
@@ -5169,6 +5190,20 @@ if page == 'Creator':
                     if preview_path:
                         path_line = folium.PolyLine(preview_path, color="#ff8800", weight=3, tooltip="Computed flight path").add_to(m)
                         PolyLineTextPath(path_line, '  ►  ', repeat=True, offset=7, attributes={'fill': '#000000', 'font-weight': 'bold', 'font-size': '18', 'fill-opacity': '0.4'}).add_to(m)
+                        # Which corner to launch from, and where it finishes.
+                        # The arrows along the line give the direction but not
+                        # the ends, and on a serpentine the two look alike.
+                        for point, label, fill in ((preview_path[0], "START", "#19b35a"),
+                                                   (preview_path[-1], "END", "#e03131")):
+                            folium.Marker(
+                                point,
+                                tooltip=f"{label.title()} of the flight path",
+                                icon=DivIcon(icon_size=(54, 20), icon_anchor=(27, 10), html=(
+                                    f'<div style="font-size: 10pt; font-weight: bold; color: #ffffff; '
+                                    f'background: {fill}; border: 2px solid #ffffff; border-radius: 9px; '
+                                    f'text-align: center; line-height: 16px; width: 50px;">{label}</div>'
+                                )),
+                            ).add_to(m)
                 except Exception as e:
                     # Previously swallowed, which made a genuine failure look
                     # identical to "no path could be drawn for this area".
