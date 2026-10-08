@@ -90,7 +90,7 @@ Each is explained in the following sections.
 DJI Pilot 2 works for higher-end enterprise drones/controllers, such as the Mavic Enterprise series.
 This option allows for very complicated flight plans with hundreds of photos. 
 DJI Fly is the stripped-back version used in the commercial series which doesn't easily support flight plans. 
-It is limited to 99 photos per flight plan due to each photo having to be a waypoint. 
+It is limited to 90 photos per flight plan due to each photo having to be a waypoint. 
 *Know which program your drone takes before planning your flight*
 * **Sensor Mode**: *Only applies to Multispectral/enterprise drones*. Allows for you to choose between taking RGB, Multispectral, or both kinds of photos per shot. Disabled for DJI Fly flights. 
 
@@ -178,7 +178,7 @@ Only 0-179 is offered because the aircraft flies each line in both directions an
 How far each flight line continues past the edge of your drawn area, measured in photo intervals, so it scales automatically if you change altitude or overlap. 
 The area is fully covered even at 0, because each photo already images half a footprint beyond the aircraft. 
 The default of 1 adds one spare frame past each edge, which helps stitching at the borders. 
-Raise it if your edges are coming out weak; drop it to 0 to save photos when you are near the DJI Fly 99-photo limit. The resulting distance in feet is shown in the coverage summary.
+Raise it if your edges are coming out weak; drop it to 0 to save photos when you are near the DJI Fly 90-photo limit. The resulting distance in feet is shown in the coverage summary.
 * **Split passes at gaps (beta)**: *Mapping missions only*. Changes how the flight lines are built. Normally each line runs the full width of the area at that point, so on a shape with a hole or a deep notch - a U, a ring, an H - the aircraft flies straight across the gap.
 With this on, each line is cut into only the pieces that are actually inside your shape, and those pieces are flown as separate passes. 
 On a deep U this cuts about 20% of the photos. On shapes without a gap it changes nothing at all, so it is safe to leave on. 

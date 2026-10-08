@@ -942,6 +942,12 @@ def add_basemap(fmap):
 # is kept intact so flipping this back to True restores it unchanged.
 MEASURE_TOOL_ENABLED = False
 
+# Most photos a DJI Fly mission may carry before the app stops it being saved.
+# One photo is one waypoint there, and the controllers bog down well before
+# their own hard ceiling - this is the number the class flies to, not a DJI
+# specification, so it lives here rather than being written out at each use.
+DJI_FLY_PHOTO_LIMIT = 90
+
 MISSION_DIR = "missions"
 SURFACES_DIR = "surfaces"
 FLIGHT_LOG_DIR = "flight_log"
@@ -2678,7 +2684,7 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
     # along a pass when j is even and is a turn/connector between passes when
     # j is odd. The camera is yawed off the direction of travel, so on a
     # connector it points along the strips instead of across them - those
-    # photos image the wrong thing and, on DJI Fly, burn the 99-photo budget.
+    # photos image the wrong thing and, on DJI Fly, burn the photo budget.
     # Hand the connector indices to the generator so it can skip them.
     info["connector_segments"] = [j for j in range(max(0, len(path_coords) - 1)) if j % 2 == 1]
     return path_coords, info
@@ -2851,7 +2857,7 @@ def count_mapping_photos(path_coords, interval_ft, connector_segments, is_dji_fl
 
 # Waypoints per piece when an over-long mapping mission is saved in parts.
 # On DJI Fly every photo is its own waypoint, and the controllers start
-# struggling past about this many - well below the 99 the app refuses at, so
+# struggling past about this many - below the cap the app refuses at, so
 # a mission split this way is comfortably flyable rather than merely legal.
 SPLIT_WAYPOINT_TARGET = 80
 
@@ -4244,7 +4250,7 @@ footer {{ display: none !important; }}
 .st-key-notices [data-testid="stElementContainer"] {{ margin-bottom: 2px !important; width: 100% !important; }}
 .st-key-notices [data-testid="stMarkdownContainer"] {{ width: 100% !important; }}
 .st-key-notices .stAlert {{ padding: 4px 12px !important; width: 100% !important; box-sizing: border-box !important; }}
-/* The 99-photo override tick box sits in this banner and should read as a
+/* The photo-limit override tick box sits in this banner and should read as a
    small aside under the error, not as another headline control. */
 .st-key-notices .stCheckbox {{ pointer-events: auto !important; padding: 0 12px !important; }}
 .st-key-notices .stCheckbox p {{ font-size: 0.78rem !important; }}
@@ -4424,7 +4430,7 @@ def _inline_local_images(text, base_dir):
 
 
 # ==========================================
-# DJI FLY 99-PHOTO SAVE-BLOCK OVERRIDE
+# DJI FLY PHOTO-LIMIT SAVE-BLOCK OVERRIDE
 # ==========================================
 # Saving is blocked past the cap because DJI Fly bogs down badly and can take
 # the controller with it. This lets a pilot who has reason to believe their
@@ -4434,61 +4440,62 @@ def _inline_local_images(text, base_dir):
 # `scope` so the Creator's two modes and the Editor keep independent state.
 
 @st.dialog("Override the DJI Fly photo limit?")
-def _confirm_99_override(scope, est_photos):
-    st.warning(f"This mission takes {est_photos} photos - {est_photos - 99} more than the 99 DJI Fly supports.")
+def _confirm_photo_limit_override(scope, est_photos):
+    st.warning(f"This mission takes {est_photos} photos - {est_photos - DJI_FLY_PHOTO_LIMIT} "
+               f"more than the {DJI_FLY_PHOTO_LIMIT} this app allows on DJI Fly.")
     st.markdown(
-        "DJI Fly needs one waypoint per photo. Past 99 it is known to lag badly, "
+        f"DJI Fly needs one waypoint per photo. Past {DJI_FLY_PHOTO_LIMIT} it is known to lag badly, "
         "and it can crash the controller **mid-flight**, taking the mission with it.\n\n"
         "Only turn this on if you have reason to believe your controller will cope, "
         "and load the mission on the controller to check it before you rely on it."
     )
     cancel_col, ok_col = st.columns(2)
     if cancel_col.button("Cancel", width='stretch'):
-        st.session_state[f"{scope}_99_dialog"] = False
-        st.session_state[f"{scope}_99_override_ok"] = False
+        st.session_state[f"{scope}_limit_dialog"] = False
+        st.session_state[f"{scope}_limit_override_ok"] = False
         # The tick box has already been instantiated this run, so its state
         # cannot be written here - defer the reset to the next run.
-        st.session_state[f"{scope}_99_reset"] = True
+        st.session_state[f"{scope}_limit_reset"] = True
         st.rerun()
     if ok_col.button("Turn on override", type="primary", width='stretch'):
-        st.session_state[f"{scope}_99_dialog"] = False
-        st.session_state[f"{scope}_99_override_ok"] = True
+        st.session_state[f"{scope}_limit_dialog"] = False
+        st.session_state[f"{scope}_limit_override_ok"] = True
         st.rerun()
 
 
-def _99_override_toggled(scope):
-    if st.session_state.get(f"{scope}_99_override_cb"):
+def _photo_limit_override_toggled(scope):
+    if st.session_state.get(f"{scope}_limit_override_cb"):
         # Ask for confirmation only if it isn't already granted.
-        if not st.session_state.get(f"{scope}_99_override_ok"):
-            st.session_state[f"{scope}_99_dialog"] = True
+        if not st.session_state.get(f"{scope}_limit_override_ok"):
+            st.session_state[f"{scope}_limit_dialog"] = True
     else:
         # Unticking revokes immediately - no dialog needed to become safer.
-        st.session_state[f"{scope}_99_override_ok"] = False
-        st.session_state[f"{scope}_99_dialog"] = False
+        st.session_state[f"{scope}_limit_override_ok"] = False
+        st.session_state[f"{scope}_limit_dialog"] = False
 
 
-def render_99_override(container, scope, est_photos):
+def render_photo_limit_override(container, scope, est_photos):
     """
     Tick box (plus its confirmation dialog) that lifts the DJI Fly save block,
     rendered inside `container` directly under the limit message. Only call it
     when the mission is actually over the cap. Returns True while the override
     is active, i.e. while saving should be allowed.
     """
-    if st.session_state.pop(f"{scope}_99_reset", False):
-        st.session_state[f"{scope}_99_override_cb"] = False
+    if st.session_state.pop(f"{scope}_limit_reset", False):
+        st.session_state[f"{scope}_limit_override_cb"] = False
 
     with container:
         st.checkbox(
             "Override the limit and let me save anyway",
-            key=f"{scope}_99_override_cb",
-            on_change=_99_override_toggled,
+            key=f"{scope}_limit_override_cb",
+            on_change=_photo_limit_override_toggled,
             args=(scope,),
         )
 
-    if st.session_state.get(f"{scope}_99_dialog"):
-        _confirm_99_override(scope, est_photos)
+    if st.session_state.get(f"{scope}_limit_dialog"):
+        _confirm_photo_limit_override(scope, est_photos)
 
-    return bool(st.session_state.get(f"{scope}_99_override_ok"))
+    return bool(st.session_state.get(f"{scope}_limit_override_ok"))
 
 
 @st.dialog("README", width="large")
@@ -4708,7 +4715,7 @@ if page == 'Creator':
 
         st.header("2. Hardware & Payload")
         # Both platforms plan either kind of mission - mapping used to be
-        # forced onto DJI Fly, which capped an area mission at 99 photos no
+        # forced onto DJI Fly, which capped an area mission at the DJI Fly photo limit no
         # matter which aircraft was actually flying it.
         hw_choice = st.selectbox("Drone Platform", list(HARDWARE_MAP.keys()), key="hw_choice", help=param_help("Drone Platform"))
         drone_enum = HARDWARE_MAP[hw_choice]["drone_enum"]
@@ -4718,7 +4725,7 @@ if page == 'Creator':
         is_dji_fly = HARDWARE_MAP[hw_choice].get("is_dji_fly", False)
 
         if is_dji_fly:
-            st.warning("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
+            st.warning(f"DJI Fly greatly lags with more than {DJI_FLY_PHOTO_LIMIT} waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
 
         if is_dji_fly:
             cam_choice = "RGB Only"
@@ -5302,14 +5309,14 @@ if page == 'Creator':
                 # Counted the same way the generator writes them - photos on
                 # the turn legs between passes are skipped, so a plain
                 # distance/interval estimate would overstate the total and
-                # trip the 99-photo limit earlier than the mission actually does.
+                # trip the photo limit earlier than the mission actually does.
                 est_photos = count_mapping_photos(path_coords, gap_ft, map_info["connector_segments"], is_dji_fly)
 
-                # The 99-photo ceiling is a DJI Fly limitation; Pilot has no
+                # The photo ceiling is a DJI Fly limitation; Pilot has no
                 # equivalent cap, so an area mission flown on Pilot is only
                 # bounded by battery.
                 save_disabled = False
-                # Offered before the 99-photo error, because taking it makes
+                # Offered before the photo-limit error, because taking it makes
                 # that error moot: every part written is at or under the
                 # target, so there is nothing left to override.
                 split_parts = False
@@ -5337,15 +5344,16 @@ if page == 'Creator':
                                         for c, k in preview)
                             + " waypoints."
                         )
-                if is_dji_fly and est_photos > 99 and not split_parts:
-                    notices.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please shrink the area, raise the altitude, reduce the overlaps, or switch to DJI Pilot 2.")
-                    save_disabled = not render_99_override(notices, "cmap", est_photos)
+                if is_dji_fly and est_photos > DJI_FLY_PHOTO_LIMIT and not split_parts:
+                    notices.error(f"DJI Fly greatly lags with more than {DJI_FLY_PHOTO_LIMIT} waypoints (photos). To prevent a crash please shrink the area, raise the altitude, reduce the overlaps, or switch to DJI Pilot 2.")
+                    save_disabled = not render_photo_limit_override(notices, "cmap", est_photos)
 
                 with top_hud:
                     c1, c2, c3, c4 = st.columns([1.2, 1.2, 1, 1.6])
                     c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft",
                               delta=format_flight_time(total_dist_ft, speed_m), delta_color="off")
-                    c2.metric("Estimated Photos", f"{est_photos} / 99" if is_dji_fly else f"{est_photos}")
+                    c2.metric("Estimated Photos",
+                              f"{est_photos} / {DJI_FLY_PHOTO_LIMIT}" if is_dji_fly else f"{est_photos}")
                     # Show the bearing actually flown either way - on automatic
                     # it is the only place the chosen direction is visible, and
                     # it gives a starting value for the manual slider.
@@ -5472,15 +5480,16 @@ if page == 'Creator':
         est_photos = count_corridor_photos(coords, gap_m, is_dji_fly, photo_start_wp)
 
         save_disabled = False
-        if is_dji_fly and est_photos > 99:
-            notices.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please reduce your distance or increase the interval.")
-            save_disabled = not render_99_override(notices, "cline", est_photos)
+        if is_dji_fly and est_photos > DJI_FLY_PHOTO_LIMIT:
+            notices.error(f"DJI Fly greatly lags with more than {DJI_FLY_PHOTO_LIMIT} waypoints (photos). To prevent a crash please reduce your distance or increase the interval.")
+            save_disabled = not render_photo_limit_override(notices, "cline", est_photos)
 
         with top_hud:
             c1, c2, c3, c4 = st.columns([1.2, 1.2, 1, 1])
             c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft",
                       delta=format_flight_time(total_dist_ft, speed_m), delta_color="off")
-            c2.metric("Estimated Photos", f"{est_photos}" + (" / 99" if is_dji_fly else ""))
+            c2.metric("Estimated Photos",
+                      f"{est_photos}" + (f" / {DJI_FLY_PHOTO_LIMIT}" if is_dji_fly else ""))
             with c3:
                 st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
                 save_clicked = st.button("Save & Generate KMZ", width='stretch', disabled=save_disabled)
@@ -5630,7 +5639,7 @@ elif page == 'Editor':
             e_is_dji_fly = HARDWARE_MAP[e_hw_choice].get("is_dji_fly", False)
             
             if e_is_dji_fly:
-                st.warning("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
+                st.warning(f"DJI Fly greatly lags with more than {DJI_FLY_PHOTO_LIMIT} waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
             
             current_cam_display = CAM_DISPLAY_MAP.get(meta.get('camera_type', 'visible'), "RGB Only")
             if e_is_dji_fly:
@@ -5905,13 +5914,14 @@ elif page == 'Editor':
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft",
                       delta=format_flight_time(total_dist_ft, e_speed_m), delta_color="off")
-            c2.metric("Estimated Photos", f"{est_photos}" + (" / 99" if e_is_dji_fly else ""))
+            c2.metric("Estimated Photos",
+                      f"{est_photos}" + (f" / {DJI_FLY_PHOTO_LIMIT}" if e_is_dji_fly else ""))
             c3.metric("Flight Speed", f"{e_speed_m * MS_TO_MPH:.1f} mph")
 
             save_disabled = False
-            if e_is_dji_fly and est_photos > 99:
-                notices.error("DJI Fly greatly lags with more than 99 waypoints (photos). To prevent a crash please reduce your distance or increase the interval.")
-                save_disabled = not render_99_override(notices, "edit", est_photos)
+            if e_is_dji_fly and est_photos > DJI_FLY_PHOTO_LIMIT:
+                notices.error(f"DJI Fly greatly lags with more than {DJI_FLY_PHOTO_LIMIT} waypoints (photos). To prevent a crash please reduce your distance or increase the interval.")
+                save_disabled = not render_photo_limit_override(notices, "edit", est_photos)
 
             if st.button("Save & Update Mission", disabled=save_disabled):
                 with notices.spinner("Calculating terrain elevations and generating KMZ..."):
