@@ -372,11 +372,15 @@ The folders will retain the same name as the photo folder with the prefix "**pho
 ### Relevent Questions
 
 - Research Questions
-  - How are drones currently used in Transportation? 
-  - How are they used in collecting socioeconomic data? 
-  - Socioeconomic data in Transportation modeling.
+  - How are they used in collecting socioeconomic/land use data? 
+  - Socioeconomic data in Transportation modeling? What variables are used? NCHR 916
   - How similar to people who live next to each other in terms of income, etc?
-  - How will we sample cities and scale them up? (See the paragraph above)
+  - Papers on population synthesis. How accurate is it, more data does what? Ignore computational stuff. 
+  - How will we sample cities and scale them up? (Brewer, Mila papers)
+  - ACS technical memos for how data is collected, models, etc. How they do stuff. 
+  - Ways to measure differences in synthetic populations.
+
+  - We need distribution in a neighborhood, not at house level. 
 
 
 - Other questions that we need to answer
@@ -384,7 +388,7 @@ The folders will retain the same name as the photo folder with the prefix "**pho
   Are there variables that we can't direclty get, then to find correlations? 
 
 
-### A Possible Methodology 
+### Possible Methodology 
 
 1. **Sampling frame.** 
 Sample areas and fly every street inside each sampled area. 
