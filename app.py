@@ -5236,15 +5236,20 @@ if page == 'Creator':
                         # Which corner to launch from, and where it finishes.
                         # The arrows along the line give the direction but not
                         # the ends, and on a serpentine the two look alike.
-                        for point, label, fill in ((preview_path[0], "START", "#19b35a"),
-                                                   (preview_path[-1], "END", "#e03131")):
+                        for point, letter, word, fill in ((preview_path[0], "S", "Start", "#19b35a"),
+                                                          (preview_path[-1], "E", "End", "#e03131")):
                             folium.Marker(
                                 point,
-                                tooltip=f"{label.title()} of the flight path",
-                                icon=DivIcon(icon_size=(54, 20), icon_anchor=(27, 10), html=(
-                                    f'<div style="font-size: 10pt; font-weight: bold; color: #ffffff; '
-                                    f'background: {fill}; border: 2px solid #ffffff; border-radius: 9px; '
-                                    f'text-align: center; line-height: 16px; width: 50px;">{label}</div>'
+                                tooltip=f"{word} of the flight path",
+                                # Round badge rather than a word: these sit on
+                                # top of the path, and at the scale an area
+                                # mission is drawn at a pill long enough to
+                                # read "START" covers the first pass.
+                                icon=DivIcon(icon_size=(26, 26), icon_anchor=(13, 13), html=(
+                                    f'<div style="box-sizing: border-box; width: 26px; height: 26px; '
+                                    f'font-size: 12pt; font-weight: bold; color: #ffffff; '
+                                    f'background: {fill}; border: 2px solid #ffffff; border-radius: 50%; '
+                                    f'text-align: center; line-height: 22px;">{letter}</div>'
                                 )),
                             ).add_to(m)
                 except Exception as e:
