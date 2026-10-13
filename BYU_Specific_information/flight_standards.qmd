@@ -407,6 +407,37 @@ We can also find a way to count dwellings (not just buildings) to get our popula
 Indicators could include: number of front doors, mailboxes and electric meters. 
 We want to separate duplexes, multifamily buildings, and basement apartments from single-family homes.
 
+
+Methodology fr fr
+Step 1. data collection process; we need to collect both nadir and oblique images of the buildings  develop our flight standards, having fixed flight heights
+  angles gimbal pitches, as well as flight paths so that every flight is the same, and the data can be compared to each other. We need to devide the city into small areas,
+  and then sample a few of these areas to fly the drone over. We need to make sure that we have a good representation of the city, so we need to stratify the areas based on their characteristics.
+  we will randomly select a random sample from these samples and then fly every street in the areas. we will use the us census blocks as our area blocks - if we want to compare to the census data
+  We will collect both nadir and oblique images of the buildings.
+
+  **data alysis**
+  nadir at 200 ft oblique at 70 ft. we will run them through connors software to make a point cloud of each individual house. from this point cloud we can obtain the houses volume, footpring, and location.
+  oblique images will be used to run object detection on the houses. object detection modal - yolo - we will annotate the oblique images manually (samantha the peasant )
+  to label /detect cars, garage doors to estimate vehicles. so that we can train th model to be able to recognize these objects in the images.
+  what are we gonna train our model on. do flights in provo to get images to train our model on. after we trained the model we can feed in imagery from cencus. we want tomake sure there istn any overlap.
+ We are gonna hold 20% of the images for testing and validation. We might sample different locations around utah.
+
+
+  to guess income:, RVs and boats, solar panels, window AC units, roof material, yard size, ground and vegetation condition, pools, solar panels, vehicles in driveways.
+  population: house volume, footprint, and location will be used to estimate the number of dwellings in each house. Number of doors,
+  transportation model: number of cars
+  ecuador: use nadir images to get land ownership
+
+  make assumptions and find papers that back them up. How can we get our data/variables into a form that we can put into population sim? Look into those papers more to get a better idea.
+
+  We are going to create an iterative proportional fitting model. We might use a random forest model. Eventually we want to put our data into population sim (IPF) to get a synthetic population.
+  We will use the data we collect to estimate the number of dwellings in each house, and then use that to estimate the population in each area. We will also use the data we collect to estimate the income of each area.
+  We are gonna run pop sim using the census data.We want to ba able to use our data in pop sim so that we can get a synthetic population. We could compare the different cities and how the model works in different locations,
+  if we keep the other variables as similar as possible. We will use the same methodology in ecuador to see if it works there as well.
+
+The equador census data is not very good, we want to show that the same methodology works there so that we know that it works.
+
+
 4. **Calibration.**
 We need to link our data to existing data to see how it compares. 
 Using ACS and popsim? 
