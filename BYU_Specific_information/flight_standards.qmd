@@ -425,7 +425,7 @@ Step 1. data collection process; we need to collect both nadir and oblique image
 
   to guess income:, RVs and boats, solar panels, window AC units, roof material, yard size, ground and vegetation condition, pools, solar panels, vehicles in driveways.
   population: house volume, footprint, and location will be used to estimate the number of dwellings in each house. Number of doors,
-  transportation model: number of cars
+  transportation model: number of cars.
   ecuador: use nadir images to get land ownership
 
   make assumptions and find papers that back them up. How can we get our data/variables into a form that we can put into population sim? Look into those papers more to get a better idea.
