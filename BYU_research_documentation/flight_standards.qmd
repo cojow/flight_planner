@@ -390,22 +390,8 @@ The folders will retain the same name as the photo folder with the prefix "**pho
 
 ### Possible Methodology 
 
-1. **Sampling frame.** 
-Sample areas and fly every street inside each sampled area. 
-We can either divide areas into grids, or use existing US census Blocks. Brewer (paper doing similar things) used census blocks, and it is related to ACS. However other places will lack these blocks. 
+#### Step 1: Data Collection
 
-2. **Stratify and sample**. 
-Stratified random sample of areas, using current imagery to define strata, plus a small stratum for areas that look undeveloped.
-
-3. **High and low flight over the streets**
-Build the point cloud from our High Nadir images. 
-From this we'll get volume, area footprint, and house location.
-Use Object detection on Low images. Potential items: cars (count. Maybe as the paper by Gebru talks about, type or age), garage doors, RVs and boats, solar panels, window AC units.
-We can also look into extracting other features (stated by Engstrom and Watmough): roof material, yard size, ground and vegetation condition, pools, solar panels, vehicles in driveways. 
-Other factors could be exterior materials, maintenance level (the Milà finding), landscaping and lawn condition, fences.
-We can also find a way to count dwellings (not just buildings) to get our population estimates.
-Indicators could include: number of front doors, mailboxes and electric meters. 
-We want to separate duplexes, multifamily buildings, and basement apartments from single-family homes.
 
 
 Methodology fr fr
@@ -436,6 +422,24 @@ Step 1. data collection process; we need to collect both nadir and oblique image
   if we keep the other variables as similar as possible. We will use the same methodology in ecuador to see if it works there as well.
 
 The equador census data is not very good, we want to show that the same methodology works there so that we know that it works.
+
+
+1. **Sampling frame.** 
+Sample areas and fly every street inside each sampled area. 
+We can either divide areas into grids, or use existing US census Blocks. Brewer (paper doing similar things) used census blocks, and it is related to ACS. However other places will lack these blocks. 
+
+2. **Stratify and sample**. 
+Stratified random sample of areas, using current imagery to define strata, plus a small stratum for areas that look undeveloped.
+
+3. **High and low flight over the streets**
+Build the point cloud from our High Nadir images. 
+From this we'll get volume, area footprint, and house location.
+Use Object detection on Low images. Potential items: cars (count. Maybe as the paper by Gebru talks about, type or age), garage doors, RVs and boats, solar panels, window AC units.
+We can also look into extracting other features (stated by Engstrom and Watmough): roof material, yard size, ground and vegetation condition, pools, solar panels, vehicles in driveways. 
+Other factors could be exterior materials, maintenance level (the Milà finding), landscaping and lawn condition, fences.
+We can also find a way to count dwellings (not just buildings) to get our population estimates.
+Indicators could include: number of front doors, mailboxes and electric meters. 
+We want to separate duplexes, multifamily buildings, and basement apartments from single-family homes.
 
 
 4. **Calibration.**

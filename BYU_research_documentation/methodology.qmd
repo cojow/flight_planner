@@ -1,0 +1,101 @@
+# Methodology
+
+## Overview
+
+Fcollect drone imagery of buildings and use it to estimate population, vehicle availability, and income categories, which are key inputs for transportation modeling. 
+We will then use these estimates to generate synthetic populations in PopulationSim [@populationsim] and compare them with synthetic populations made from census data. 
+We will develop the method in several cities in Utah County, starting with Provo, then repeat it in Ecuador to test whether it transfers.
+
+## 1. Sampling Frame
+
+Each city of study will be divided into small areas using the census block groups, within which we will fly every street. 
+This is the same level that the American Community Survey reports on, and will allow us to compare our estimates directly to the ACS data. 
+We may, however, decide to do this with blocks. 
+
+Other cities may lack available census block groups, so a simple grid may be needed there. 
+
+## 2. Stratification and Sample Selection
+
+To make sure we have a good representation of each city, we will use a stratified random sample. 
+We will use current aerial imagery to sort the areas into strata based on their characteristics, and we will add a small stratum for areas that look undeveloped. 
+We will then randomly select areas from each stratum and fly every street in each selected area. 
+Some of the flown areas will be reserved to test how accurately we can extrapolate to areas we did not fly (see Section 6).
+
+::: {.callout-note}
+## To decide
+Which characteristics will define the strata, how many areas will be sampled from each stratum, and how many flown areas will be reserved for testing?
+:::
+
+## 3. Data Collection
+
+### Flight Standards
+
+Every flight will follow the same standards so that flights are consistent and easily replicated, and so that data from different flights and areas can be compared to each other. We will fix the altitude, image overlap, camera angle (gimbal pitch), and flight path before data collection begins.
+
+We will fly each street twice:
+
+- **High flight (nadir):** 200 ft, with the camera pointed down at 70 degrees. These images are used to build point clouds of the buildings.
+- **Low flight (oblique):** 70 ft, with the camera angled toward the buildings at 45 degrees. These images are used for object detection.
+
+Overlap for all flights will be ~75 (number to be verified). 
+
+
+To comply with federal regulations, all pilots will hold FAA Part 107 certification, and flights will avoid flying over people and moving vehicles by flying along the side of the road (where vehicles are typically parked). Flight paths will be adjusted depending on the road.
+
+
+## 4. Feature Extraction
+
+### 4.1 Building Geometry from Nadir Images
+
+We will run the high nadir images through a modified version of the open-source OpenDroneMap software to generate point clouds. From the point clouds we will extract individual buildings and measure each building's footprint, volume, and location. (We will validate these measurements against Utah County tax parcel records.)
+
+### 4.2 Object Detection from Oblique Images
+
+We will run an open-source YOLO object detection model on the low oblique images. To train the model, we will manually label oblique images, marking objects such as vehicles and garage doors so the model learns to recognize them in new images. Since vehicles may be absent or hidden, garage counts will serve as a proxy for vehicle capacity.
+
+**Training data.** Provo will be our initial study city. We will collect training images from areas of Provo that are kept separate from the study block groups, and we might also sample different locations around Utah. Images from the training areas will be split 80% for training and 20% for validation. After the model is trained, we will apply it to the imagery from the sampled study block groups.
+
+### 4.3 Counting Dwellings
+
+To estimate population, we need to count dwellings, not just buildings. In particular, we want to separate duplexes, multifamily buildings, and basement apartments from single-family homes. Possible indicators include the number of front doors, mailboxes, and electric meters, along with the building volume, footprint, and location from the point cloud.
+
+### 4.4 Candidate Features
+
+| Target variable | Candidate features |
+|---|---|
+| Population / dwellings | Building volume, type, footprint, and location; number of front doors, mailboxes, and electric meters |
+| Vehicle availability | Vehicle counts; garage counts as a proxy for vehicle capacity |
+| Income categories | Building volume and vehicle types [@gebru2017]; RVs and boats, solar panels, window AC units, pools, vehicles in driveways, roof material, yard size, and ground and vegetation condition [@engstrom; @watmough]; exterior materials, maintenance level [@mila], landscaping and lawn condition, and fences |
+
+For each feature, we need to state the assumption that links it to the target variable and find papers that back it up.
+
+## 5. Estimating Population, Vehicle Availability, and Income
+
+Using machine learning and regression analysis (for example, a random forest model), we will predict vehicle availability from vehicle counts, population from building volumes and types, and income categories from a composite of building volume and vehicle types. To protect privacy, these outputs will be aggregated to the block-group level.
+
+These block-group estimates need to be in a form PopulationSim can use, which means control totals for each area. We need to look further into the papers that do similar work to see how they get their variables into that form.
+
+## 6. Scale-Up
+
+We will extrapolate from the flown areas to the remaining areas [@brewer2024]. To do this, we will estimate each variable per stratum and expand by the number of areas in each stratum. We will test the accuracy of this extrapolation on the flown areas we reserved in Section 2.
+
+::: {.callout-note}
+## To decide
+PopulationSim needs control totals for every block group. Does the extrapolation give each unflown block group its own estimate, or only totals for each stratum?
+:::
+
+## 7. Comparison to Existing Data
+
+We will compare our block-group estimates to ACS estimates. Because the ACS is a sample, its estimates for small areas carry large margins of error [@spielman2014]. If our drone estimates fall within the same margin of error the ACS carries, that will help show that drones can match the data quality.
+
+We will also use the NAIP-only approach from @brewer2024 as a baseline, to show what drone imagery adds beyond publicly available aerial imagery.
+
+## 8. Synthetic Population
+
+We will generate two synthetic populations in PopulationSim: one from census inputs and one from our drone inputs. PopulationSim reweights a seed sample of households so that it matches the control totals for each area. We will compare the two synthetic populations using metrics such as standardized root mean square error (SRMSE) [@chapuis2022].
+
+## 9. Transferability
+
+Within Utah County, we can compare how the model works in different cities, as long as we keep the other variables as similar as possible.
+
+We will then test the methodology in Ecuador. Ecuador's 2022 Census, its most recent, came after a 12-year gap and had coverage gaps [@inec2022], which makes it a good representative of countries with poor census data. Our team will join [BYU researchers] in [city], Ecuador, and repeat the data collection and estimation steps. We will then apply both the Utah-trained model and a recalibrated model using data collected in Ecuador, and compare the results to the 2022 Census. This will show whether the model transfers well and how much recalibration is required.
