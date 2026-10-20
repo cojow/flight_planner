@@ -38,7 +38,7 @@ A simple app separate from the main Flight Planner. It reads every `.kmz` flight
 From the main project folder, with the same Python environment used for the main app, run:
 
 ```bash
-streamlit run flight_tracker.py
+streamlit run py/flight_tracker.py
 ```
 
 This opens a new browser tab, separate from the main Flight Planner app. Both apps can run at the same time.

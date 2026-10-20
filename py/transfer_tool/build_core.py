@@ -24,7 +24,8 @@ import difflib
 import os
 import sys
 
-APP_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app.py")
+# Two levels up: this lives in py/transfer_tool/, app.py at the repository root.
+APP_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "app.py")
 OUT_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dji_transfer_core.py")
 
 HEADER = '''"""

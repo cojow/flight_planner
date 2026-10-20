@@ -32,3 +32,9 @@ flight_log/
 
 #Machine-specific per-folder flight-log generation counters
 .flight_log_counts.json
+
+#Census API key - personal and secret, never committed
+py/census_api_key.txt
+
+#Census downloads cached so re-runs don't spend API calls
+data/census/cache/

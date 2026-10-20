@@ -33,7 +33,9 @@ M_TO_FT = 1 / FT_TO_M
 # instead of having to re-derive them from raw waypoint geometry.
 SUFFIX_RE = re.compile(r'_(Fly|Pilot)_H(\d+)A(\d+)OL(\d+)(?:SO(\d+))?$')
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".tracker_config.json")
+# At the repository root, not beside this file: the tracker moved into py/,
+# and the saved folder preference stayed where it was (and gitignored).
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".tracker_config.json")
 
 PALETTE = ["#00e5ff", "#ff4dd2", "#ffe135", "#4dff4d", "#ff9500", "#ff4d4d", "#a680ff", "#66ffc2"]
 
