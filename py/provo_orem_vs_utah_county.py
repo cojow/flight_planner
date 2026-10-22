@@ -23,7 +23,8 @@ Needs the Census API key in py/census_api_key.txt (see building_census_data.py)
 and:  pip install pandas requests shapely scikit-learn matplotlib
 
 The scatter plot of income against house age is saved as
-data/census/provo_orem_vs_county/income_vs_house_age.png.
+data/census/provo_orem_vs_county/income_vs_house_age.png, and a second one with
+only Provo and Orem as income_vs_house_age_provo_orem.png.
 """
 import sys
 
@@ -198,6 +199,36 @@ def scatter_plot(county, path):
     plt.close(fig)
 
 
+def scatter_plot_provo_orem(provo_orem, path):
+    """Provo-Orem alone: house age across, income up, Provo and Orem in different colors."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import FuncFormatter
+
+    fig, ax = plt.subplots(figsize=(9, 6))
+    for city, color in (("Provo", "#d1495b"), ("Orem", "#2e7d9a")):
+        df = provo_orem[provo_orem["city"].str.startswith(city)]   # the Census says "Provo city"
+        ax.scatter(df["median_age_years_all"], df["median_household_income"],
+                   s=32, alpha=0.7, color=color, edgecolors="none",
+                   label=f"{city} ({len(df)})")
+        ax.scatter(df["median_age_years_all"].median(), df["median_household_income"].median(),
+                   s=260, marker="*", color=color, edgecolors="black", linewidths=1, zorder=5)
+
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v / 1000:,.0f}K"))
+    ax.set_xlabel("Median house age (years)")
+    ax.set_ylabel("Median household income")
+    ax.set_title("Provo and Orem block groups\n"
+                 "one dot per block group, stars mark each city's median")
+    ax.legend(frameon=False)
+    ax.grid(alpha=0.25)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(path, dpi=200)
+    plt.close(fig)
+
+
 # --------------------------------------------------------------------------
 
 def main():
@@ -219,7 +250,10 @@ def main():
 
     plot_path = OUT_DIR / "income_vs_house_age.png"
     scatter_plot(county, plot_path)
-    print(f"Scatter plot saved to {plot_path}\n")
+    print(f"Scatter plot saved to {plot_path}")
+    provo_orem_path = OUT_DIR / "income_vs_house_age_provo_orem.png"
+    scatter_plot_provo_orem(provo_orem, provo_orem_path)
+    print(f"Provo-Orem-only scatter plot saved to {provo_orem_path}\n")
 
     try:
         print("=== Clusters (income + house age), k chosen by silhouette ===")
