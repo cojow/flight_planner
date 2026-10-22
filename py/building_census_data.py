@@ -4,7 +4,7 @@ Building age and income data from the Census, ready for clustering.
 Pulls American Community Survey (ACS) 5-year estimates for the neighbourhoods
 inside a city - block groups by default - so the age of a city's buildings and
 the income of the people living in them can be clustered, mapped, or compared.
-Every row is one area; every column is labelled with what it measures, and
+Every row is one area; every column is labeled with what it measures, and
 whether it covers all buildings or only some of them.
 
 Quick start
