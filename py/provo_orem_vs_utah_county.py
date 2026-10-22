@@ -20,7 +20,10 @@ Run it:
     python py/provo_orem_vs_utah_county.py
 
 Needs the Census API key in py/census_api_key.txt (see building_census_data.py)
-and:  pip install pandas requests shapely scikit-learn
+and:  pip install pandas requests shapely scikit-learn matplotlib
+
+The scatter plot of income against house age is saved as
+data/census/provo_orem_vs_county/income_vs_house_age.png.
 """
 import sys
 
@@ -155,6 +158,47 @@ def forest(county, provo_orem, target="median_household_income"):
 
 
 # --------------------------------------------------------------------------
+# 4. Scatter plot
+# --------------------------------------------------------------------------
+
+def scatter_plot(county, path):
+    """
+    One dot per block group: house age across, income up. Provo-Orem in color,
+    the rest of the county in grey, with a star at each group's median.
+    """
+    import matplotlib
+    matplotlib.use("Agg")           # draw to a file; no window to close
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import FuncFormatter
+
+    rest = county[~county["in_provo_orem"]]
+    provo_orem = county[county["in_provo_orem"]]
+
+    fig, ax = plt.subplots(figsize=(9, 6))
+    for df, color, label in ((rest, "#9aa0a6", "Rest of Utah County"),
+                             (provo_orem, "#d1495b", "Provo-Orem")):
+        ax.scatter(df["median_age_years_all"], df["median_household_income"],
+                   s=28, alpha=0.6, color=color, edgecolors="none",
+                   label=f"{label} ({len(df)})")
+        ax.scatter(df["median_age_years_all"].median(), df["median_household_income"].median(),
+                   s=260, marker="*", color=color, edgecolors="black", linewidths=1,
+                   zorder=5)
+
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v / 1000:,.0f}K"))
+    ax.set_xlabel("Median house age (years)")
+    ax.set_ylabel("Median household income")
+    ax.set_title("Provo-Orem vs the rest of Utah County\n"
+                 "one dot per block group, stars mark each group's median")
+    ax.legend(frameon=False)
+    ax.grid(alpha=0.25)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(path, dpi=200)
+    plt.close(fig)
+
+
+# --------------------------------------------------------------------------
 
 def main():
     try:
@@ -172,6 +216,10 @@ def main():
 
     print("=== Income and house age: Provo-Orem vs county ===")
     print(compare(county, provo_orem).T.to_string(), "\n")
+
+    plot_path = OUT_DIR / "income_vs_house_age.png"
+    scatter_plot(county, plot_path)
+    print(f"Scatter plot saved to {plot_path}\n")
 
     try:
         print("=== Clusters (income + house age), k chosen by silhouette ===")
@@ -191,7 +239,7 @@ def main():
     print(importances.to_string(), "\n")
     print("How well each model predicts (R^2):")
     print(scores.to_string(), "\n")
-    print(f"County table saved in {OUT_DIR}")
+    print(f"County table and plot saved in {OUT_DIR}")
     return 0
 
 
