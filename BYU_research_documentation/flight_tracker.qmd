@@ -13,7 +13,7 @@ format:
     theme: cosmo
     embed-resources: true
 ---
-[To research pages](https://cojow.github.io/flight_planner/BYU_Specific_information/)
+[To research pages](https://cojow.github.io/flight_planner/BYU_research_documentation/)
 
 ## What This Is
 

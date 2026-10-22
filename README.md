@@ -11,7 +11,7 @@ The app is split into 5 tabs. Click a tab to jump to its section below.
 * [Photo Sorter](#photo-sorter)
 * [DJI Fly Transfer](#dji-fly-transfer)
 
-Link to the related BYU [research pages](https://cojow.github.io/flight_planner/BYU_Specific_information/).
+Link to the related BYU [research pages](https://cojow.github.io/flight_planner/BYU_research_documentation/).
 
 ## Running the Planner Steps
 1. Download this repository.

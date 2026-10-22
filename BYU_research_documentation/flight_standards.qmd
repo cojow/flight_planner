@@ -17,11 +17,11 @@ format:
     number-sections: true
 ---
 
-[To research pages](https://cojow.github.io/flight_planner/BYU_Specific_information/)
+[To research pages](https://cojow.github.io/flight_planner/BYU_research_documentation/)
 
 ## Licensure/Certificate {#sec-licensure}
 
-The flyer must hold a Part 107 Certificate (commonly called a license), or have someone actively watching who holds a Part 107 certificate. See the page [here](https://cojow.github.io/flight_planner/BYU_Specific_information/part_107.html) for information about getting your certificate.
+The flyer must hold a Part 107 Certificate (commonly called a license), or have someone actively watching who holds a Part 107 certificate. See the page [here](https://cojow.github.io/flight_planner/BYU_research_documentation/part_107.html) for information about getting your certificate.
 
 ## Naming Conventions {#sec-naming}
 
@@ -254,7 +254,7 @@ See the [DJI Fly Transfer](https://cojow.github.io/flight_planner/#dji-fly-trans
 ## Pre Flight Checklist
 
 For DJI Mini series drones (DJI Fly).
-Download the printable checklist as a PDF [here](https://cojow.github.io/flight_planner/BYU_Specific_information/flight_checklist.pdf).
+Download the printable checklist as a PDF [here](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_checklist.pdf).
 
 ### General
 
@@ -345,7 +345,7 @@ Waypoint altitudes are relative to wherever the drone takes off, not to the miss
 
 ### Flight Tracker {#sec-flight-tracker}
 
-The flight tracker is a companion app to the flight planner. It runs independently of it, but is downloaded from GitHub along with it. See the documentation [here](https://cojow.github.io/flight_planner/BYU_Specific_information/flight_tracker.html) to learn how to use it. 
+The flight tracker is a companion app to the flight planner. It runs independently of it, but is downloaded from GitHub along with it. See the documentation [here](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_tracker.html) to learn how to use it. 
 
 ### Box
 
