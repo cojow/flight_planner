@@ -1,6 +1,6 @@
 ---
-title: "BYU Specific Information - Index"
-subtitle: "Reference docs for BYU drone research flights. Can be ignored by people not working with Dr. Macfarlane."
+title: "Research Documentation - Index"
+subtitle: "Reference documents for BYU drone research flights. Can be ignored by people not working with Dr. Macfarlane."
 format:
   html:
     toc: false
@@ -8,12 +8,21 @@ format:
     embed-resources: true
 ---
 
-- [**Flight Standards**](flight_standards.html) — Licensure, planning, and naming conventions for BYU drone flights.
-- [**Pre-Flight Checklist**](flight_checklist.pdf) (PDF) — Printable field checklist excerpted from Flight Standards.
+Drone Flight Documents
+
+- [**Flight Standards**](flight_standards.html) — Planning and naming conventions for drone flights.
+- [**Pre-Flight Checklist**](flight_checklist.html) — Online field checklist excerpted from Flight Standards.
 - [**Flight Log Tracker**](flight_tracker.html) — How to use the standalone flight-log tracking app.
 - [**How To Get Your Part 107 Certificate**](part_107.html) — Steps for obtaining a Part 107 remote pilot certificate.
+- [**Link to flight planner GitHub**](https://github.com/cojow/flight_planner) — How to download and use the flight planner.
+
+Processing the Images
+
+- [**Point Cloud Maker**](https://cojow.github.io/point_cloud_maker/) - Companion repository. For extracting buildings from drone images
+
+
+Using the drones outside the US
+
 - [**Ecuador Drone (UAS) Laws — Notes**](Flying_in_Ecuador/ecuador_drone_laws.html) — Compiled notes on import tax, general operating rules, insurance, and flight considerations.
 - [**Traveling with Drones**](Flying_in_Ecuador/flying_with_drones.html) — Compiled notes on rules and regulations for transporting drones.
 - [**Flying UAS/Drones in Ecuador for Academic Research**](Flying_in_Ecuador/Ecuador_UAS_Research_Guide.pdf) (PDF) — A translated, cited guide to RDAC 101 and related Ecuadorian law, for a foreign graduate researcher.
-- [**Point Cloud Maker**](https://cojow.github.io/point_cloud_maker/) - Companion repository. For extracting buildings from drone images
-- [Link to github.](https://github.com/cojow/flight_planner)
