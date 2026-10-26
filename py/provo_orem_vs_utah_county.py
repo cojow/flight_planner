@@ -28,24 +28,23 @@ only Provo and Orem as income_vs_house_age_provo_orem.png.
 """
 import sys
 
+import matplotlib.pyplot as plt
 import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import cross_val_score
 
 import building_census_data as bcd
+from provo_orem_common import COLORS, COLUMNS, DATA_DIR, save_figure, style_income_age_axes
 
 STATE = "UT"
 COUNTY = "049"                      # Utah County
 CITIES = ["Provo", "Orem"]
 
-# The two numbers being compared.
-COMPARE = ["median_household_income", "median_age_years_all"]
-CLUSTER_ON = COMPARE
 # What the forest may use to predict income. House age is one of them: the
 # forest shows how much it matters on its own.
 PREDICTORS = ["median_age_years_all", "avg_household_size", "median_rooms_all",
               "pct_single_family", "pct_multi_family",
               "pct_built_since_2000", "pct_built_before_1980"]
-
-OUT_DIR = bcd.OUTPUT_DIR / "provo_orem_vs_county"
 
 
 # --------------------------------------------------------------------------
@@ -74,7 +73,7 @@ def load(year=bcd.DEFAULT_YEAR):
 
     # Block groups with no income or no houses (campuses, parks, airports)
     # carry no signal, so they are dropped from every comparison.
-    county = county.dropna(subset=COMPARE)
+    county = county.dropna(subset=COLUMNS)
     county = county[county["housing_units"] > 0]
     return county, county[county["in_provo_orem"]]
 
@@ -89,7 +88,7 @@ def compare(county, provo_orem):
     rows = {}
     for name, df in groups.items():
         row = {"block groups": len(df)}
-        for col in COMPARE:
+        for col in COLUMNS:
             row[f"{col} (mean)"] = df[col].mean()
             row[f"{col} (median)"] = df[col].median()
         rows[name] = row
@@ -100,16 +99,19 @@ def compare(county, provo_orem):
 # 2. Clustering
 # --------------------------------------------------------------------------
 
-def cluster_summary(df, k, label):
-    """k-means on income + house age; one row per cluster, with its averages."""
-    clustered = bcd.kmeans(df, CLUSTER_ON, k)
-    summary = clustered.groupby("cluster").agg(
+def cluster_summary(df, label):
+    """
+    k-means on income + house age, with k picked by silhouette score; one row
+    per cluster, with its averages.
+    """
+    k = int(bcd.choose_k(df, COLUMNS, range(2, 7)).idxmax())
+    summary = bcd.kmeans(df, COLUMNS, k).groupby("cluster").agg(
         block_groups=("geoid", "size"),
         income=("median_household_income", "mean"),
         house_age_years=("median_age_years_all", "mean"),
     ).round(1)
-    summary.insert(0, "model", label)
-    return clustered, summary
+    summary.insert(0, "model", f"{label} (k={k})")
+    return summary
 
 
 # --------------------------------------------------------------------------
@@ -125,15 +127,13 @@ def forest(county, provo_orem, target="median_household_income"):
     The Provo-Orem forest is also scored on the rest of the county, which it
     never saw - the real test of "is it different".
     """
-    from sklearn.ensemble import RandomForestRegressor
-    from sklearn.model_selection import cross_val_score
-
     rest = county[~county["in_provo_orem"]]
     use = [c for c in PREDICTORS if c in county.columns]
 
     def fit(df):
+        # One thread: with a few hundred rows, starting worker threads costs more than it saves.
         df = df.dropna(subset=[target, *use])
-        return RandomForestRegressor(n_estimators=300, min_samples_leaf=3, random_state=0, n_jobs=-1), df
+        return RandomForestRegressor(n_estimators=300, min_samples_leaf=3, random_state=0, n_jobs=1), df
 
     po_model, po = fit(provo_orem)
     co_model, co = fit(county)
@@ -162,71 +162,20 @@ def forest(county, provo_orem, target="median_household_income"):
 # 4. Scatter plot
 # --------------------------------------------------------------------------
 
-def scatter_plot(county, path):
+def scatter_plot(groups, title, path):
     """
-    One dot per block group: house age across, income up. Provo-Orem in color,
-    the rest of the county in grey, with a star at each group's median.
+    One dot per block group: house age across, income up. `groups` is a list of
+    (label, block groups, color); each gets a star at its median.
     """
-    import matplotlib
-    matplotlib.use("Agg")           # draw to a file; no window to close
-    import matplotlib.pyplot as plt
-    from matplotlib.ticker import FuncFormatter
-
-    rest = county[~county["in_provo_orem"]]
-    provo_orem = county[county["in_provo_orem"]]
-
     fig, ax = plt.subplots(figsize=(9, 6))
-    for df, color, label in ((rest, "#9aa0a6", "Rest of Utah County"),
-                             (provo_orem, "#d1495b", "Provo-Orem")):
+    for label, df, color in groups:
         ax.scatter(df["median_age_years_all"], df["median_household_income"],
-                   s=28, alpha=0.6, color=color, edgecolors="none",
-                   label=f"{label} ({len(df)})")
-        ax.scatter(df["median_age_years_all"].median(), df["median_household_income"].median(),
-                   s=260, marker="*", color=color, edgecolors="black", linewidths=1,
-                   zorder=5)
-
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v / 1000:,.0f}K"))
-    ax.set_xlabel("Median house age (years)")
-    ax.set_ylabel("Median household income")
-    ax.set_title("Provo-Orem vs the rest of Utah County\n"
-                 "one dot per block group, stars mark each group's median")
-    ax.legend(frameon=False)
-    ax.grid(alpha=0.25)
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
-    fig.tight_layout()
-    fig.savefig(path, dpi=200)
-    plt.close(fig)
-
-
-def scatter_plot_provo_orem(provo_orem, path):
-    """Provo-Orem alone: house age across, income up, Provo and Orem in different colors."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib.ticker import FuncFormatter
-
-    fig, ax = plt.subplots(figsize=(9, 6))
-    for city, color in (("Provo", "#d1495b"), ("Orem", "#2e7d9a")):
-        df = provo_orem[provo_orem["city"].str.startswith(city)]   # the Census says "Provo city"
-        ax.scatter(df["median_age_years_all"], df["median_household_income"],
-                   s=32, alpha=0.7, color=color, edgecolors="none",
-                   label=f"{city} ({len(df)})")
+                   s=30, alpha=0.65, color=color, edgecolors="none", label=f"{label} ({len(df)})")
         ax.scatter(df["median_age_years_all"].median(), df["median_household_income"].median(),
                    s=260, marker="*", color=color, edgecolors="black", linewidths=1, zorder=5)
-
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v / 1000:,.0f}K"))
-    ax.set_xlabel("Median house age (years)")
-    ax.set_ylabel("Median household income")
-    ax.set_title("Provo and Orem block groups\n"
-                 "one dot per block group, stars mark each city's median")
+    style_income_age_axes(ax, title)
     ax.legend(frameon=False)
-    ax.grid(alpha=0.25)
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
-    fig.tight_layout()
-    fig.savefig(path, dpi=200)
-    plt.close(fig)
+    save_figure(fig, path)
 
 
 # --------------------------------------------------------------------------
@@ -240,40 +189,37 @@ def main():
 
     pd.set_option("display.width", 200)
     pd.set_option("display.max_columns", 20)
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    county.to_csv(OUT_DIR / "utah_county_block_groups.csv", index=False)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    county.to_csv(DATA_DIR / "utah_county_block_groups.csv", index=False)
 
     print(f"\n{len(provo_orem)} Provo-Orem block groups, {len(county)} in Utah County overall.\n")
 
     print("=== Income and house age: Provo-Orem vs county ===")
     print(compare(county, provo_orem).T.to_string(), "\n")
 
-    plot_path = OUT_DIR / "income_vs_house_age.png"
-    scatter_plot(county, plot_path)
-    print(f"Scatter plot saved to {plot_path}")
-    provo_orem_path = OUT_DIR / "income_vs_house_age_provo_orem.png"
-    scatter_plot_provo_orem(provo_orem, provo_orem_path)
-    print(f"Provo-Orem-only scatter plot saved to {provo_orem_path}\n")
+    scatter_plot([("Rest of Utah County", county[~county["in_provo_orem"]], "#9aa0a6"),
+                  ("Provo-Orem", provo_orem, COLORS[0])],
+                 "Provo-Orem vs the rest of Utah County\none dot per block group, stars mark each group's median",
+                 DATA_DIR / "income_vs_house_age.png")
+    # The Census names the cities "Provo city" and "Orem city".
+    scatter_plot([(city, provo_orem[provo_orem["city"].str.startswith(city)], COLORS[i])
+                  for i, city in enumerate(CITIES)],
+                 "Provo and Orem block groups\none dot per block group, stars mark each city's median",
+                 DATA_DIR / "income_vs_house_age_provo_orem.png")
+    print("Scatter plots saved.\n")
 
-    try:
-        print("=== Clusters (income + house age), k chosen by silhouette ===")
-        summaries = []
-        for label, df in (("Provo-Orem", provo_orem), ("Whole county", county)):
-            best_k = int(bcd.choose_k(df, CLUSTER_ON, range(2, 7)).idxmax())
-            _, summary = cluster_summary(df, best_k, f"{label} (k={best_k})")
-            summaries.append(summary)
-        print(pd.concat(summaries).to_string(), "\n")
+    print("=== Clusters (income + house age), k chosen by silhouette ===")
+    summaries = [cluster_summary(df, label)
+                 for label, df in (("Provo-Orem", provo_orem), ("Whole county", county))]
+    print(pd.concat(summaries).to_string(), "\n")
 
-        importances, scores = forest(county, provo_orem)
-    except ImportError:
-        print("Install scikit-learn to run the clustering and forest: pip install scikit-learn")
-        return 1
+    importances, scores = forest(county, provo_orem)
     print("=== Random forest predicting median household income ===")
     print("How much each trait mattered (importances sum to 1):")
     print(importances.to_string(), "\n")
     print("How well each model predicts (R^2):")
     print(scores.to_string(), "\n")
-    print(f"County table and plot saved in {OUT_DIR}")
+    print(f"County table and plots saved in {DATA_DIR}")
     return 0
 
 
