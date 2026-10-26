@@ -25,9 +25,9 @@ The flyer must hold a Part 107 Certificate (commonly called a license), or have 
 
 ## Naming Conventions {#sec-naming}
 
-### Photos {#sec-photos}
+### Photos from the Drone {#sec-photos}
 
-Photos are saved in a folder named `DCIM`. Each flight is saved using the format below, you will not need to edit the names. 
+On the drone, photos are saved in a folder named `DCIM`. Each flight is saved using the format below, you will not need to edit the names. 
 
 * DJI Pilot Drones: `DJI_[date/time]_[flight number]_[flight plan name]`
 * DJI Fly Drones: `DJI_[date/time]_[flight number]_D`
@@ -38,7 +38,7 @@ Photos are saved in a folder named `DCIM`. Each flight is saved using the format
 | `[date/time]` | Date and time the flight was run, as `YYYY/MM/DD/HH/MM` |
 | `[flight number]` | Flight number, counted from the very first flight |
 | `[flight plan name]` | Name of the flight plan used to take the pictures |
-| `D` | Ignroe it, every picture has it |
+| `D` | Ignore it, every picture has it |
 
 DJI Fly drones (the Mini series that we are using) save all of their photos into a single DCIM folder, not separated by flight plans like DJI Pilot 2 drones. This is why the [flight planner](https://github.com/cojow/flight_planner) has a dedicated tab for separating the photos.
 
@@ -47,18 +47,18 @@ DJI Fly drones (the Mini series that we are using) save all of their photos into
 Ignore the `MRK` file unless you know for a fact that you're using an RTK setup with only one set of pictures. Otherwise, it's useless. The DJI Fly drone doesn't even make this file. 
 :::
 
-### Mission Folders {#sec-mission-folders}
+### Mission Area Folders {#sec-mission-folders}
 
 By default missions are saved in the root folder `missions` in the same folder as `app.py`. 
-To keep it organized, we want to create a new folder in the missions folder for each area of flights. 
-For now, we will name each folder after the bounding streets of the area. 
-The name will be long, but it will be descriptive. 
+To keep it organized, we want to create a new folder in the missions folder for each flight area.
+
+Mission areas will cover one census block group area. They will be named after the name given to each block group, and/or a descriptive feature in the area (e.g. Tree streets for the block groups covering that part of Provo).
 
 All missions should be uploaded to the Box folder when they are flown so that we can keep track of them with the flight tracker. See @sec-flight-tracker.
 
 ### Missions {#sec-naming-missions}
 
-Follow this format when naming individual missions: 
+Missions are named when created in the flight planner. Follow this format when naming individual missions: 
 
 `Street1_Street2`
 
@@ -69,7 +69,7 @@ Follow this format when naming individual missions:
 
 *For roads not laid out N-S or E-W, use the most western or southern street, respectively. 
 
-*If a street ends (like in a cul-de-sac), use "END" for Street2. cul-de-sac are flown in a separate mission. 
+*If a street ends (like in a cul-de-sac), use "END" for Street2. Cul-de-sacs are flown in a separate mission. 
 
 The Flight Planner will add information about the height, gimbal pitch, and photo overlap to the end. 
 
@@ -98,10 +98,14 @@ The Flight Planner will add information about the height, gimbal pitch, and phot
 
 Name the photo folder after the mission it's composed of, nadir and oblique flights, with the prefix "photo".
 This should result in a unique name for every folder. 
-To maintain consistency, the photo will be group in area folders like the missions. 
-These area folders will have the same name as the missions, but with the prefix "**photo**".
+This will be done when dividing the flown missions into separate folders (see the `Photo Sorter` section in the README for how to sort the photos and name the folders).
 
-This can be done in the photo sorter if you know the sequence you did the flights in (ideal), or manually afterwards sorting for each folder. 
+Naming the missions is best done in the photo sorter if you know the sequence you did the flights in (ideal), or manually afterwards, sorting for each folder. 
+
+### Photo Area Folders {#sec-naming-photo-folders}
+
+Once all the photos are sorted and the folder named, place them into the photo area folder.
+These photo area folders will have the same name as the area mission folders, but with the prefix "**photo**".
 
 ## Flight Planning {#sec-flight-planning}
 
@@ -119,6 +123,7 @@ In general:
 On most local roads, that means flying the far shoulder and looking across the street at the houses.
 - Keep the paths reasonable and logical. One flight set should focus on a single road section, as seen in the naming examples.
 Since more images means the point cloud maker takes longer, when in doubt, make it shorter.
+If you cut a mission in two, give it a direction modifier (e.g. Ash_Cherry_north and Ash_Cherry_south).
 - Do your best to avoid flying on private property.
 - When roads are curved, do your best to follow the curves with the straight lines.
 But don't go overboard with the small line segments, the drone likely won't do well.
@@ -127,7 +132,7 @@ See the sections below for specific guidance on each road type.
 
 | Road Type | Section|
 |---|---|
-| Local Roads | @sec-local-roads |
+| Residential/Local Roads | @sec-local-roads |
 | Busy/Arterial Roads|@sec-big-roads |
 | Big Buildings and Parking Lots | @sec-big-buildings |
 | Cul-de-sac | @sec-cul |
@@ -149,6 +154,7 @@ See the sections below for specific guidance on each road type.
 **What it is:** Less common, but houses and buildings still front onto them. Usually 50 to 60+ feet wide.
 - Do not have the drone fly over it, like we do with local roads.
 This means that there will be double the flight missions per flight set (two for each side of the road).
+- As stated in the general notes, give split missions directional identifiers (e.g., 900E_900N_east and 900E_900N_west)
 
 **Where to fly:** We will either stay on the same side or across, like local roads. We need to confirm the best angle for either one. 
 
@@ -166,16 +172,16 @@ This means that there will be double the flight missions per flight set (two for
 :::
 
 #### Big Buildings and Parking Lots {#sec-big-buildings}
-**Where to fly:** In the parking lot rather than on the road, since these buildings usually sit behind one.
-- We only need the front of the building for our picture analysis, so don't we won't need to worry about the back of the buildings.
+**Where to fly:** In the parking lot rather than on the road, since these buildings usually sit set back quite a ways.
 
 **What to capture:** Only the front of the building matters for image analysis, so the back can be skipped. The 200 ft flight still has to capture the whole building for the point cloud.
-- We need to put together a flight set for these kinds of buildings, since they are much larger then normal buildings.
+- We may need to put together a different flight set for these kinds of buildings, since they are much larger than normal buildings. 
+One photo will not capture the entire building. 
+Also, we may be more conerned with how many shops/dwelling are within the building, and less concerned about the building as a whole. 
 - We may need to have our own naming conventions for big buildings like this.
 
 
 Two possible layouts, both at 70 ft height, 40° pitch, and 75% overlap:
-
 
 ::: {.columns}
 
@@ -203,7 +209,12 @@ Two possible layouts, both at 70 ft height, 40° pitch, and 75% overlap:
 
 
 #### Cul-de-sac {#sec-cul}
-Cul-de-sacs are their own road section. The round end is hard to follow with straight flight lines, and it is wider than the road leading into it. Split them into two flight sets: one for the approach road, which follows that road's type, and one for the circle, which gets its own gimbal pitch. Confirm the best pitch for the circle in the field.
+Cul-de-sacs are their own road section. 
+The round end is hard to follow with straight flight lines, and it is wider than the road leading into it. 
+Split them into two flight sets: one for the approach road, which follows that road's type, and one for the circle, which gets its own gimbal pitch. 
+- Label them as mentioned above, with the street leading into it as 'END' as Street2. 
+- We will confirm the best pitch for the circle in the field.
+They may have to look at the houses on the same side of the street instead of across the street. 
 
 
 #### Empty Lots/Fields {#sec-empty}
@@ -229,17 +240,17 @@ These numbers appear to accomplish what we want, but we may adjust them as we fl
 
 **70 ft flights**
 
-| Height (ft) | Angle (°) | Overlap | Note |
+| Height (ft) | Angle (°) | Angle (°) in Drone | Overlap | Note |
 |---|---|---|
-| 70 | 45 | >75 | Opposite side of the street |
+| 70 | 45 | -45 | >75 | Opposite side of the street |
 
 **200 ft flights**
 
-| Height (ft) | Angle (°) | Overlap | Note |
+| Height (ft) | Angle (°) | Angle (°) in Drone | Overlap | Note |
 |---|---|---|
-| 200 | 70 | >75 | Opposite side of the street. 65 degrees may be better. |
+| 200 | 70 | -70 | >75 | Opposite side of the street. 65 degrees may be better. |
 
-We still need to verify which overlap will work for what we need. 
+> **NOTE**: We still need to verify which overlap will work for what we need. 
 These tables may be added to if we find that wider streets present a problem. 
 
 ### Mission Size Limits {#sec-mission-limits}
@@ -359,7 +370,7 @@ The Box folder is divided into 4 subdirectories. See  for naming conventions not
 Mission area folders may be placed directly into here with all missions inside of them. 
 This will keep it organized, and allow the flight tracker to work. See @sec-mission-folders and @sec-naming-missions for naming conventions. 
 **Make sure missions in this folder have actually been flown.**
-- Flight Photos: Once seperated by the photo sorter, place all photo folders here. 
+- Flight Photos: Once separated by the photo sorter, place all photo folders here. 
 See @sec-naming-photo-folders for naming conventions. 
 - Annotated Photos: Photos that have been annotated using Label Studio go here. Make sure each folder includes all parts. See the [Label Studio](https://cojow.github.io/point_cloud_maker/Using_Label_Studio.html) standards for more information. 
 These will retain the same name as the folder with the prefix "**photo**" replaced with "**annotated**".
