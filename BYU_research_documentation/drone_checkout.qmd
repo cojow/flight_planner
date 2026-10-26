@@ -1,0 +1,75 @@
+---
+title: "Drone Checkout"
+format:
+  pdf:
+    documentclass: article
+    papersize: letter
+    geometry:
+      - landscape
+      - margin=0.5in
+      - top=0.4in
+      - bottom=0.4in
+    pagestyle: empty
+    header-includes:
+      - \usepackage{array}
+      - \renewcommand{\familydefault}{\sfdefault}
+      - \usepackage{titling}
+      - \setlength{\droptitle}{-2.5em}
+      - \pretitle{\begin{center}\Large\bfseries}
+      - \posttitle{\end{center}\vspace{-2.5em}}
+      - \predate{}
+      - \date{}
+      - \postdate{}
+jupyter: python3
+---
+
+```{python}
+#| echo: false
+#| output: asis
+
+# Printable drone sign-out sheet, rebuilt from the old "Drone Checkout.xlsx".
+# Edit COLUMNS / ROWS and re-render with `quarto render drone_checkout.qmd`.
+
+# (header, width in Excel column units, is a checkbox column)
+COLUMNS = [
+    ("Name",                          16.0, False),
+    ("Drone",                         15.8, False),
+    ("Checkout date/time",            15.0, False),
+    ("Areas being flown",             26.8, False),
+    ("Anticipated return date/time",  15.0, False),
+    ("Return date/time",              15.0, False),
+    ("Charging batteries?",           10.5, True),
+]
+
+ROWS = 15
+HEADER_HEIGHT = "32pt"
+ROW_HEIGHT = "30pt"
+
+total = sum(width for _, width, _ in COLUMNS)
+# \tabcolsep is applied on both sides of every column, so take it out of the
+# share each column gets of \linewidth. The leading zero-width column only
+# holds a strut that sets the row height, centered so the m-columns sit in
+# the middle of the row.
+specs = r"@{}l@{\hspace{\tabcolsep}}" + "|".join(
+    rf">{{\centering\arraybackslash}}m{{\dimexpr {width / total:.4f}\linewidth - 2\tabcolsep - \arrayrulewidth\relax}}"
+    for _, width, _ in COLUMNS
+)
+
+header = " & ".join(rf"\textbf{{{name}}}" for name, _, _ in COLUMNS)
+blank = r"\fbox{\rule{0pt}{0.9em}\hspace{0.9em}}"
+row = " & ".join(blank if is_box else "" for _, _, is_box in COLUMNS)
+
+def strut(height):
+    return rf"\rule[\dimexpr -0.5\dimexpr {height}\relax + 0.25em\relax]{{0pt}}{{{height}}}"
+
+lines = [
+    r"\thispagestyle{empty}\noindent",
+    rf"\begin{{tabular}}{{|{specs}|}}",
+    r"\hline",
+    rf"{strut(HEADER_HEIGHT)} & {header} \\ \hline",
+]
+lines += [rf"{strut(ROW_HEIGHT)} & {row} \\ \hline"] * ROWS
+lines.append(r"\end{tabular}")
+
+print("\n".join(lines))
+```
