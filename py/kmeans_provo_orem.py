@@ -1,28 +1,35 @@
 """
 K-means on Provo-Orem block groups: house age and median income.
 
-Two steps, both in one run:
-  1. Try k = 2..8 and print two scores for each, to help pick k:
-       - inertia: how spread out the groups are (always falls as k grows;
-         look for the "elbow" where it stops falling fast)
-       - silhouette: how well separated the groups are (higher is better)
-     A chart of both is saved next to the data.
-  2. Fit the k you chose (K in provo_orem_common.py), print what each cluster
-     looks like, and save a scatter plot of the clusters.
+Helps decide how many clusters to use. It
+  1. tries k = 2..8 and prints two scores for each (inertia and silhouette) and
+     saves a chart of them. Look for the "elbow" where inertia stops falling fast,
+     and for a high silhouette (clusters that are tight and well separated);
+  2. for each k in SHOW_K (3, 4, 5), prints and saves what the clusters look
+     like - size, average income and house age - with a chart of each, and one
+     chart putting them side by side.
 
 Run provo_orem_vs_utah_county.py first - it saves the table this reads.
 
     python py/kmeans_provo_orem.py
+
+Writes to data/census/provo_orem_vs_county/:
+    kmeans_choose_k.png           inertia and silhouette for k = 2..8
+    kmeans_clusters_k<k>.png      the clusters for one k
+    kmeans_clusters_compare.png   the clusters for every k in SHOW_K, side by side
+    kmeans_cluster_summary.csv    the cluster sizes and averages for every k in SHOW_K
 """
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from matplotlib.patches import Ellipse
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
-from provo_orem_common import (COLORS, COLUMNS, DATA_DIR, K, cluster_block_groups,
-                               load_provo_orem, save_figure, style_income_age_axes)
+from provo_orem_common import (COLORS, DATA_DIR, cluster_block_groups, load_provo_orem,
+                               save_figure, style_income_age_axes)
 
+SHOW_K = (3, 4, 5)                  # the cluster counts to compare
 CIRCLE_SHARE = 0.90                 # share of a cluster's dots its circle must contain
 
 
@@ -50,7 +57,7 @@ def plot_k_scores(ks, inertias, silhouettes, path):
     save_figure(fig, path)
 
 
-def plot_clusters(df, X, scaler, path):
+def draw_clusters(ax, df, X, scaler, k):
     """One color per cluster, a star at each cluster's average, and a circle around its dots."""
     # K-means works in the scaled space, where "close to the center" means a plain
     # circle. Drawn back on the chart's real axes (years across, dollars up) that
@@ -59,7 +66,6 @@ def plot_clusters(df, X, scaler, path):
     # of the cluster's dots; the rest sit just outside, so a few strays don't
     # blow it up.
     income_spread, age_spread = scaler.scale_       # same order as COLUMNS
-    fig, ax = plt.subplots(figsize=(9, 6))
     for cluster, group in df.groupby("cluster"):
         color = COLORS[cluster % len(COLORS)]
         scaled = X[(df["cluster"] == cluster).to_numpy()]
@@ -71,27 +77,45 @@ def plot_clusters(df, X, scaler, path):
         ax.scatter(group["median_age_years_all"], group["median_household_income"],
                    s=34, alpha=0.7, color=color, edgecolors="none", label=label)
         ax.scatter(age, income, s=300, marker="*", color=color, edgecolors="black", linewidths=1, zorder=5)
-    style_income_age_axes(ax, f"K-means clusters of Provo-Orem block groups (k = {K})\n"
-                              f"stars mark each cluster's average; circles hold {CIRCLE_SHARE:.0%} of its dots")
-    ax.legend(frameon=False, loc="upper right", fontsize=9)
-    save_figure(fig, path)
+    style_income_age_axes(ax, f"{k} clusters\nstars = cluster average; circles hold {CIRCLE_SHARE:.0%} of its dots")
+    ax.legend(frameon=False, loc="upper right", fontsize=8)
+
+
+def cluster_summary(df, k):
+    """One row per cluster: how many block groups, and their average income and house age."""
+    summary = df.groupby("cluster").agg(
+        block_groups=("geoid", "size"),
+        income=("median_household_income", "mean"),
+        house_age_years=("median_age_years_all", "mean"),
+    ).round(1).reset_index()
+    summary.insert(0, "k", k)
+    return summary
 
 
 def main():
     df = load_provo_orem()
-    df["cluster"], X, scaler = cluster_block_groups(df)
 
     ks = list(range(2, 9))
+    _, X, scaler = cluster_block_groups(df)
     inertias, silhouettes = score_k_values(X, ks)
-    chart = DATA_DIR / "kmeans_choose_k.png"
-    plot_k_scores(ks, inertias, silhouettes, chart)
-    print(f"\nChart saved to {chart}")
+    plot_k_scores(ks, inertias, silhouettes, DATA_DIR / "kmeans_choose_k.png")
 
-    print(f"\nClusters with k = {K}:")
-    print(df.groupby("cluster")[COLUMNS].agg(["count", "mean"]).round(1))
-    cluster_chart = DATA_DIR / f"kmeans_clusters_k{K}.png"
-    plot_clusters(df, X, scaler, cluster_chart)
-    print(f"\nCluster chart saved to {cluster_chart}")
+    summaries = []
+    compare, compare_axes = plt.subplots(1, len(SHOW_K), figsize=(7 * len(SHOW_K), 6.5))
+    for ax_compare, k in zip(np.atleast_1d(compare_axes), SHOW_K):
+        df["cluster"], _, _ = cluster_block_groups(df, k)
+        summaries.append(cluster_summary(df, k))
+        draw_clusters(ax_compare, df, X, scaler, k)
+        fig, ax = plt.subplots(figsize=(9, 6))
+        draw_clusters(ax, df, X, scaler, k)
+        save_figure(fig, DATA_DIR / f"kmeans_clusters_k{k}.png")
+    save_figure(compare, DATA_DIR / "kmeans_clusters_compare.png")
+
+    summary = pd.concat(summaries, ignore_index=True)
+    summary.to_csv(DATA_DIR / "kmeans_cluster_summary.csv", index=False)
+    print("\nClusters for each k (income = average median household income, house age in years):")
+    print(summary.to_string(index=False))
+    print(f"\nCharts and summary saved in {DATA_DIR}")
 
 
 if __name__ == "__main__":
