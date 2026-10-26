@@ -1,0 +1,7 @@
+fly_order,pick,geoid,city,stratum,airspace,faa_ceiling_ft,share_restricted,streets,street_miles,median_household_income,median_age_years_all,housing_units,weight,lat,lon
+1,1,490490012023,Orem city,0,laanc,200.0,0.0,30,4.84,61288.0,52.0,587,25.5,40.26369,-111.68417
+2,1,490490013005,Orem city,2,laanc,400.0,0.0,48,7.85,98542.0,38.0,431,21.0,40.27563,-111.67151
+3,1,490490022043,Provo city,1,partial,0.0,0.04,31,7.73,124063.0,17.0,249,23.0,40.25409,-111.70377
+4,2,490490013002,Orem city,0,laanc,400.0,0.0,19,4.54,74000.0,75.0,202,25.5,40.27968,-111.68429
+5,2,490490015044,Provo city,2,laanc,400.0,0.0,44,10.95,154583.0,40.0,234,21.0,40.26867,-111.63556
+6,2,490490007063,Orem city,1,clear,,0.0,52,7.14,83261.0,21.0,998,23.0,40.31553,-111.72048
