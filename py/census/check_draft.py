@@ -10,7 +10,7 @@ when it replaced them (commit 7a39345).
 
 Since then the street fixes (one count per stretch of road, cuts at restricted
 airspace) and the 2024 TIGER/Line boundaries have changed the street files on
-purpose, so "streets" and "street shapes" now differ. The clusters, picks and
+purpose, so the street files are only summarised. The clusters, picks and
 legacy weights should still match; if they don't, something else moved. The
 FAA map is a live service, so a difference in the picks can also mean the
 airspace changed since the draft.
@@ -48,16 +48,20 @@ def check(name):
     run = cfg.run_dir(name)
     results = {}
     draft = _csv(DRAFT / "sample_block_groups.csv")
-    results["picked block groups"] = _same(draft, _csv(run / "4_sample" / "sample_block_groups.csv")[draft.columns])
-    draft = _csv(DRAFT / "sample_streets.csv")
-    results["streets"] = _same(draft, _csv(run / "4_sample" / "sample_streets.csv")[draft.columns])
-    results["street shapes"] = (json.loads((DRAFT / "sample_streets.geojson").read_text())
-                                == json.loads((run / "4_sample" / "sample_streets.geojson").read_text()))
+    # Street counts and miles changed on purpose with the street fixes; the rest should not.
+    same_cols = [c for c in draft.columns if c not in ("streets", "street_miles")]
+    picks = _csv(run / "4_sample" / "sample_block_groups.csv")
+    results["picks, fly order and weights"] = _same(draft[same_cols], picks[same_cols])
     draft = pd.read_csv(DRAFT / "kmeans_cluster_summary.csv")
     preview = pd.read_csv(run / "2_choose_k" / "preview_summary.csv")
     results["k = 3, 4, 5 clusters"] = np.allclose(draft.values, preview.values)
     for label, ok in results.items():
         print(f"  {'same' if ok else 'DIFFERENT':<9} {label}")
+    old = _csv(DRAFT / "sample_streets.csv")
+    new = _csv(run / "4_sample" / "sample_streets.csv")
+    flyable = new[~new["restricted"]] if "restricted" in new else new
+    print(f"  (streets: draft {old['miles'].sum():.2f} mi in {len(old)} rows; "
+          f"this run {flyable['miles'].sum():.2f} flyable mi in {len(flyable)} rows)")
     return all(results.values())
 
 
