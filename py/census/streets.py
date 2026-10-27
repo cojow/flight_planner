@@ -117,11 +117,10 @@ def streets_in(geoid, polygon, roads, buffer_m, min_segment_m, low_zone_m=None):
         road_type = pieces[along[0]][2] if along else pieces[0][2]
         found.setdefault((names, road_type), []).append(part)
 
-    entries = []
-    for (names, road_type), parts in found.items():
-        geometry = shapely.line_merge(shapely.union_all(parts))
-        if geometry.length >= min_segment_m:
-            entries.append({"names": set(names), "road_type": road_type, "geometry": geometry})
+    # No length filter here: every piece already passed min_segment_m, and a
+    # short stretch left over from joining two names is still pavement.
+    entries = [{"names": set(names), "road_type": road_type, "geometry": shapely.line_merge(shapely.union_all(parts))}
+               for (names, road_type), parts in found.items()]
 
     rows, features = [], []
     for entry in entries:
@@ -180,5 +179,4 @@ def find_streets(picked, boundaries, cells, settings, areas):
                .groupby(["geoid", "street", "road_type", "restricted"], as_index=False)
                .agg(miles=("miles", "sum"), segments=("miles", "size"),
                     aliases=("aliases", lambda a: "; ".join(sorted({x for s in a for x in s.split("; ") if x})))))
-    streets["miles"] = streets["miles"].round(2)
     return streets.merge(picked[["geoid", "city", "cluster", "pick"]], on="geoid"), features

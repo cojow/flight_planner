@@ -205,13 +205,18 @@ def sample(config, folder, out):
 
     notes += sampling.draw(df, s["per_cluster"], s["seed"], s["weights"])
     picked = df[df["sampled"]].copy()
+    if picked.empty:
+        raise ValueError("No block group can be drawn: every one is under restricted airspace. "
+                         "Check the airspace settings or choose other cities.")
 
     street_table, street_features = streets.find_streets(picked, boundaries, cells, s, config["areas"])
     flyable = street_table[~street_table["restricted"]]
     miles = flyable.groupby("geoid")["miles"].agg(street_miles="sum", streets="size")
     picked = picked.merge(miles, left_on="geoid", right_index=True, how="left").fillna(
         {"street_miles": 0, "streets": 0})
+    # Totals come from full-precision lengths; the files round for reading.
     picked["street_miles"] = picked["street_miles"].round(2)
+    street_table["miles"] = street_table["miles"].round(3)
     picked = sampling.plan_order(picked, boundaries, s["start_lat"], s["start_lon"])
     street_table = street_table.merge(picked[["geoid", "fly_order"]], on="geoid")
     df = df.merge(picked[["geoid", "fly_order"]], on="geoid", how="left")

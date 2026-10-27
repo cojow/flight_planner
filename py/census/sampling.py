@@ -89,7 +89,7 @@ def airspace_status(polygon, cells, high_flight_ft, restricted_share):
 # The draw
 # --------------------------------------------------------------------------
 
-def draw(df, per_cluster, seed, weights="legacy"):
+def draw(df, per_cluster, seed, weights="eligible"):
     """
     Pick `per_cluster` eligible block groups from each cluster. Adds to df:
       pick     1 for a cluster's first pick, 2 for its second, 0 if not picked
