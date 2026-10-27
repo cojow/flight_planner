@@ -259,9 +259,15 @@ def _sample_report(df, picked, street_table, k, s, columns, notes):
                  f"squares with a ceiling under {s['high_flight_ft']} ft (restricted = True). "
                  "Skip them without FAA authorization.\n")
 
-    # With so few block groups the picks can sit far from the average; show how far.
-    report.write("\nPicks against all clustered block groups (picks weighted):\n")
+    # What the weights describe, and how far the picks sit from it.
+    frame = df if s["weights"] == "legacy" else df[df["airspace"] != "restricted"]
+    if s["weights"] == "legacy":
+        report.write("\nWeights: legacy - each pick stands for its whole cluster, restricted block groups included.\n")
+    else:
+        report.write(f"\nWeights: eligible - estimates describe the {len(frame)} block groups outside restricted "
+                     f"airspace, not the {len(df) - len(frame)} that could not be drawn.\n")
+    report.write("Picks (weighted) against the block groups they stand for:\n")
     for col in columns:
         weighted = np.average(picked[col], weights=picked["weight"])
-        report.write(f"  {col:<26} all {df[col].mean():>9,.1f}   picks {weighted:>9,.1f}\n")
+        report.write(f"  {col:<26} those {frame[col].mean():>9,.1f}   picks {weighted:>9,.1f}\n")
     return report.getvalue()

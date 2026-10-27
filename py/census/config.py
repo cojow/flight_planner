@@ -52,7 +52,10 @@ DEFAULTS = {
     "sample": {
         "per_cluster": 2,               # block groups picked from each cluster
         "seed": 2026,                   # the draw
-        "weights": "legacy",            # "legacy": cluster size / picks
+        # "eligible": a pick stands for its cluster's block groups that could be
+        # flown (not restricted airspace). "legacy": for its whole cluster, as
+        # in sampling_draft/ - not valid when some block groups can't be drawn.
+        "weights": "eligible",
         "high_flight_ft": 200,          # the high (nadir) flight height
         "restricted_share": 0.25,       # not eligible when this much is under a ceiling below high_flight_ft
         "buffer_m": 15,                 # streets this close outside a block group's edge count as in it
@@ -65,7 +68,7 @@ DEFAULTS = {
 
 
 # The ways a pick's weight can be worked out (sample.weights).
-WEIGHTS = ("legacy",)
+WEIGHTS = ("eligible", "legacy")
 
 
 class ConfigError(ValueError):

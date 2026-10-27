@@ -95,6 +95,11 @@ def draw(df, per_cluster, seed, weights="legacy"):
       pick     1 for a cluster's first pick, 2 for its second, 0 if not picked
       sampled  whether it was picked
       weight   how many block groups of its cluster a pick stands for
+    With weights="eligible" (the default) a pick stands for the block groups
+    that could have been picked: its cluster's block groups outside restricted
+    airspace. Restricted ones had no chance of being drawn, so the sample can
+    only describe the flyable part of the cities. weights="legacy" counts the
+    whole cluster, as sampling_draft/ did.
     Each cluster's eligible block groups are shuffled once and the first
     `per_cluster` are taken, so a smaller sample is the start of a larger one.
     Returns a list of warnings (clusters with too few eligible block groups).
@@ -109,7 +114,8 @@ def draw(df, per_cluster, seed, weights="legacy"):
         if len(chosen) < per_cluster:
             warnings.append(f"Cluster {cluster} has only {len(chosen)} eligible block group(s).")
     df["sampled"] = df["pick"] > 0
-    sizes = df["cluster"].value_counts().sort_index()
+    pool = df if weights == "legacy" else df[df["airspace"] != "restricted"]
+    sizes = pool["cluster"].value_counts().sort_index()
     df["weight"] = df["cluster"].map(sizes / df[df["sampled"]].groupby("cluster").size())
     return warnings
 

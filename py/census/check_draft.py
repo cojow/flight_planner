@@ -1,16 +1,19 @@
 """
 Does a run reproduce sampling_draft/? The draft was made by the old scripts
-(3 clusters, 2 per cluster, Provo + Orem); a run with the same settings should
-match it, so a change to the code that moves any number shows up here.
+(3 clusters, 2 per cluster, Provo + Orem), and the package matched it exactly
+when it replaced them (commit 7a39345).
 
     python -m census new regress_draft --cities Provo Orem
-    python -m census set regress_draft sample.weights='"legacy"'
+    python -m census set regress_draft sample.weights=legacy
     python -m census run regress_draft
     python -m census.check_draft regress_draft
 
-The FAA airspace map and the Census street layers are live services, so a
-difference can also mean one of them changed since the draft; the output says
-which file differs so that can be checked.
+Since then the street fixes (one count per stretch of road, cuts at restricted
+airspace) and the 2024 TIGER/Line boundaries have changed the street files on
+purpose, so "streets" and "street shapes" now differ. The clusters, picks and
+legacy weights should still match; if they don't, something else moved. The
+FAA map is a live service, so a difference in the picks can also mean the
+airspace changed since the draft.
 """
 import json
 import sys
