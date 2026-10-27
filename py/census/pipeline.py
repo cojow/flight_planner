@@ -177,11 +177,9 @@ def sample(config, folder, out):
     k = config["cluster"]["k"]
 
     notes = []
-    cells = sampling.faa_cells(shapely.union_all([boundaries[g] for g in df["geoid"]]).bounds)
-    if cells is None:
-        notes.append("Warning: could not reach the FAA facility map; airspace is 'unknown'. "
-                     "Check it in the flight planner (Show FAA Airspace Restrictions).")
-    status = [sampling.airspace_status(boundaries[g], cells, s["high_flight_ft"], s["restricted_share"])
+    cells = sampling.faa_cells(shapely.union_all([boundaries[g] for g in df["geoid"]]).bounds,
+                               save_to=out / "faa_facility_map.geojson")
+    status =[sampling.airspace_status(boundaries[g], cells, s["high_flight_ft"], s["restricted_share"])
               for g in df["geoid"]]
     df["airspace"] = [x for x, _, _ in status]
     df["faa_ceiling_ft"] = [c for _, c, _ in status]
@@ -206,6 +204,7 @@ def sample(config, folder, out):
         "Picks chart": out / "sample_block_groups.png",
         "Map": out / "sample_map.png",
         "Street maps": out / "sample_streets_map.png",
+        "FAA airspace used (GeoJSON)": out / "faa_facility_map.geojson",
     }
     keep = ["fly_order", "pick", "geoid", "city", "cluster", "airspace", "faa_ceiling_ft",
             "share_restricted", "streets", "street_miles", *columns, "housing_units", "weight", "lat", "lon"]

@@ -130,6 +130,17 @@ def _start(folder, step):
 # The steps
 # --------------------------------------------------------------------------
 
+def _run(folder, step, work):
+    """Start a step, do its work, record it. Data problems come back as StepError."""
+    from .sources import CensusError
+    config, out = _start(folder, step)
+    try:
+        files, report = work(config, out)
+    except (CensusError, ValueError) as exc:
+        raise StepError(str(exc)) from exc
+    return _finish(folder, step, config, files, report)
+
+
 def run_areas(folder):
     """
     1. Areas. Every block group in the chosen cities, with its Census numbers.
@@ -140,9 +151,7 @@ def run_areas(folder):
     block group in the county, flagged in_cities), map.png.
     """
     from . import pipeline
-    config, out = _start(folder, "areas")
-    files, report = pipeline.areas(config, out)
-    return _finish(folder, "areas", config, files, report)
+    return _run(folder, "areas", pipeline.areas)
 
 
 def run_choose_k(folder):
@@ -154,9 +163,7 @@ def run_choose_k(folder):
     clusters_compare.png, preview_summary.csv.
     """
     from . import pipeline
-    config, out = _start(folder, "choose_k")
-    files, report = pipeline.choose_k(config, folder, out)
-    return _finish(folder, "choose_k", config, files, report)
+    return _run(folder, "choose_k", lambda config, out: pipeline.choose_k(config, folder, out))
 
 
 def run_cluster(folder):
@@ -167,9 +174,7 @@ def run_cluster(folder):
     cluster_summary.csv, clusters.png, clusters_map.png.
     """
     from . import pipeline
-    config, out = _start(folder, "cluster")
-    files, report = pipeline.cluster(config, folder, out)
-    return _finish(folder, "cluster", config, files, report)
+    return _run(folder, "cluster", lambda config, out: pipeline.cluster(config, folder, out))
 
 
 def run_sample(folder):
@@ -178,12 +183,11 @@ def run_sample(folder):
     streets to fly. Reads the clusters saved by step 3.
 
     Files: sample_block_groups.csv, sample_streets.csv, sample_streets.geojson,
-    sample_block_groups.png, sample_map.png, sample_streets_map.png.
+    sample_block_groups.png, sample_map.png, sample_streets_map.png, and
+    faa_facility_map.geojson (the airspace the draw used).
     """
     from . import pipeline
-    config, out = _start(folder, "sample")
-    files, report = pipeline.sample(config, folder, out)
-    return _finish(folder, "sample", config, files, report)
+    return _run(folder, "sample", lambda config, out: pipeline.sample(config, folder, out))
 
 
 RUNNERS = {"areas": run_areas, "choose_k": run_choose_k, "cluster": run_cluster, "sample": run_sample}

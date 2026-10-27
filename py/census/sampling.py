@@ -2,12 +2,17 @@
 Which block groups to fly: the airspace check, the draw from each cluster,
 each pick's weight, and the order to fly them in.
 """
+import json
+import time
+from pathlib import Path
+
 import numpy as np
 import requests
 import shapely
 from shapely.geometry import shape
 
 from .geo_math import to_metres
+from .sources import CensusError
 
 FAA_URL = ("https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/"
            "FAA_UAS_FacilityMap_Data/FeatureServer/0/query")      # the same map the flight planner uses
@@ -17,27 +22,43 @@ FAA_URL = ("https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/"
 # Airspace
 # --------------------------------------------------------------------------
 
-def faa_cells(bounds):
+def faa_cells(bounds, save_to=None, tries=4, wait_s=20):
     """
     The FAA UAS Facility Map squares over a bounding box, as [(max LAANC
-    altitude in feet, shape)]; None if the FAA's server can't be reached.
-    A ceiling of 0 means no LAANC approval is given there at all.
+    altitude in feet, shape)]. A ceiling of 0 means no LAANC approval is given
+    there at all. The raw answer is saved to `save_to`, so the run records the
+    airspace it was drawn under.
+
+    The FAA's server limits how often it can be asked (it answers "too many
+    requests"), so a failed ask is retried. If it still fails, or returns only
+    part of the squares, this raises CensusError: drawing a sample with unknown
+    airspace would make every block group look flyable.
     """
     minx, miny, maxx, maxy = bounds
-    try:
-        data = requests.get(FAA_URL, params={
-            "where": "1=1", "geometry": f"{minx},{miny},{maxx},{maxy}",
-            "geometryType": "esriGeometryEnvelope", "inSR": "4326",
-            "spatialRel": "esriSpatialRelIntersects", "outFields": "CEILING",
-            "returnGeometry": "true", "outSR": "4326", "f": "geojson"},
-            headers={"User-Agent": "Mozilla/5.0"}, timeout=90).json()
-    except (requests.RequestException, ValueError):
-        return None
-    if "features" not in data:
-        return None
-    if data.get("exceededTransferLimit"):
-        print("Warning: the FAA map returned only part of the squares; airspace flags may be incomplete.")
-    return [(f["properties"]["CEILING"], shape(f["geometry"]).buffer(0)) for f in data["features"]]
+    params = {"where": "1=1", "geometry": f"{minx},{miny},{maxx},{maxy}",
+              "geometryType": "esriGeometryEnvelope", "inSR": "4326",
+              "spatialRel": "esriSpatialRelIntersects", "outFields": "CEILING",
+              "returnGeometry": "true", "outSR": "4326", "f": "geojson"}
+    problem = "no answer"
+    for attempt in range(tries):
+        if attempt:
+            time.sleep(wait_s * attempt)
+        try:
+            data = requests.get(FAA_URL, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=90).json()
+        except (requests.RequestException, ValueError) as exc:
+            problem = str(exc)
+            continue
+        if "features" not in data:
+            problem = (data.get("error") or {}).get("message", "an answer without map squares")
+            continue
+        if data.get("exceededTransferLimit"):
+            raise CensusError("The FAA map returned only part of its squares for this area, so airspace "
+                              "can't be checked. Sample fewer or smaller cities.")
+        if save_to:
+            Path(save_to).write_text(json.dumps(data))
+        return [(f["properties"]["CEILING"], shape(f["geometry"]).buffer(0)) for f in data["features"]]
+    raise CensusError(f"Could not get the FAA facility map after {tries} tries ({problem}). "
+                      "Wait a minute and run the sample step again.")
 
 
 def airspace_status(polygon, cells, high_flight_ft, restricted_share):
@@ -49,11 +70,8 @@ def airspace_status(polygon, cells, high_flight_ft, restricted_share):
                   flight: fly the rest, and leave out the streets in the restricted squares
       restricted  a large part has a ceiling below the high flight (a ceiling of 0 needs
                   FAA authorization, not LAANC): not eligible to be picked
-      unknown     the FAA map could not be reached
     Squares that touch only a sliver (under 1%) of the block group are ignored.
     """
-    if cells is None:
-        return "unknown", np.nan, np.nan
     touching = [(c, g) for c, g in cells
                 if g.intersects(polygon) and g.intersection(polygon).area > 0.01 * polygon.area]
     if not touching:
