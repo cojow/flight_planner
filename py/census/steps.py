@@ -17,6 +17,7 @@ Every step:
 """
 import json
 import platform
+import shutil
 import time
 from dataclasses import dataclass, field
 from importlib import metadata
@@ -114,15 +115,17 @@ def _start(folder, step):
     out = step_dir(folder, step)
     out.mkdir(parents=True, exist_ok=True)
     for old in out.iterdir():           # a rerun replaces the step's files
-        if old.is_file():
+        if old.is_dir():
+            shutil.rmtree(old)
+        else:
             old.unlink()
-    # Anything downstream is now out of date; drop its inputs.json so it shows
-    # as "not run" rather than silently pairing with new upstream files.
+    # Anything downstream that used this step's files is now invalid: clear it,
+    # so it shows as "not run" and its old files can't be mistaken for current.
     for later in ORDER[ORDER.index(step) + 1:]:
         if step in UPSTREAM[later]:
-            stale = step_dir(folder, later) / "inputs.json"
-            if stale.exists():
-                stale.unlink()
+            for old in step_dir(folder, later).glob("*"):
+                if old.is_file():
+                    old.unlink()
     return config, out
 
 

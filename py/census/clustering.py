@@ -42,7 +42,7 @@ def score_k(X, ks, seed=0, n_init=10):
         model = kmeans(X, k, seed, n_init)
         rows.append({"k": k, "inertia": round(float(model.inertia_), 3),
                      "silhouette": round(float(silhouette_score(X, model.labels_)), 4)})
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=["k", "inertia", "silhouette"])
 
 
 def summary(df, columns, k=None):

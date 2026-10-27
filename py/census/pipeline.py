@@ -49,9 +49,15 @@ def areas(config, out):
     county = acs.county_block_groups(a["state"], a["county"], a["year"])
     members, boundaries = geography.block_groups_in_places(a["state"], a["places"], a["min_overlap"], a["year"])
 
+    # A city can reach into a neighbouring county; its block groups there need
+    # that county's ACS numbers. The county's own table stays as it is.
+    acs_rows = county
+    for other in sorted(set(members["county"]) - {a["county"]}):
+        acs_rows = pd.concat([acs_rows, acs.county_block_groups(a["state"], other, a["year"])], ignore_index=True)
+
     # Keep the county table's order: it is the order k-means sees the rows in.
-    table = county.merge(members.drop(columns="county"), on="geoid", how="inner")
-    missing = members[~members["geoid"].isin(county["geoid"])].drop(columns="county")
+    table = acs_rows.merge(members.drop(columns="county"), on="geoid", how="inner")
+    missing = members[~members["geoid"].isin(acs_rows["geoid"])].drop(columns="county")
     table = pd.concat([table, missing], ignore_index=True)
 
     reasons = pd.Series("", index=table.index)
@@ -118,6 +124,9 @@ def choose_k(config, folder, out):
     df, dropped = _clustered_rows(folder, config)
     X, scaler = clustering.scale(df, f["columns"])
     scores = clustering.score_k(X, range(c["k_min"], c["k_max"] + 1), f["seed"], f["n_init"])
+    if scores.empty:
+        raise ValueError(f"Only {len(df)} block groups can be clustered; scoring k needs more block groups "
+                         f"than k (smallest k is {c['k_min']}). Choose more cities or a smaller k range.")
 
     files = {"Scores (table)": out / "k_scores.csv", "Scores (chart)": out / "k_scores.png"}
     scores.to_csv(files["Scores (table)"], index=False)
@@ -125,7 +134,7 @@ def choose_k(config, folder, out):
 
     previews, summaries = [], []
     for k in c["preview"]:
-        if not 2 <= k < len(df):
+        if not 2 <= k <= len(df):
             continue
         frame = df.copy()
         frame["cluster"] = clustering.kmeans(X, k, f["seed"], f["n_init"]).labels_
@@ -156,8 +165,8 @@ def choose_k(config, folder, out):
 def cluster(config, folder, out):
     f, k = config["features"], config["cluster"]["k"]
     df, dropped = _clustered_rows(folder, config)
-    if k >= len(df):
-        raise ValueError(f"k = {k} needs more than {len(df)} block groups.")
+    if k > len(df):
+        raise ValueError(f"k = {k} needs at least {k} block groups; {len(df)} can be clustered.")
     X, scaler = clustering.scale(df, f["columns"])
     df["cluster"] = clustering.kmeans(X, k, f["seed"], f["n_init"]).labels_
     table = df[["geoid", "cluster"] + [c for c in df.columns if c not in ("geoid", "cluster")]]
@@ -219,7 +228,8 @@ def sample(config, folder, out):
     }
     a = config["areas"]
     files["Sources (JSON)"].write_text(json.dumps(
-        {"tiger": geography.sources(a["year"], a["state"], a["county"], ("roads",)),
+        {"tiger": {name: v for c in streets.road_counties(picked, boundaries, a)
+                   for name, v in geography.sources(a["year"], a["state"], c, ("roads",)).items()},
          "faa": {"url": sampling.FAA_URL, "fetched": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")}},
         indent=2) + "\n")
     keep = ["fly_order", "pick", "geoid", "city", "cluster", "airspace", "faa_ceiling_ft",

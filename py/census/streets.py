@@ -50,16 +50,27 @@ def full_name(name):
     return name
 
 
-def load_roads(bounds, street_types, year, state, county):
+def road_counties(picked, boundaries, areas, margin=0.005):
+    """
+    The counties whose roads files are needed: every county with a block group
+    near the picks (TIGER/Line roads come one file per county, and a pick's
+    buffer can reach across a county line).
+    """
+    box = shapely.box(*shapely.union_all([boundaries[g] for g in picked["geoid"]]).buffer(margin).bounds)
+    bgs = geography.block_groups_near(box, areas["year"], areas["state"])
+    return sorted(set(bgs["COUNTYFP"]) | {areas["county"]})
+
+
+def load_roads(bounds, street_types, year, state, counties):
     """
     Every street segment of the chosen types inside a bounding box (degrees),
-    as shapes in metres with a spatial index, from the county's TIGER/Line
-    roads file. Each block group's streets are then found locally.
+    as shapes in metres with a spatial index, from the counties' TIGER/Line
+    roads files. Each block group's streets are then found locally.
     """
     for code in street_types:
         if code not in ROAD_TYPES:
             raise CensusError(f"Unknown street type {code!r}; known: {', '.join(ROAD_TYPES)}.")
-    all_roads = geography.roads(year, state, county)
+    all_roads = pd.concat([geography.roads(year, state, c) for c in counties], ignore_index=True)
     box = shapely.box(*bounds)
     geometries, types, names = [], [], []
     for code in street_types:
@@ -155,7 +166,7 @@ def find_streets(picked, boundaries, cells, settings, areas):
     minx, miny, maxx, maxy = shapely.union_all([boundaries[g] for g in picked["geoid"]]).bounds
     margin = 0.005                                  # degrees; far more than the buffer
     roads = load_roads((minx - margin, miny - margin, maxx + margin, maxy + margin), settings["street_types"],
-                       areas["year"], areas["state"], areas["county"])
+                       areas["year"], areas["state"], road_counties(picked, boundaries, areas, margin))
 
     rows, features = [], []
     for geoid in picked["geoid"]:

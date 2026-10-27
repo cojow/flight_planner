@@ -184,7 +184,13 @@ def block_groups_in_places(state, places, min_overlap=0.5, year=2024):
     return table, geometries
 
 
-@functools.lru_cache(maxsize=4)
+def block_groups_near(shape, year=2024, state="49"):
+    """The state's block groups that touch a shape (TIGER/Line columns)."""
+    bgs = _block_groups(year, state)
+    return bgs[bgs.intersects(shape)]
+
+
+@functools.lru_cache(maxsize=8)
 def roads(year, state, county):
     """Every road in a county: GeoDataFrame with FULLNAME, MTFCC, geometry (lat/lon)."""
     return gpd.read_file(tiger_file("roads", year, state, county)).to_crs(4326)

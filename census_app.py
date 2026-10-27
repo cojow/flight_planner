@@ -221,6 +221,8 @@ def tab_cluster(folder, config):
     left, right = st.columns([1, 2])
     k = left.number_input("k (number of clusters)", 2, 20, int(c["k"]), step=1, key=f"{key}:k")
     scores = steps.step_dir(folder, "choose_k") / "k_scores.csv"
+    if scores.exists() and steps.status(folder)["choose_k"] == "stale":
+        right.warning("Step 2's scores below were made with older settings; run step 2 again.")
     if scores.exists():
         right.markdown("**Scores from step 2** (higher silhouette = better separated clusters)")
         right.dataframe(read_csv(scores), hide_index=True)
