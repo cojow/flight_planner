@@ -13,9 +13,9 @@ from sklearn.preprocessing import StandardScaler
 
 
 def usable(df, columns):
-    """(rows that have every column, how many were dropped for a blank)."""
-    kept = df.dropna(subset=list(columns)).reset_index(drop=True)
-    return kept, len(df) - len(kept)
+    """(rows that have every column, the GEOIDs of rows dropped for a blank)."""
+    blank = df[list(columns)].isna().any(axis=1)
+    return df[~blank].reset_index(drop=True), list(df.loc[blank, "geoid"])
 
 
 def scale(df, columns):

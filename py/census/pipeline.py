@@ -26,6 +26,13 @@ def _read_boundaries(folder):
     return {f["properties"]["geoid"]: shape(f["geometry"]) for f in data["features"]}
 
 
+def _dropped_note(dropped):
+    if not dropped:
+        return ""
+    return (f"{len(dropped)} used block group(s) left out for a blank value in a clustering column "
+            f"(the Census had no estimate): {', '.join(dropped)}\n")
+
+
 def _clustered_rows(folder, config):
     """The block groups step 1 kept, minus any missing a clustering column."""
     table = _read_table(folder, "areas", "block_groups.csv")
@@ -132,8 +139,7 @@ def choose_k(config, folder, out):
         pd.concat(summaries, ignore_index=True).to_csv(files["Preview summary (table)"], index=False)
 
     report = io.StringIO()
-    report.write(f"{len(df)} block groups clustered on {', '.join(f['columns'])}"
-                 f"{f'; {dropped} left out for a blank value' if dropped else ''}.\n\n")
+    report.write(f"{len(df)} block groups clustered on {', '.join(f['columns'])}.\n{_dropped_note(dropped)}\n")
     report.write(scores.to_string(index=False) + "\n")
     if len(scores):
         best = scores.loc[scores["silhouette"].idxmax()]
@@ -164,8 +170,7 @@ def cluster(config, folder, out):
     plots.clusters(df, X, scaler, f["columns"], k, files["Chart"])
     plots.clusters_map(df, _read_boundaries(folder), files["Map"], f"{k} clusters")
 
-    report = (f"{len(df)} block groups in {k} clusters on {', '.join(f['columns'])}"
-              f"{f'; {dropped} left out for a blank value' if dropped else ''}.\n\n"
+    report = (f"{len(df)} block groups in {k} clusters on {', '.join(f['columns'])}.\n{_dropped_note(dropped)}\n"
               + summary.to_string(index=False) + "\n")
     return files, report
 
