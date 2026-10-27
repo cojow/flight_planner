@@ -15,8 +15,18 @@ from .geo_math import METERS_PER_MILE, to_degrees, to_metres
 from . import geography
 from .sources import CensusError
 
-# Census road codes (MTFCC) -> what they are.
-ROAD_TYPES = {"S1200": "secondary road", "S1400": "local street"}
+# Census road codes (MTFCC) that can be flown -> what they are. The default is
+# secondary roads and local streets (config: sample.street_types).
+ROAD_TYPES = {
+    "S1100": "primary road",        # interstates and other limited-access highways
+    "S1200": "secondary road",      # state and county routes
+    "S1400": "local street",
+    "S1500": "vehicular trail",     # 4WD
+    "S1630": "ramp",
+    "S1640": "service drive",
+    "S1730": "alley",
+    "S1740": "private road",
+}
 
 # Joining street pieces: coordinates are snapped to this grid, and a piece
 # counts as running along a stretch of road when it is within SAME_LINE_M of it.
