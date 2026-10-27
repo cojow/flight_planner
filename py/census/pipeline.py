@@ -198,7 +198,8 @@ def sample(config, folder, out):
     picked = df[df["sampled"]].copy()
 
     street_table, street_features = streets.find_streets(picked, boundaries, cells, s, config["areas"])
-    miles = street_table.groupby("geoid")["miles"].agg(street_miles="sum", streets="size")
+    flyable = street_table[~street_table["restricted"]]
+    miles = flyable.groupby("geoid")["miles"].agg(street_miles="sum", streets="size")
     picked = picked.merge(miles, left_on="geoid", right_index=True, how="left").fillna(
         {"street_miles": 0, "streets": 0})
     picked["street_miles"] = picked["street_miles"].round(2)
@@ -249,12 +250,14 @@ def _sample_report(df, picked, street_table, k, s, columns, notes):
     for _, r in picked.sort_values("fly_order").iterrows():
         report.write(f"  {r['fly_order']}. {r['geoid']}  {r['city']:<11} cluster {r['cluster']}  "
                      f"pick {r['pick']}  {r['street_miles']:>5.1f} street miles  airspace: {r['airspace']}\n")
-    total = street_table["miles"].sum()
-    report.write(f"\nStreets to fly: {len(street_table)} (street, block group) pairs, {total:,.1f} miles of street. "
+    flyable = street_table[~street_table["restricted"]]
+    total = flyable["miles"].sum()
+    report.write(f"\nStreets to fly: {len(flyable)} (street, block group) rows, {total:,.1f} miles of street. "
                  f"Flown twice (high and low) that is {2 * total:,.1f} miles of flight.\n")
     restricted = street_table[street_table["restricted"]]
-    report.write(f"{len(restricted)} of those streets ({restricted['miles'].sum():,.1f} miles) are mostly in FAA "
-                 f"squares with a ceiling under {s['high_flight_ft']} ft: skip them without authorization.\n")
+    report.write(f"Not counted: {len(restricted)} stretches ({restricted['miles'].sum():,.2f} miles) inside FAA "
+                 f"squares with a ceiling under {s['high_flight_ft']} ft (restricted = True). "
+                 "Skip them without FAA authorization.\n")
 
     # With so few block groups the picks can sit far from the average; show how far.
     report.write("\nPicks against all clustered block groups (picks weighted):\n")

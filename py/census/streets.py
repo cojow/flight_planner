@@ -22,6 +22,7 @@ ROAD_TYPES = {"S1200": "secondary road", "S1400": "local street"}
 # counts as running along a stretch of road when it is within SAME_LINE_M of it.
 GRID_M = 0.5
 SAME_LINE_M = 2.0
+MIN_SPLIT_M = 1.0                   # bits of street this short, left by the airspace split, are dropped
 
 DIRECTIONS = {"N": "North", "S": "South", "E": "East", "W": "West"}
 Roads = namedtuple("Roads", "geometries types names tree")
@@ -63,9 +64,9 @@ def load_roads(bounds, street_types, year, state, county):
 def streets_in(geoid, polygon, roads, buffer_m, min_segment_m, low_zone_m=None):
     """
     Every street segment inside one block group (plus the buffer_m border):
-    (rows for the table, GeoJSON features), one segment per stretch between junctions.
-    low_zone_m is the FAA squares with a ceiling under the high flight, in metres,
-    so each street can be marked as inside restricted airspace.
+    (rows for the table, GeoJSON features). low_zone_m is the FAA squares with a
+    ceiling under the high flight, in metres: streets are cut at its edge, and
+    the stretches inside it are marked restricted.
     """
     area = transform(to_metres, polygon).buffer(buffer_m)
     pieces = []                     # (shape, name, road type), clipped to the block group
@@ -106,19 +107,31 @@ def streets_in(geoid, polygon, roads, buffer_m, min_segment_m, low_zone_m=None):
         names = sorted(entry["names"], key=lambda n: (-len(n), n))
         name = full_name(names[0]) if names else "(unnamed)"
         aliases = "; ".join(n for n in names if n != name)
-        length = entry["geometry"].length
-        # How much of this stretch lies in an FAA square with a ceiling under the high flight.
-        restricted = (entry["geometry"].intersection(low_zone_m).length
-                      if low_zone_m is not None else 0.0)
-        rows.append({"geoid": geoid, "street": name, "road_type": entry["road_type"],
-                     "miles": length / METERS_PER_MILE, "aliases": aliases,
-                     "restricted_miles": restricted / METERS_PER_MILE})
-        features.append({"type": "Feature",
-                         "geometry": mapping(transform(to_degrees, entry["geometry"])),
-                         "properties": {"geoid": geoid, "street": name,
-                                        "road_type": entry["road_type"], "aliases": aliases,
-                                        "restricted": bool(restricted >= 0.5 * length)}})
+        # Split at the edge of FAA squares with a ceiling under the high flight,
+        # so the stretch inside one is listed (and skipped) on its own.
+        if low_zone_m is None:
+            split = [(entry["geometry"], False)]
+        else:
+            split = [(entry["geometry"].difference(low_zone_m), False),
+                     (entry["geometry"].intersection(low_zone_m), True)]
+        for geometry, restricted in split:
+            geometry = _lines(geometry)
+            if geometry.length < MIN_SPLIT_M:
+                continue
+            rows.append({"geoid": geoid, "street": name, "road_type": entry["road_type"],
+                         "restricted": restricted, "miles": geometry.length / METERS_PER_MILE,
+                         "aliases": aliases})
+            features.append({"type": "Feature",
+                             "geometry": mapping(transform(to_degrees, geometry)),
+                             "properties": {"geoid": geoid, "street": name, "road_type": entry["road_type"],
+                                            "aliases": aliases, "restricted": restricted}})
     return rows, features
+
+
+def _lines(geometry):
+    """Just the line parts of a shape (cutting a line with a polygon can leave stray points)."""
+    parts = [g for g in getattr(geometry, "geoms", [geometry]) if g.geom_type in ("LineString", "MultiLineString")]
+    return shapely.line_merge(shapely.union_all(parts)) if parts else shapely.LineString()
 
 
 def find_streets(picked, boundaries, cells, settings, areas):
@@ -141,13 +154,10 @@ def find_streets(picked, boundaries, cells, settings, areas):
         rows += block_rows
         features += block_features
 
+    # One row per street per block group, and per side of a restricted-airspace edge.
     streets = (pd.DataFrame(rows)
-               .groupby(["geoid", "street", "road_type"], as_index=False)
+               .groupby(["geoid", "street", "road_type", "restricted"], as_index=False)
                .agg(miles=("miles", "sum"), segments=("miles", "size"),
-                    restricted_miles=("restricted_miles", "sum"),
                     aliases=("aliases", lambda a: "; ".join(sorted({x for s in a for x in s.split("; ") if x})))))
-    # A street is marked restricted when at least half of it is in restricted airspace.
-    streets["restricted"] = streets["restricted_miles"] >= 0.5 * streets["miles"]
     streets["miles"] = streets["miles"].round(2)
-    streets["restricted_miles"] = streets["restricted_miles"].round(2)
     return streets.merge(picked[["geoid", "city", "cluster", "pick"]], on="geoid"), features
