@@ -18,6 +18,11 @@ from .sources import CensusError
 # Census road codes (MTFCC) -> what they are.
 ROAD_TYPES = {"S1200": "secondary road", "S1400": "local street"}
 
+# Joining street pieces: coordinates are snapped to this grid, and a piece
+# counts as running along a stretch of road when it is within SAME_LINE_M of it.
+GRID_M = 0.5
+SAME_LINE_M = 2.0
+
 DIRECTIONS = {"N": "North", "S": "South", "E": "East", "W": "West"}
 Roads = namedtuple("Roads", "geometries types names tree")
 
@@ -63,21 +68,41 @@ def streets_in(geoid, polygon, roads, buffer_m, min_segment_m, low_zone_m=None):
     so each street can be marked as inside restricted airspace.
     """
     area = transform(to_metres, polygon).buffer(buffer_m)
-    # The Census lists a street once per name it goes by ("E 1000 N" and
-    # "E 1000 North St"), all on the same line. Segments are merged by shape so
-    # each stretch of road is counted once, under its longest name.
-    found = {}
+    pieces = []                     # (shape, name, road type), clipped to the block group
     for i in sorted(roads.tree.query(area, predicate="intersects")):
         inside = roads.geometries[i].intersection(area)
-        if inside.is_empty or inside.length < min_segment_m:
+        if not inside.is_empty and inside.length >= min_segment_m:
+            pieces.append((inside, roads.names[i], roads.types[i]))
+    if not pieces:
+        return [], []
+
+    # The Census lists a stretch of road once per name it goes by ("State Rte
+    # 114" and "N Geneva Rd"; "950 N" and "W 950 North St"), and where two
+    # names share only part of a road the shapes differ. Joining every piece
+    # into one network counts each stretch of pavement once; each stretch then
+    # takes the names of the pieces that run along it, and is listed under the
+    # longest of them with the rest as aliases.
+    network = shapely.union_all([g for g, _, _ in pieces], grid_size=GRID_M)
+    corridors = [g.buffer(SAME_LINE_M) for g, _, _ in pieces]
+    shapely.prepare(corridors)
+    found = {}
+    for part in getattr(network, "geoms", [network]):
+        if part.length == 0:
             continue
-        key = shapely.normalize(shapely.set_precision(inside, 0.5)).wkb
-        entry = found.setdefault(key, {"names": set(), "road_type": roads.types[i], "geometry": inside})
-        if roads.names[i]:
-            entry["names"].add(roads.names[i])
+        along = [j for j, corridor in enumerate(corridors)
+                 if corridor.intersects(part) and part.intersection(corridor).length >= 0.9 * part.length]
+        names = frozenset(pieces[j][1] for j in along if pieces[j][1])
+        road_type = pieces[along[0]][2] if along else pieces[0][2]
+        found.setdefault((names, road_type), []).append(part)
+
+    entries = []
+    for (names, road_type), parts in found.items():
+        geometry = shapely.line_merge(shapely.union_all(parts))
+        if geometry.length >= min_segment_m:
+            entries.append({"names": set(names), "road_type": road_type, "geometry": geometry})
 
     rows, features = [], []
-    for entry in found.values():
+    for entry in entries:
         names = sorted(entry["names"], key=lambda n: (-len(n), n))
         name = full_name(names[0]) if names else "(unnamed)"
         aliases = "; ".join(n for n in names if n != name)
