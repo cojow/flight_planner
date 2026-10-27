@@ -12,6 +12,7 @@ The app is split into 5 tabs. Click a tab to jump to its section below.
 * [DJI Fly Transfer](#dji-fly-transfer)
 
 Link to the related BYU [research pages](https://cojow.github.io/flight_planner/BYU_research_documentation/).
+The [Census Sampling](#census-sampling) app, which picks the block groups to fly for that research, is a separate app.
 
 ## Running the Planner Steps
 1. Download this repository.
@@ -327,6 +328,37 @@ To update them, in the mission history page, click on a mission to have it load,
 This will update the thumbnail. 
 
 It is recommended to save and update the thumbnails immediately after transferring the missions. To help keep this straight, at the bottom of the DJI FLY Transfer tab, a checklist is generated showing the old mission thumbnail and the new mission name (along with the long string name). 
+
+## Census Sampling
+A separate app picks the Census block groups to fly for the research [methodology](https://cojow.github.io/flight_planner/BYU_research_documentation/methodology.html): choose cities in Utah County, cluster their block groups on Census numbers (median household income and house age by default), and draw a stratified sample of block groups and the streets to fly in them.
+
+```
+streamlit run census_app.py
+```
+
+It needs a free [Census API key](https://api.census.gov/data/key_signup.html) pasted into `py/census_api_key.txt` (that file is never committed).
+
+Each **run** has a name and keeps everything in `data/census/runs/<name>/`. Every setting is saved in that folder's `config.json`, so a run can be checked, changed and repeated. The app goes through four steps, and each step shows its settings before you run it:
+
+1. **Areas**: the cities, the ACS year, and how much of a block group must be inside a city for it to count (`min_overlap`, default half). After it runs you can untick block groups to leave them out by hand. Block groups with no housing or no Census estimate are left out and listed with the reason.
+2. **Choose k**: which columns to cluster on and the range of k to try. Shows the elbow (inertia) and silhouette charts and the clusters for a few k side by side. Nothing is decided here; you pick k.
+3. **Cluster**: k-means with your k. Saves each block group's cluster, the cluster averages, a chart and a map.
+4. **Sample**: block groups per cluster, the random seed, the airspace rules, the street buffer and the trip start point. Block groups mostly under FAA airspace with a ceiling below the 200 ft high flight can't be picked. Saves the picks in flying order, every street to fly (as a table and GeoJSON for QGIS), and maps.
+
+If you change a setting, the steps that depend on it are marked out of date and must be run again, so outputs made with different settings never mix.
+
+**Weights.** Each pick has a weight: how many block groups it stands for. By default (`eligible`) a pick stands for the block groups in its cluster that could have been picked. Block groups under restricted airspace had no chance of being drawn, so the estimates describe the flyable part of the cities, not all of them. `legacy` counts the whole cluster, as `sampling_draft/` did.
+
+The same steps run from the command line, from the `py` folder:
+```
+python -m census places                              # cities in Utah County
+python -m census new provo_orem --cities Provo Orem  # a run with default settings
+python -m census set provo_orem cluster.k=4 sample.per_cluster=1
+python -m census run provo_orem                      # all four steps
+python -m census compare provo_orem                  # optional: the cities vs the rest of the county
+```
+
+Boundaries and roads come from the Census TIGER/Line files of the ACS year, downloaded once into `data/census/tiger/`. The FAA airspace map is read live at the sample step, and the answer used is saved with the run.
 
 ## Acknowledgements
 - Luigi Pirelli for providing the photo footprint code base. 

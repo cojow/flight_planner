@@ -26,14 +26,24 @@ skip it without FAA authorization.
 
 ## Regenerating
 
-The draw is seeded, so the same settings give the same block groups. From the repository root, with the Census API
-key in `py/census_api_key.txt`:
+## This draft is now the old baseline
+
+These files were made by the old scripts, which have been replaced by the Census Sampling app
+(`streamlit run census_app.py`, or `python -m census` from `py/`; see the main README). They are kept as they are, as a
+record. The app finds three problems in them:
+
+- **Street miles are too high.** The same stretch of road was often counted two or three times under different names
+  ("State Rte 114" and "N Geneva Rd"), so the 43.05 miles here are about 36.3 flyable miles.
+- **Some restricted street was listed as flyable.** Streets were flagged restricted only when at least half of them
+  was under a ceiling below 200 ft; about 0.25 more miles in pick 3 is also in 0 ft airspace.
+- **The weights count block groups that could not be picked.** The `weight` column here counts the whole cluster,
+  including the 21 block groups under restricted airspace. The app's default counts only the 118 that could be drawn.
+
+The clusters, picks and fly order still match. To reproduce them, from `py/`:
 
 ```
-python py/provo_orem_vs_utah_county.py
-python py/kmeans_provo_orem.py
-python py/sample_block_groups.py --k 3 --per-cluster 2
+python -m census new regress_draft --cities Provo Orem
+python -m census set regress_draft sample.weights=legacy
+python -m census run regress_draft
+python -m census.check_draft regress_draft
 ```
-
-The results are written to `data/census/provo_orem_vs_county/`, which is not tracked by git. This folder is a copy of
-that output, so it will not update by itself: rerun the scripts and copy the files here when the settings change.

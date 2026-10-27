@@ -7,6 +7,7 @@ The command line. Run from the py/ folder (or with py/ on PYTHONPATH):
     python -m census set provo_orem cluster.k=4 sample.per_cluster=1
     python -m census run provo_orem                      # every step, in order
     python -m census run provo_orem cluster sample       # just these steps
+    python -m census compare provo_orem                  # optional: the cities vs the rest of the county
 
 Runs live in data/census/runs/<name>/; config.json there holds every setting
 and can also be edited by hand.
@@ -51,6 +52,8 @@ def main(argv=None):
     p = sub.add_parser("run", help="run steps (default: all)")
     p.add_argument("name")
     p.add_argument("steps", nargs="*", help=f"any of {', '.join(steps.ORDER)}")
+    p = sub.add_parser("compare", help="optional report: the cities against the rest of the county")
+    p.add_argument("name")
     args = ap.parse_args(argv)
 
     try:
@@ -76,6 +79,11 @@ def main(argv=None):
             cfg.save(folder, config)
         elif args.command == "show":
             print(json.dumps(cfg.load(folder), indent=2))
+        elif args.command == "compare":
+            if steps.status(folder)["areas"] != "current":
+                raise steps.StepError("Run 'areas' first.")
+            from . import compare
+            print(compare.report(folder))
         elif args.command == "run":
             unknown = [s for s in args.steps if s not in steps.ORDER]
             if unknown:

@@ -40,3 +40,6 @@ py/census_api_key.txt
 data/*
 
 
+
+#Local downloads and maps left by the old census_tool (replaced by py/census)
+py/census_tool/
