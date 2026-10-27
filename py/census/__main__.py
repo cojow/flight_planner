@@ -39,6 +39,7 @@ def main(argv=None):
     p = sub.add_parser("places", help="list the cities in the county")
     p.add_argument("--state", default=cfg.DEFAULTS["areas"]["state"])
     p.add_argument("--county", default=cfg.DEFAULTS["areas"]["county"])
+    p.add_argument("--year", type=int, default=cfg.DEFAULTS["areas"]["year"])
     p = sub.add_parser("new", help="make a run")
     p.add_argument("name")
     p.add_argument("--cities", nargs="+", required=True, help='city names, e.g. Provo Orem "American Fork"')
@@ -54,7 +55,7 @@ def main(argv=None):
 
     try:
         if args.command == "places":
-            print(geography.county_places(args.state, args.county).to_string(index=False))
+            print(geography.county_places(args.state, args.county, args.year).to_string(index=False))
             return 0
 
         folder = cfg.run_dir(args.name)
@@ -65,7 +66,7 @@ def main(argv=None):
             a = config["areas"]
             config["areas"]["places"] = [
                 {"geoid": c["geoid"], "name": c["name"]}
-                for c in (geography.place(a["state"], name=n) for n in args.cities)]
+                for c in (geography.place(a["state"], name=n, year=a["year"]) for n in args.cities)]
             cfg.save(folder, config)
             print(f"Made {folder}/config.json")
         elif args.command == "set":

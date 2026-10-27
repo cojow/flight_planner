@@ -40,7 +40,7 @@ def _clustered_rows(folder, config):
 def areas(config, out):
     a = config["areas"]
     county = acs.county_block_groups(a["state"], a["county"], a["year"])
-    members, boundaries = geography.block_groups_in_places(a["state"], a["places"], a["min_overlap"])
+    members, boundaries = geography.block_groups_in_places(a["state"], a["places"], a["min_overlap"], a["year"])
 
     # Keep the county table's order: it is the order k-means sees the rows in.
     table = county.merge(members.drop(columns="county"), on="geoid", how="inner")
@@ -62,7 +62,11 @@ def areas(config, out):
         "Block groups (GeoJSON)": out / "block_groups.geojson",
         "Whole county (table)": out / "county_block_groups.csv",
         "Map": out / "map.png",
+        "Sources (JSON)": out / "sources.json",
     }
+    files["Sources (JSON)"].write_text(json.dumps(
+        {"acs": f"ACS 5-year {a['year']}", "tiger": geography.sources(a["year"], a["state"], a["county"], ("place", "bg"))},
+        indent=2) + "\n")
     table.to_csv(files["Block groups (table)"], index=False)
     county.to_csv(files["Whole county (table)"], index=False)
     features = [{"type": "Feature", "geometry": mapping(boundaries[g]),
@@ -188,7 +192,7 @@ def sample(config, folder, out):
     notes += sampling.draw(df, s["per_cluster"], s["seed"], s["weights"])
     picked = df[df["sampled"]].copy()
 
-    street_table, street_features = streets.find_streets(picked, boundaries, cells, s)
+    street_table, street_features = streets.find_streets(picked, boundaries, cells, s, config["areas"])
     miles = street_table.groupby("geoid")["miles"].agg(street_miles="sum", streets="size")
     picked = picked.merge(miles, left_on="geoid", right_index=True, how="left").fillna(
         {"street_miles": 0, "streets": 0})
@@ -205,7 +209,13 @@ def sample(config, folder, out):
         "Map": out / "sample_map.png",
         "Street maps": out / "sample_streets_map.png",
         "FAA airspace used (GeoJSON)": out / "faa_facility_map.geojson",
+        "Sources (JSON)": out / "sources.json",
     }
+    a = config["areas"]
+    files["Sources (JSON)"].write_text(json.dumps(
+        {"tiger": geography.sources(a["year"], a["state"], a["county"], ("roads",)),
+         "faa": {"url": sampling.FAA_URL, "fetched": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")}},
+        indent=2) + "\n")
     keep = ["fly_order", "pick", "geoid", "city", "cluster", "airspace", "faa_ceiling_ft",
             "share_restricted", "streets", "street_miles", *columns, "housing_units", "weight", "lat", "lon"]
     keep = list(dict.fromkeys(keep))

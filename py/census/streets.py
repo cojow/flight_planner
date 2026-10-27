@@ -12,11 +12,11 @@ from shapely.geometry import mapping, shape
 from shapely.ops import transform
 
 from .geo_math import METERS_PER_MILE, to_degrees, to_metres
-from .sources import TIGER_URL, CensusError, cached_get
+from . import geography
+from .sources import CensusError
 
-# Census road codes (MTFCC) -> (name, TIGERweb Transportation layer holding them).
-ROAD_TYPES = {"S1200": ("secondary road", 6), "S1400": ("local street", 8)}
-ROAD_URL = f"{TIGER_URL}/Transportation/MapServer/{{layer}}/query"
+# Census road codes (MTFCC) -> what they are.
+ROAD_TYPES = {"S1200": "secondary road", "S1400": "local street"}
 
 DIRECTIONS = {"N": "North", "S": "South", "E": "East", "W": "West"}
 Roads = namedtuple("Roads", "geometries types names tree")
@@ -34,31 +34,24 @@ def full_name(name):
     return name
 
 
-def load_roads(bounds, street_types):
+def load_roads(bounds, street_types, year, state, county):
     """
     Every street segment of the chosen types inside a bounding box (degrees),
-    as shapes in metres with a spatial index. One download per road type, then
-    each block group's streets are found locally.
+    as shapes in metres with a spatial index, from the county's TIGER/Line
+    roads file. Each block group's streets are then found locally.
     """
-    minx, miny, maxx, maxy = bounds
-    geometries, types, names = [], [], []
     for code in street_types:
         if code not in ROAD_TYPES:
             raise CensusError(f"Unknown street type {code!r}; known: {', '.join(ROAD_TYPES)}.")
-        road_type, layer = ROAD_TYPES[code]
-        data = cached_get(ROAD_URL.format(layer=layer), {
-            "geometry": f"{minx},{miny},{maxx},{maxy}", "geometryType": "esriGeometryEnvelope",
-            "inSR": "4326", "spatialRel": "esriSpatialRelIntersects",
-            "outFields": "NAME,MTFCC", "returnGeometry": "true", "outSR": "4326", "f": "geojson"})
-        if data.get("exceededTransferLimit"):
-            raise CensusError("The Census returned only part of the roads; sample fewer or smaller areas.")
-        for feature in data.get("features", []):
-            props = feature["properties"]
-            if props.get("MTFCC") != code:
-                continue
-            geometries.append(transform(to_metres, shape(feature["geometry"])))
-            types.append(road_type)
-            names.append((props.get("NAME") or "").strip())
+    all_roads = geography.roads(year, state, county)
+    box = shapely.box(*bounds)
+    geometries, types, names = [], [], []
+    for code in street_types:
+        chosen = all_roads[(all_roads["MTFCC"] == code) & all_roads.intersects(box)]
+        for name, geom in zip(chosen["FULLNAME"], chosen.geometry):
+            geometries.append(transform(to_metres, geom))
+            types.append(ROAD_TYPES[code])
+            names.append((name or "").strip())
     return Roads(geometries, types, names, shapely.STRtree(geometries))
 
 
@@ -103,16 +96,18 @@ def streets_in(geoid, polygon, roads, buffer_m, min_segment_m, low_zone_m=None):
     return rows, features
 
 
-def find_streets(picked, boundaries, cells, settings):
+def find_streets(picked, boundaries, cells, settings, areas):
     """
     The streets in every picked block group: (table with one row per street per
-    block group, GeoJSON features). settings is the run's sample section.
+    block group, GeoJSON features). settings and areas are the run's sample
+    and areas config sections.
     """
     low_squares = [g for c, g in (cells or []) if c < settings["high_flight_ft"]]
     low_zone_m = transform(to_metres, shapely.union_all(low_squares)) if low_squares else None
     minx, miny, maxx, maxy = shapely.union_all([boundaries[g] for g in picked["geoid"]]).bounds
     margin = 0.005                                  # degrees; far more than the buffer
-    roads = load_roads((minx - margin, miny - margin, maxx + margin, maxy + margin), settings["street_types"])
+    roads = load_roads((minx - margin, miny - margin, maxx + margin, maxy + margin), settings["street_types"],
+                       areas["year"], areas["state"], areas["county"])
 
     rows, features = [], []
     for geoid in picked["geoid"]:
