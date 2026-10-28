@@ -1597,24 +1597,36 @@ def census_sample_controls(prefix):
     return name, sample
 
 
+CENSUS_SAMPLE_DETAILS = [('geoid', 'GEOID'), ('fly_order', 'Fly order'), ('city', 'City'), ('cluster', 'Cluster'),
+                         ('street_miles', 'Street miles'), ('airspace', 'Airspace'), ('census_name', 'Census name')]
+
+
 def add_census_sample_layer(fmap, sample):
-    """The sample's block groups as outlined areas, each labelled with its fly order and GEOID."""
+    """
+    The sample's block groups as outlined areas, each labelled with its fly
+    order and GEOID. Clicking a label opens the block group's details.
+
+    The areas themselves ignore the mouse (interactive=False): no pop-ups while
+    moving around the map, and clicks inside a block group still reach the
+    map, so drawing a flight area there works as usual.
+    """
+    from html import escape
     folium.GeoJson(
-        sample, name="Sampled Block Groups",
+        sample, name="Sampled Block Groups", interactive=False,
         style_function=lambda x: {'color': CENSUS_SAMPLE_COLOR, 'weight': 3,
                                   'fillColor': CENSUS_SAMPLE_COLOR, 'fillOpacity': 0.08},
-        tooltip=folium.GeoJsonTooltip(
-            fields=['geoid', 'fly_order', 'city', 'cluster', 'street_miles', 'airspace', 'census_name'],
-            aliases=['GEOID:', 'Fly order:', 'City:', 'Cluster:', 'Street miles:', 'Airspace:', 'Census name:'])
     ).add_to(fmap)
     for feature in sample.get("features", []):
         p = feature["properties"]
         if p.get("lat") is None or p.get("lon") is None:
             continue
-        label = (f'<div style="font-size: 12px; font-weight: bold; color: white; white-space: nowrap; '
+        label = (f'<div style="font-size: 12px; font-weight: bold; color: white; white-space: nowrap; cursor: pointer; '
                  f'text-shadow: 0 0 3px black, 0 0 3px black; transform: translate(-50%, -50%);">'
-                 f'#{p.get("fly_order")} &middot; {p.get("geoid")}</div>')
-        folium.Marker([p["lat"], p["lon"]], icon=DivIcon(html=label), tooltip=f'GEOID {p.get("geoid")}').add_to(fmap)
+                 f'#{escape(str(p.get("fly_order")))} &middot; {escape(str(p.get("geoid")))}</div>')
+        rows = "".join(f'<tr><td style="padding-right: 8px;"><b>{label_text}</b></td><td>{escape(str(p.get(field)))}</td></tr>'
+                       for field, label_text in CENSUS_SAMPLE_DETAILS if p.get(field) is not None)
+        folium.Marker([p["lat"], p["lon"]], icon=DivIcon(html=label),
+                      popup=folium.Popup(f'<table style="font-size: 12px;">{rows}</table>', max_width=320)).add_to(fmap)
 
 
 def get_haversine_dist(p1, p2):

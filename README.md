@@ -193,7 +193,7 @@ In app submitting is not available, you must use another app to do so.
 
 <img src="images/FAA_viewer.png" alt="" width="100%">
 
-* **Show Sampled Block Groups**: Outlines the Census block groups picked for the research sample, saved from the [Census Sampling](#census-sampling) app, in magenta. Each is labelled with its fly order and GEOID; hover over one for its city, cluster and street miles.
+* **Show Sampled Block Groups**: Outlines the Census block groups picked for the research sample, saved from the [Census Sampling](#census-sampling) app, in magenta. Each is labelled with its fly order and GEOID; click a label for its city, cluster, street miles and airspace. The outlines don't react to the mouse, so you can draw flight areas inside them as usual.
 * **Jump to Block Group**: Moves the Creator map to one of the sampled block groups, so you can plan its flights.
 
 ##### Main Page Features
