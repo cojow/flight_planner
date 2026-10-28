@@ -193,6 +193,9 @@ In app submitting is not available, you must use another app to do so.
 
 <img src="images/FAA_viewer.png" alt="" width="100%">
 
+* **Show Sampled Block Groups**: Outlines the Census block groups picked for the research sample, saved from the [Census Sampling](#census-sampling) app, in magenta. Each is labelled with its fly order and GEOID; hover over one for its city, cluster and street miles.
+* **Jump to Block Group**: Moves the Creator map to one of the sampled block groups, so you can plan its flights.
+
 ##### Main Page Features
 * **Save Destination**: Located above the map. Use the drop down box to choose an existing mission or the default root "missions/" directory. You can create a new folder by pressing the "+" button, or browse to a custom folder location with the file icon. 
 * **Jump to Address/Latlong**: Located at the bottom of the map. Allows you to center the screen on a specific address or latitude and longitude instead of scrolling to it on the map. 
@@ -346,6 +349,8 @@ Each **run** has a name and keeps everything in `data/census/runs/<name>/`. Ever
 4. **Sample**: block groups per cluster, the random seed, the airspace rules, the street buffer and the trip start point. Block groups mostly under FAA airspace with a ceiling below the 200 ft high flight can't be picked. Saves the picks in flying order, every street to fly (as a table and GeoJSON for QGIS), and maps.
 
 If you change a setting, the steps that depend on it are marked out of date and must be run again, so outputs made with different settings never mix.
+
+**Using a sample in the flight planner.** Under step 4, give the sample a name and press *Save sample*. It is saved as `census_samples/<name>.geojson`, and the planner's Creator, Editor and Viewer tabs can then show it with *Show Sampled Block Groups*. That folder is tracked by git, so a committed sample reaches everyone planning flights.
 
 **Weights.** Each pick has a weight: how many block groups it stands for. By default (`eligible`) a pick stands for the block groups in its cluster that could have been picked. Block groups under restricted airspace had no chance of being drawn, so the estimates describe the flyable part of the cities, not all of them. `legacy` counts the whole cluster, as `sampling_draft/` did.
 

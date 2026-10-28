@@ -20,7 +20,7 @@ import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent / "py"))
-from census import acs, config as cfg, steps, streets  # noqa: E402
+from census import acs, config as cfg, export, steps, streets  # noqa: E402
 
 st.set_page_config(page_title="Census sampling", layout="wide")
 
@@ -281,6 +281,29 @@ def tab_sample(folder, config):
         start_lat=float(start_lat), start_lon=float(start_lon))}
     save_and_run(folder, "sample", changes)
     show_outputs(folder, "sample")
+    save_for_planner(folder)
+
+
+def save_for_planner(folder):
+    """Name the sample and save its block groups where the flight planner (app.py) can show them."""
+    if steps.status(folder)["sample"] != "current":
+        return
+    st.divider()
+    st.markdown("**Save for the flight planner**")
+    st.caption(f"Saves the picked block groups as census_samples/<name>.geojson. In the flight planner, "
+               "tick *Show Sampled Block Groups* and pick this name to see them on the map.")
+    key = folder.name
+    name = st.text_input("Sample name (letters, digits, - and _)", value=folder.name, key=f"{key}:sample_name")
+    exists = name in export.list_samples()
+    overwrite = st.checkbox(f"Replace the saved sample {name!r}", key=f"{key}:overwrite") if exists else False
+    if st.button("Save sample", key=f"{key}:save_sample", disabled=exists and not overwrite):
+        try:
+            path = export.export_sample(folder, name, overwrite=overwrite)
+            st.success(f"Saved {path.relative_to(cfg.REPO_ROOT)}")
+        except (cfg.ConfigError, steps.StepError) as e:
+            st.error(str(e))
+    if export.list_samples():
+        st.caption("Saved samples: " + ", ".join(export.list_samples()))
 
 
 # --------------------------------------------------------------------------

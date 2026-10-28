@@ -1543,6 +1543,79 @@ def fetch_uasfm_data(center_lat, center_lon, radius_deg=0.05):
     except Exception:
         return None
 
+# Block groups picked by the Census Sampling app (census_app.py), saved there
+# under a name as census_samples/<name>.geojson: one feature per block group,
+# with its GEOID, city, cluster, fly order and street miles.
+CENSUS_SAMPLES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "census_samples")
+CENSUS_SAMPLE_COLOR = "#ff3df5"     # magenta: clear of the FAA layer's red/green and the satellite imagery
+
+
+def list_census_samples():
+    try:
+        return sorted(f[:-len(".geojson")] for f in os.listdir(CENSUS_SAMPLES_DIR) if f.endswith(".geojson"))
+    except FileNotFoundError:
+        return []
+
+
+@st.cache_data(show_spinner=False)
+def _read_census_sample(path, mtime):
+    # mtime is only part of the cache key, so re-saving a sample under the same name shows the new one.
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_census_sample(name):
+    path = os.path.join(CENSUS_SAMPLES_DIR, f"{name}.geojson")
+    try:
+        return _read_census_sample(path, os.path.getmtime(path))
+    except (OSError, ValueError):
+        return None
+
+
+def census_sample_controls(prefix):
+    """
+    Sidebar controls for showing a saved census sample on the map. Returns
+    (sample name, sample GeoJSON) when one is shown, else (None, None).
+    """
+    samples = list_census_samples()
+    show = st.checkbox("Show Sampled Block Groups", value=False, key=f"{prefix}_census_toggle",
+                       help=param_help("Show Sampled Block Groups"), disabled=not samples)
+    if not samples:
+        st.caption("No saved samples yet. Save one from the Census Sampling app (census_app.py).")
+    if not show:
+        return None, None
+    name = st.selectbox("Sample", samples, key=f"{prefix}_census_sample")
+    sample = load_census_sample(name)
+    if sample is None:
+        st.error(f"Couldn't read census_samples/{name}.geojson.")
+        return None, None
+    info = sample.get("sample", {})
+    if info:
+        st.caption(f"{', '.join(info.get('cities', []))}: {len(sample.get('features', []))} block groups, "
+                   f"k = {info.get('k')}, {info.get('per_cluster')} per cluster (saved {info.get('saved')}).")
+    return name, sample
+
+
+def add_census_sample_layer(fmap, sample):
+    """The sample's block groups as outlined areas, each labelled with its fly order and GEOID."""
+    folium.GeoJson(
+        sample, name="Sampled Block Groups",
+        style_function=lambda x: {'color': CENSUS_SAMPLE_COLOR, 'weight': 3,
+                                  'fillColor': CENSUS_SAMPLE_COLOR, 'fillOpacity': 0.08},
+        tooltip=folium.GeoJsonTooltip(
+            fields=['geoid', 'fly_order', 'city', 'cluster', 'street_miles', 'airspace', 'census_name'],
+            aliases=['GEOID:', 'Fly order:', 'City:', 'Cluster:', 'Street miles:', 'Airspace:', 'Census name:'])
+    ).add_to(fmap)
+    for feature in sample.get("features", []):
+        p = feature["properties"]
+        if p.get("lat") is None or p.get("lon") is None:
+            continue
+        label = (f'<div style="font-size: 12px; font-weight: bold; color: white; white-space: nowrap; '
+                 f'text-shadow: 0 0 3px black, 0 0 3px black; transform: translate(-50%, -50%);">'
+                 f'#{p.get("fly_order")} &middot; {p.get("geoid")}</div>')
+        folium.Marker([p["lat"], p["lon"]], icon=DivIcon(html=label), tooltip=f'GEOID {p.get("geoid")}').add_to(fmap)
+
+
 def get_haversine_dist(p1, p2):
     R = 6371000
     lat1, lon1, lat2, lon2 = map(math.radians, [p1[0], p1[1], p2[0], p2[1]])
@@ -5002,6 +5075,24 @@ if page == 'Creator':
             if st.button("Update Map Center", key="btn_update_creator"):
                 st.session_state.locked_creator_center = st.session_state.creator_center
                 st.rerun()
+        census_name, census_sample = census_sample_controls("creator")
+        if census_sample:
+            picks = {f'#{f["properties"].get("fly_order")}  {f["properties"].get("geoid")}': f["properties"]
+                     for f in census_sample.get("features", []) if f["properties"].get("lat") is not None}
+
+            def jump_to_block_group():
+                p = picks.get(st.session_state.get("creator_census_jump"))
+                if p:
+                    # Same moves as "Jump to Address": the retained view has to change
+                    # directly, or the map keeps its old view.
+                    new_coords = [p["lat"], p["lon"]]
+                    st.session_state.locked_creator_center = new_coords
+                    st.session_state.creator_center = new_coords
+                    st.session_state.creator_view = [new_coords, 16]
+
+            st.selectbox("Jump to Block Group", [""] + list(picks), key="creator_census_jump",
+                         format_func=lambda s: s or "Choose one...", on_change=jump_to_block_group,
+                         help=param_help("Jump to Block Group"))
 
     map_area = st.container(key="map_area")
     top_bar = map_area.container(key="top_bar")
@@ -5154,6 +5245,7 @@ if page == 'Creator':
             st.session_state.measure_mode,
             tuple(st.session_state.measure_points),
             tuple(tuple(p) for p in (st.session_state.corridor_line or ())),
+            (census_name, census_sample.get("sample", {}).get("saved")) if census_sample else None,
         )
         if map_sig != st.session_state.get("creator_map_sig"):
             st.session_state.creator_map_sig = map_sig
@@ -5183,8 +5275,11 @@ if page == 'Creator':
                     style_function=lambda x: {'fillColor': 'red' if x['properties'].get('CEILING', x['properties'].get('ceiling', -1)) == 0 else 'green', 'color': 'black', 'weight': 1, 'fillOpacity': 0.15},
                     tooltip=folium.GeoJsonTooltip(fields=['CEILING'], aliases=['Max LAANC Altitude (ft):'])
                 ).add_to(m)
-            elif uasfm_data: 
+            elif uasfm_data:
                 folium.Marker(st.session_state.locked_creator_center, icon=DivIcon(html='<div style="font-size: 12px; color: grey;">No FAA restrictions at this location</div>')).add_to(m)
+
+        if census_sample:
+            add_census_sample_layer(m, census_sample)
 
         if mapping_mode:
             # Area-drawing tools only; the flight line is computed, not drawn.
@@ -5846,6 +5941,7 @@ elif page == 'Editor':
                 if st.button("Update Map Center", key="btn_update_editor"):
                     st.session_state.locked_editor_center = st.session_state.editor_center
                     st.rerun()
+            _, editor_census_sample = census_sample_controls("editor")
 
         top_hud = hud_half.container()
         side_panel.write("### Fine-Tune Flight Path Coordinates")
@@ -5874,6 +5970,9 @@ elif page == 'Editor':
                     ).add_to(m_edit)
                 elif uasfm_data:
                     folium.Marker(st.session_state.locked_editor_center, icon=DivIcon(html='<div style="font-size: 10px; color: grey; width: 150px;">No FAA restrictions at this location</div>')).add_to(m_edit)
+
+            if editor_census_sample:
+                add_census_sample_layer(m_edit, editor_census_sample)
 
             Draw(export=False, draw_options={
                 'polyline': {'shapeOptions': {'color': '#00ffff', 'weight': 5}},
@@ -6126,6 +6225,7 @@ elif page == 'Viewer  |':
                 if st.button("Update Map Center", key="btn_update_viewer"):
                     st.session_state.locked_viewer_center = st.session_state.viewer_center
                     st.rerun()
+            _, viewer_census_sample = census_sample_controls("viewer")
 
         with map_layer:
             if selected_kmzs:
@@ -6257,6 +6357,9 @@ elif page == 'Viewer  |':
                                         ).add_to(m_view)
                                 elif uasfm_data:
                                     folium.Marker(st.session_state.locked_viewer_center, icon=DivIcon(html='<div style="font-size: 10px; color: grey; width: 150px;">No FAA restrictions at this location</div>')).add_to(m_view)
+
+                            if viewer_census_sample:
+                                add_census_sample_layer(m_view, viewer_census_sample)
                     
                         line_coords = [[w['lat'], w['lon']] for w in wp_data]
                         line = folium.PolyLine(line_coords, color=line_color, weight=5).add_to(m_view)

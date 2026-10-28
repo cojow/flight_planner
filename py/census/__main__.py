@@ -8,6 +8,7 @@ The command line. Run from the py/ folder (or with py/ on PYTHONPATH):
     python -m census run provo_orem                      # every step, in order
     python -m census run provo_orem cluster sample       # just these steps
     python -m census compare provo_orem                  # optional: the cities vs the rest of the county
+    python -m census export provo_orem fall_2026         # save the picks for the flight planner (app.py)
 
 Runs live in data/census/runs/<name>/; config.json there holds every setting
 and can also be edited by hand.
@@ -54,6 +55,10 @@ def main(argv=None):
     p.add_argument("steps", nargs="*", help=f"any of {', '.join(steps.ORDER)}")
     p = sub.add_parser("compare", help="optional report: the cities against the rest of the county")
     p.add_argument("name")
+    p = sub.add_parser("export", help="save the picks as census_samples/<sample>.geojson for app.py")
+    p.add_argument("name")
+    p.add_argument("sample")
+    p.add_argument("--overwrite", action="store_true")
     args = ap.parse_args(argv)
 
     try:
@@ -79,6 +84,9 @@ def main(argv=None):
             cfg.save(folder, config)
         elif args.command == "show":
             print(json.dumps(cfg.load(folder), indent=2))
+        elif args.command == "export":
+            from . import export
+            print(f"Saved {export.export_sample(folder, args.sample, args.overwrite)}")
         elif args.command == "compare":
             if steps.status(folder)["areas"] != "current":
                 raise steps.StepError("Run 'areas' first.")
