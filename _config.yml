@@ -1,0 +1,7 @@
+# GitHub Pages builds this repository with Jekyll. The research pages are
+# rendered ahead of time by Quarto (the .html and .pdf files), so Jekyll only
+# needs to copy them. The Quarto sources are left out: Jekyll reads "{{" in
+# them as its own template code (drone_checkout.qmd has LaTeX like
+# "{{\dimexpr ...}}"), and one such file fails the whole site build.
+exclude:
+  - "*.qmd"
