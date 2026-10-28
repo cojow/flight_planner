@@ -195,6 +195,9 @@ In app submitting is not available, you must use another app to do so.
 
 * **Show Sampled Block Groups**: Outlines the Census block groups picked for the research sample, saved from the [Census Sampling](#census-sampling) app, in magenta. Each is labelled with its fly order and GEOID; click a label for its city, cluster, street miles and airspace. The outlines don't react to the mouse, so you can draw flight areas inside them as usual.
 * **Jump to Block Group**: Moves the Creator map to one of the sampled block groups, so you can plan its flights.
+* **Show Logged Flights**: Draws every flight in the shared flight-log folder (the same folder as the [Flight Log Tracker](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_tracker.html)), so you can see what has already been flown while planning. Click a line for its date, height, pitch, overlap and photo count. The folder, upload and flight list are under *Flight log folder, upload and list*; setting the folder here also sets it for the tracker. Not available on the hosted website, which can't see folders on your computer.
+* **Show Camera Direction Cones**: Adds small wedges along each logged flight showing which way the camera faced.
+* **Jump to Logged Flight**: Moves the Creator map to the start of a logged flight.
 
 ##### Main Page Features
 * **Save Destination**: Located above the map. Use the drop down box to choose an existing mission or the default root "missions/" directory. You can create a new folder by pressing the "+" button, or browse to a custom folder location with the file icon. 

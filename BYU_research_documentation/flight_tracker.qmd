@@ -19,6 +19,8 @@ format:
 
 A simple app separate from the main Flight Planner. It reads every `.kmz` flight file in a folder and plots them all on a single map. When connected to a shared folder (from Box, Google Drive, etc.), every user can see the combined history of flights that have been flown.
 
+The same flights can also be shown inside the Flight Planner while you plan: tick **Show Logged Flights** under Visuals in the Creator, Editor or Viewer tab. It reads the same folder, so setting the folder in either app sets it in both.
+
 
 ## Set up 
 

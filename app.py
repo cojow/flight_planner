@@ -2,6 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import os
+import sys
 import json
 import urllib.request
 import urllib.parse
@@ -1627,6 +1628,123 @@ def add_census_sample_layer(fmap, sample):
                        for field, label_text in CENSUS_SAMPLE_DETAILS if p.get(field) is not None)
         folium.Marker([p["lat"], p["lon"]], icon=DivIcon(html=label),
                       popup=folium.Popup(f'<table style="font-size: 12px;">{rows}</table>', max_width=320)).add_to(fmap)
+
+
+# Logged flights: every .kmz in the shared flight-log folder (e.g. the Box
+# "Flight Logs" folder), read and drawn by py/logged_flights.py - the same code as
+# the standalone Flight Log Tracker, which shares this folder setting
+# (.tracker_config.json). Hidden in MULTI_USER_MODE: a hosted server can't see
+# a folder on the user's own computer.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "py"))
+import logged_flights as flight_log  # noqa: E402  (not "flight_log": that is the flight_log/ spreadsheet folder)
+
+
+def _init_flight_log_settings():
+    if "flight_log_dir" not in st.session_state:
+        saved = flight_log.load_config()
+        st.session_state.flight_log_dir = saved.get("flights_dir", "")
+        st.session_state.flight_log_subdirs = bool(saved.get("include_subdirs", False))
+
+
+def _set_flight_log_dir(prefix, folder=None):
+    """Store a new flight-log folder (typed or browsed), for this session and the saved setting."""
+    folder = (folder if folder is not None else st.session_state.get(f"{prefix}_flight_log_dir", "")).strip()
+    st.session_state.flight_log_dir = folder
+    for p in ("creator", "editor", "viewer"):      # keep every tab's folder box in step
+        st.session_state[f"{p}_flight_log_dir"] = folder
+    flight_log.update_config(flights_dir=folder)
+
+
+def _browse_flight_log_dir(prefix):
+    picked = pick_folder_dialog("Select the shared flight-log folder")
+    if picked:
+        _set_flight_log_dir(prefix, picked)
+
+
+def _set_flight_log_subdirs(prefix):
+    st.session_state.flight_log_subdirs = st.session_state[f"{prefix}_flight_log_subdirs"]
+    flight_log.update_config(include_subdirs=st.session_state.flight_log_subdirs)
+
+
+def logged_flights_controls(prefix):
+    """
+    Sidebar controls for showing logged flights on the map. Returns
+    (signature, flights, cone count): the signature changes whenever what
+    would be drawn changes, and is None when the layer is off.
+    """
+    if MULTI_USER_MODE:
+        return None, [], 0
+    _init_flight_log_settings()
+    show = st.checkbox("Show Logged Flights", value=False, key=f"{prefix}_flights_toggle",
+                       help=param_help("Show Logged Flights"))
+    if not show:
+        return None, [], 0
+
+    folder = st.session_state.flight_log_dir
+    flights, unreadable = flight_log.load_flights(folder, st.session_state.flight_log_subdirs)
+    if not folder:
+        st.caption("Set the shared flight-log folder below to see logged flights.")
+    elif not os.path.isdir(folder):
+        st.warning("The flight-log folder can't be found. Check the path below (is Box Drive running?).")
+    else:
+        st.caption(f"{len(flights)} logged flight{'s' if len(flights) != 1 else ''}. Click a line for its details.")
+    cones = st.checkbox("Show Camera Direction Cones", value=False, key=f"{prefix}_flight_log_cones",
+                        help=param_help("Show Camera Direction Cones"))
+
+    with st.expander("Flight log folder, upload and list"):
+        st.session_state.setdefault(f"{prefix}_flight_log_dir", folder)
+        st.text_input("Flight log folder", key=f"{prefix}_flight_log_dir",
+                      on_change=_set_flight_log_dir, args=(prefix,),
+                      help="Shared with the standalone Flight Log Tracker; setting it here sets it there too.")
+        st.button("📂 Browse", key=f"{prefix}_flight_log_browse", on_click=_browse_flight_log_dir, args=(prefix,))
+        st.session_state.setdefault(f"{prefix}_flight_log_subdirs", st.session_state.flight_log_subdirs)
+        st.checkbox("Include subfolders", key=f"{prefix}_flight_log_subdirs",
+                    on_change=_set_flight_log_subdirs, args=(prefix,))
+
+        if folder and os.path.isdir(folder):
+            st.divider()
+            # The uploader gets a new key after each save, which empties it;
+            # otherwise every rerun would save the same files again.
+            upload_key = f"{prefix}_flight_log_upload_{st.session_state.get('flight_log_upload_count', 0)}"
+            uploaded = st.file_uploader("Upload completed flight(s) (.kmz)", type=["kmz"],
+                                        accept_multiple_files=True, key=upload_key)
+            if uploaded and st.button("Save to the flight log", key=f"{prefix}_flight_log_save"):
+                saved = []
+                for uf in uploaded:
+                    dest = os.path.join(folder, uf.name)
+                    if os.path.exists(dest):
+                        base, ext = os.path.splitext(uf.name)
+                        dest = os.path.join(folder, f"{base}_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}")
+                    with open(dest, "wb") as out:
+                        out.write(uf.getbuffer())
+                    saved.append(os.path.basename(dest))
+                st.session_state.flight_log_upload_count = st.session_state.get("flight_log_upload_count", 0) + 1
+                st.toast(f"Saved to the flight log: {', '.join(saved)}")
+                st.rerun()
+
+        if unreadable:
+            st.caption(f"⚠️ {len(unreadable)} file(s) couldn't be read: " + "; ".join(
+                f"{f['file']} ({f.get('error') or 'no coordinates'})" for f in unreadable))
+
+        if flights:
+            query = st.text_input("Search the list by name or date", key=f"{prefix}_flight_log_query",
+                                  placeholder="e.g. Testy or 2026-07").strip().lower()
+            rows = [{"Date": flight_log.flight_date(f).strftime("%Y-%m-%d"), "Name": f["name"],
+                     "Platform": f["platform"], "Height (ft)": f["alt_ft"], "Pitch (°)": f["pitch"],
+                     "Overlap (%)": f["overlap_pct"], "Photos": f["photo_count"]}
+                    for f in sorted(flights, key=flight_log.flight_date, reverse=True)]
+            if query:
+                rows = [r for r in rows if query in r["Name"].lower() or query in r["Date"]]
+            st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch')
+
+    signature = (folder, st.session_state.flight_log_subdirs, cones,
+                 tuple((f["file"], f["mtime"]) for f in flights))
+    return signature, flights, (8 if cones else 0)
+
+
+def add_logged_flights_layer(fmap, flights, cone_count):
+    """Logged flights as coloured lines; clicking one shows its date, height, pitch, overlap and photos."""
+    flight_log.add_flights_layer(fmap, flights, cone_count=cone_count, details="click")
 
 
 def get_haversine_dist(p1, p2):
@@ -5106,6 +5224,27 @@ if page == 'Creator':
             st.selectbox("Jump to Block Group", [""] + list(picks), key="creator_census_jump",
                          format_func=lambda s: s or "Choose one...", on_change=jump_to_block_group,
                          help=param_help("Jump to Block Group"))
+        flights_sig, logged_flights, flight_cones = logged_flights_controls("creator")
+        if logged_flights:
+            # A street's high and low flights share a name and date, so the
+            # label carries the height, and the file name if that still clashes.
+            by_label = {}
+            for f in sorted(logged_flights, key=flight_log.flight_date, reverse=True):
+                height = f" ({f['alt_ft']:.0f} ft)" if f.get("alt_ft") is not None else ""
+                label = f"{flight_log.flight_date(f):%Y-%m-%d}  {f['name']}{height}"
+                by_label[label if label not in by_label else f"{label}  [{f['file']}]"] = f
+
+            def jump_to_flight():
+                f = by_label.get(st.session_state.get("creator_flight_jump"))
+                if f:
+                    new_coords = list(f["coords"][0])
+                    st.session_state.locked_creator_center = new_coords
+                    st.session_state.creator_center = new_coords
+                    st.session_state.creator_view = [new_coords, 17]
+
+            st.selectbox("Jump to Logged Flight", [""] + list(by_label), key="creator_flight_jump",
+                         format_func=lambda s: s or "Choose one...", on_change=jump_to_flight,
+                         help=param_help("Jump to Logged Flight"))
 
     map_area = st.container(key="map_area")
     top_bar = map_area.container(key="top_bar")
@@ -5259,6 +5398,7 @@ if page == 'Creator':
             tuple(st.session_state.measure_points),
             tuple(tuple(p) for p in (st.session_state.corridor_line or ())),
             (census_name, census_sample.get("sample", {}).get("saved")) if census_sample else None,
+            flights_sig,
         )
         if map_sig != st.session_state.get("creator_map_sig"):
             st.session_state.creator_map_sig = map_sig
@@ -5291,6 +5431,8 @@ if page == 'Creator':
             elif uasfm_data:
                 folium.Marker(st.session_state.locked_creator_center, icon=DivIcon(html='<div style="font-size: 12px; color: grey;">No FAA restrictions at this location</div>')).add_to(m)
 
+        if logged_flights:
+            add_logged_flights_layer(m, logged_flights, flight_cones)
         if census_sample:
             add_census_sample_layer(m, census_sample)
 
@@ -5955,6 +6097,7 @@ elif page == 'Editor':
                     st.session_state.locked_editor_center = st.session_state.editor_center
                     st.rerun()
             _, editor_census_sample = census_sample_controls("editor")
+            _, editor_logged_flights, editor_flight_cones = logged_flights_controls("editor")
 
         top_hud = hud_half.container()
         side_panel.write("### Fine-Tune Flight Path Coordinates")
@@ -5984,6 +6127,8 @@ elif page == 'Editor':
                 elif uasfm_data:
                     folium.Marker(st.session_state.locked_editor_center, icon=DivIcon(html='<div style="font-size: 10px; color: grey; width: 150px;">No FAA restrictions at this location</div>')).add_to(m_edit)
 
+            if editor_logged_flights:
+                add_logged_flights_layer(m_edit, editor_logged_flights, editor_flight_cones)
             if editor_census_sample:
                 add_census_sample_layer(m_edit, editor_census_sample)
 
@@ -6239,6 +6384,7 @@ elif page == 'Viewer  |':
                     st.session_state.locked_viewer_center = st.session_state.viewer_center
                     st.rerun()
             _, viewer_census_sample = census_sample_controls("viewer")
+            _, viewer_logged_flights, viewer_flight_cones = logged_flights_controls("viewer")
 
         with map_layer:
             if selected_kmzs:
@@ -6371,6 +6517,8 @@ elif page == 'Viewer  |':
                                 elif uasfm_data:
                                     folium.Marker(st.session_state.locked_viewer_center, icon=DivIcon(html='<div style="font-size: 10px; color: grey; width: 150px;">No FAA restrictions at this location</div>')).add_to(m_view)
 
+                            if viewer_logged_flights:
+                                add_logged_flights_layer(m_view, viewer_logged_flights, viewer_flight_cones)
                             if viewer_census_sample:
                                 add_census_sample_layer(m_view, viewer_census_sample)
                     
