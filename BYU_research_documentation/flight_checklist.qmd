@@ -23,13 +23,15 @@ format:
       - \RedeclareSectionCommand[beforeskip=.4\baselineskip, afterskip=.1\baselineskip]{subsubsection}
 ---
 
-For DJI Mini series drones (DJI Fly). Excerpted from the full [Flight Standards](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_standards.html) document — see that page for the reasoning behind each item, naming conventions, and flight-planning guidance.
+For DJI Mini series drones (DJI Fly). Excerpted from the full [Flight Standards](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_standards.html) document. 
+See that page for the reasoning behind each item, naming conventions, and flight-planning guidance.
 
 ## Before Flights
 
 ### Gear
 
-- [ ] Drone and controller batteries charged, plus spares.
+- [ ] Drone and controller batteries charged, plus spares. 
+(3 total per drone).
 - [ ] SD card in the drone with free space, and the previous outing's photos already offloaded.
 - [ ] Propellers checked for chips or cracks.
 
@@ -37,7 +39,7 @@ For DJI Mini series drones (DJI Fly). Excerpted from the full [Flight Standards]
 
 - [ ] A full flight set exists for each road section. One at ~70 ft and one at ~200 ft. See [Flight Paths](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_standards.html#sec-flight-paths).
 - [ ] Gimbal pitch matches the height for that flight. See [Heights and Angles](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_standards.html#sec-heights-and-angles).
-- [ ] Every mission is **under 99 photos**.
+- [ ] Every mission is **under 90 photos**.
 - [ ] Paths run along the road shoulder, not over the traveled way or private property.
 - [ ] Missions are named according to the [mission naming convention](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_standards.html#sec-naming-missions).
 - [ ] Airspace checked with **Show FAA Airspace Restrictions** in the Creator, and LAANC filed if the ceiling requires it.

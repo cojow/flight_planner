@@ -193,16 +193,18 @@ In app submitting is not available, you must use another app to do so.
 
 <img src="images/FAA_viewer.png" alt="" width="100%">
 
-* **Show Sampled Block Groups**: Outlines the Census block groups picked for the research sample, saved from the [Census Sampling](#census-sampling) app, in magenta. Each is labelled with its fly order and GEOID; click a label for its city, cluster, street miles and airspace. The outlines don't react to the mouse, so you can draw flight areas inside them as usual.
+* **Show Sampled Block Groups**: Outlines the Census block groups picked for the research sample, saved from the [Census Sampling](#census-sampling) app.
+Each is labelled with its GEOID; click a label for its city, cluster, street miles and airspace.
 * **Jump to Block Group**: Moves the Creator map to one of the sampled block groups, so you can plan its flights.
-* **Show Logged Flights**: Draws every flight in the shared flight-log folder (the same folder as the [Flight Log Tracker](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_tracker.html)), so you can see what has already been flown while planning. Click a line for its date, height, pitch, overlap and photo count. The folder, upload and flight list are under *Flight log folder, upload and list*; setting the folder here also sets it for the tracker. Not available on the hosted website, which can't see folders on your computer.
+* **Show Logged Flights**: Draws every flight in the shared flight-log folder (the same folder as the [Flight Log Tracker](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_tracker.html)), so you can see what has already been flown while planning.
+Click a line for its date, height, pitch, overlap, and photo count. 
+The folder, upload, and flight list are under *Flight log folder, upload and list*; setting the folder here also sets it for the tracker.
 * **Show Camera Direction Cones**: Adds small wedges along each logged flight showing which way the camera faced.
 * **Jump to Logged Flight**: Moves the Creator map to the start of a logged flight.
 
 ##### Main Page Features
 * **Save Destination**: Located above the map. Use the drop down box to choose an existing mission or the default root "missions/" directory. You can create a new folder by pressing the "+" button, or browse to a custom folder location with the file icon. 
 * **Jump to Address/Latlong**: Located at the bottom of the map. Allows you to center the screen on a specific address or latitude and longitude instead of scrolling to it on the map. 
-
 
 Once your parameters are set and the flight path is drawn, the total path distance and estimated number of photos to be taken will appear above the map.
 Save the flight plan by pressing the "save and generate KMZ" button, also found on this line. 
@@ -344,27 +346,33 @@ streamlit run census_app.py
 
 It needs a free [Census API key](https://api.census.gov/data/key_signup.html) pasted into `py/census_api_key.txt` (that file is never committed).
 
-Each **run** has a name and keeps everything in `data/census/runs/<name>/`. Every setting is saved in that folder's `config.json`, so a run can be checked, changed and repeated. The app goes through four steps, and each step shows its settings before you run it:
+Each **run** has a name and keeps everything in `data/census/runs/<name>/`.
+Every setting is saved in that folder's `config.json`, so a run can be checked, changed and repeated. 
+The app goes through four steps, and each step shows its settings before you run it:
 
-1. **Areas**: the cities, the ACS year, and how much of a block group must be inside a city for it to count (`min_overlap`, default half). After it runs you can untick block groups to leave them out by hand. Block groups with no housing or no Census estimate are left out and listed with the reason.
-2. **Choose k**: which columns to cluster on and the range of k to try. Shows the elbow (inertia) and silhouette charts and the clusters for a few k side by side. Nothing is decided here; you pick k.
-3. **Cluster**: k-means with your k. Saves each block group's cluster, the cluster averages, a chart and a map.
-4. **Sample**: block groups per cluster, the random seed, the airspace rules, the street buffer and the trip start point. Block groups mostly under FAA airspace with a ceiling below the 200 ft high flight can't be picked. Saves the picks in flying order, every street to fly (as a table and GeoJSON for QGIS), and maps.
+1. **Areas**: the cities, the ACS year, and how much of a block group must be inside a city for it to count (`min_overlap`, default half). 
+After it runs, you can untick block groups to leave them out by hand. 
+Block groups with no housing or no Census estimate are left out and listed with the reason.
+2. **Choose k**: which columns to cluster on and the range of k to try.
+Shows the elbow (inertia) and silhouette charts and the clusters for a few k side by side.
+This is designed to help you choose a k value. 
+3. **Cluster**: k-means with your k. 
+Saves each block group's cluster, the cluster averages, a chart and a map.
+4. **Sample**: block groups per cluster, the random seed, the airspace rules, the street buffer and the trip start point. 
+Block groups mostly under FAA airspace with a ceiling below 200 ft high flight can't be picked. 
+Saves the picks in flying order, every street to fly (as a table and GeoJSON for QGIS), and maps.
 
 If you change a setting, the steps that depend on it are marked out of date and must be run again, so outputs made with different settings never mix.
 
-**Using a sample in the flight planner.** Under step 4, give the sample a name and press *Save sample*. It is saved as `census_samples/<name>.geojson`, and the planner's Creator, Editor and Viewer tabs can then show it with *Show Sampled Block Groups*. That folder is tracked by git, so a committed sample reaches everyone planning flights.
+**Using a sample in the flight planner.** 
+Under step 4, give the sample a name and press *Save sample*. 
+It is saved as `census_samples/<name>.geojson`, and the planner's Creator, Editor and Viewer tabs can then show it with *Show Sampled Block Groups*.
+That folder is tracked by git, so a committed sample reaches everyone planning flights.
 
-**Weights.** Each pick has a weight: how many block groups it stands for. By default (`eligible`) a pick stands for the block groups in its cluster that could have been picked. Block groups under restricted airspace had no chance of being drawn, so the estimates describe the flyable part of the cities, not all of them. `legacy` counts the whole cluster, as `sampling_draft/` did.
-
-The same steps run from the command line, from the `py` folder:
-```
-python -m census places                              # cities in Utah County
-python -m census new provo_orem --cities Provo Orem  # a run with default settings
-python -m census set provo_orem cluster.k=4 sample.per_cluster=1
-python -m census run provo_orem                      # all four steps
-python -m census compare provo_orem                  # optional: the cities vs the rest of the county
-```
+**Weights.** Each pick has a weight: how many block groups it stands for. 
+By default (`eligible`) a pick stands for the block groups in its cluster that could have been picked. 
+Block groups under restricted airspace had no chance of being drawn, so the estimates describe the flyable part of the cities, not all of them. 
+`legacy` counts the whole cluster, as `sampling_draft/` did.
 
 Boundaries and roads come from the Census TIGER/Line files of the ACS year, downloaded once into `data/census/tiger/`. The FAA airspace map is read live at the sample step, and the answer used is saved with the run.
 

@@ -8,7 +8,7 @@ language:
 format:
   html:   
     toc: true
-    toc-depth: 4
+    toc-depth: 5
     number-sections: true
     theme: cosmo
     embed-resources: true
@@ -18,6 +18,38 @@ format:
 ---
 
 [To research pages](https://cojow.github.io/flight_planner/BYU_research_documentation/)
+
+## Quick Reference
+Here is a quick reference of everything explained below:
+
+**Naming**
+
+- Mission Area folders: Block Group GEOID + notable feature in block group (Park, school, etc)
+- Missions: Street1_Street2
+- Photo Area folders: Photo_GEOID_notablefeature
+- Photo Folders: Photo_Street1_Street2
+
+**Flights**
+
+| Height (ft) |Angle (°) in Drone | Overlap | Note |
+|---|---|---|---|
+| 70 | -45 | >75 | Opposite side of the street |
+| 200 | -70 | >75 | Opposite side of the street |
+
+Flights are flown across the street along the area between the traveled way and the parking strip. 
+See @sec-flight-paths for details.
+
+**Submit a LAANC If you need to.**
+See @sec-laanc.
+
+**Review the checklist before you leave to fly, and before you fly.**
+It can be found in each drone case, and in @sec-checklist.
+
+**Uploading.**
+Make sure to upload the following to Box:
+
+- Flight Missions
+- Flight Photos
 
 ## Licensure/Certificate {#sec-licensure}
 
@@ -52,7 +84,7 @@ Ignore the `MRK` file unless you know for a fact that you're using an RTK setup 
 By default missions are saved in the root folder `missions` in the same folder as `app.py`. 
 To keep it organized, we want to create a new folder in the missions folder for each flight area.
 
-Mission areas will cover one census block group area. They will be named after the name given to each block group, and/or a descriptive feature in the area (e.g. Tree streets for the block groups covering that part of Provo).
+Mission areas will cover one census block group area. They will be named after the GEOID (e.g., 490490021013) given to each block group, and a descriptive feature in the area (e.g., Tree streets for the block groups covering that part of Provo).
 
 All missions should be uploaded to the Box folder when they are flown so that we can keep track of them with the flight tracker. See @sec-flight-tracker.
 
@@ -102,7 +134,7 @@ This will be done when dividing the flown missions into separate folders (see th
 
 Naming the missions is best done in the photo sorter if you know the sequence you did the flights in (ideal), or manually afterwards, sorting for each folder. 
 
-### Photo Area Folders {#sec-naming-photo-folders}
+### Photo Area Folders {#sec-naming-photo-area-folders}
 
 Once all the photos are sorted and the folder named, place them into the photo area folder.
 These photo area folders will have the same name as the area mission folders, but with the prefix "**photo**".
@@ -241,13 +273,13 @@ These numbers appear to accomplish what we want, but we may adjust them as we fl
 **70 ft flights**
 
 | Height (ft) | Angle (°) | Angle (°) in Drone | Overlap | Note |
-|---|---|---|
+|---|---|---|---|
 | 70 | 45 | -45 | >75 | Opposite side of the street |
 
 **200 ft flights**
 
 | Height (ft) | Angle (°) | Angle (°) in Drone | Overlap | Note |
-|---|---|---|
+|---|---|---|---|
 | 200 | 70 | -70 | >75 | Opposite side of the street. 65 degrees may be better. |
 
 > **NOTE**: We still need to verify which overlap will work for what we need. 
@@ -257,12 +289,38 @@ These tables may be added to if we find that wider streets present a problem.
 
 Keep photo counts low so processing stays fast; overlap, not photo count, is what decides whether the houses are covered. On DJI Fly, each photo is a waypoint. Controllers start having trouble above 80 waypoints and slow down badly past 99, so split any mission over 80 into two.
 
+### Restricted Airspace and LAANC
+
+The FAA restricts airspace around places such as airports in order to protect aircraft in those areas. When flying near an airport (within several miles), there are typically restrictions on how high you can fly. The ceiling is usually 400 feet, so we are not impacted by the height restriction, but when our flights fall within the restricted airspace we still need to submit a LAANC.
+
+A LAANC (Low Altitude Authorization and Notification Capability) is a automatic approval service that allows drone pilots to fly in restricted airspace (as long as they follow the rules of Part 107). If we fly in Provo (and some parts of Orem), we will need to submit these forms. We could probably get away without doing it, but it's better to be safe then sorry. 
+
+#### How to submit a LAANC {#sec-laanc}
+You can submit this either right before you fly, or a couple days in advance (like when you create your missions).
+
+1. Download an FAA-approved UAS Service Supplier. 
+I use [Aloft](https://www.aloft.ai/feature/laanc/), so this walk though will assume you are using that.
+Create an account and sign in. 
+
+2. On the map screen, on the bottom of the screen press LAANC.
+Select Commercial (Part 107).
+
+3. On the top half of the screen, move the area box around until it covers the area that you are going to fly. 
+Select the height you are flying at (You'll need to submit two LAANC's, one for 200 feet and another for 70 feet).
+
+4. Chose the date, time, and durration of your flight. 
+(Total time you plan to be out flying that day)
+
+5. It will then (99% of the time) tell you that you are eligible for auto approval, and have you agree and submit your request. 
+You are then ready to fly!
+
+
 ### Uploading {#sec-uploading}
 
 See the [DJI Fly Transfer](https://cojow.github.io/flight_planner/#dji-fly-transfer) section in the README for how to upload missions to the drone.
 
 
-## Pre Flight Checklist
+## Pre Flight Checklist {#sec-checklist}
 
 For DJI Mini series drones (DJI Fly).
 Download the printable checklist as a PDF [here](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_checklist.pdf).
@@ -380,7 +438,7 @@ The folders will retain the same name as the photo folder with the prefix "**pho
 
 ## Methods and Questions {#stats}
 
-### Relevent Questions
+### Relevant Questions
 
 - Research Questions
   - How are they used in collecting socioeconomic/land use data? 
@@ -396,74 +454,7 @@ The folders will retain the same name as the photo folder with the prefix "**pho
 
 - Other questions that we need to answer
   - What American Census variables can we collect using a Drone? 
-  Are there variables that we can't direclty get, then to find correlations? 
-
-
-### Possible Methodology 
-
-#### Step 1: Data Collection
-
-
-
-Methodology fr fr
-Step 1. data collection process; we need to collect both nadir and oblique images of the buildings  develop our flight standards, having fixed flight heights
-  angles gimbal pitches, as well as flight paths so that every flight is the same, and the data can be compared to each other. We need to devide the city into small areas,
-  and then sample a few of these areas to fly the drone over. We need to make sure that we have a good representation of the city, so we need to stratify the areas based on their characteristics.
-  we will randomly select a random sample from these samples and then fly every street in the areas. we will use the us census blocks as our area blocks - if we want to compare to the census data
-  We will collect both nadir and oblique images of the buildings.
-
-  **data alysis**
-  nadir at 200 ft oblique at 70 ft. we will run them through connors software to make a point cloud of each individual house. from this point cloud we can obtain the houses volume, footpring, and location.
-  oblique images will be used to run object detection on the houses. object detection modal - yolo - we will annotate the oblique images manually (samantha the peasant )
-  to label /detect cars, garage doors to estimate vehicles. so that we can train th model to be able to recognize these objects in the images.
-  what are we gonna train our model on. do flights in provo to get images to train our model on. after we trained the model we can feed in imagery from cencus. we want tomake sure there istn any overlap.
- We are gonna hold 20% of the images for testing and validation. We might sample different locations around utah.
-
-
-  to guess income:, RVs and boats, solar panels, window AC units, roof material, yard size, ground and vegetation condition, pools, solar panels, vehicles in driveways.
-  population: house volume, footprint, and location will be used to estimate the number of dwellings in each house. Number of doors,
-  transportation model: number of cars.
-  ecuador: use nadir images to get land ownership
-
-  make assumptions and find papers that back them up. How can we get our data/variables into a form that we can put into population sim? Look into those papers more to get a better idea.
-
-  We are going to create an iterative proportional fitting model. We might use a random forest model. Eventually we want to put our data into population sim (IPF) to get a synthetic population.
-  We will use the data we collect to estimate the number of dwellings in each house, and then use that to estimate the population in each area. We will also use the data we collect to estimate the income of each area.
-  We are gonna run pop sim using the census data.We want to ba able to use our data in pop sim so that we can get a synthetic population. We could compare the different cities and how the model works in different locations,
-  if we keep the other variables as similar as possible. We will use the same methodology in ecuador to see if it works there as well.
-
-The equador census data is not very good, we want to show that the same methodology works there so that we know that it works.
-
-
-1. **Sampling frame.** 
-Sample areas and fly every street inside each sampled area. 
-We can either divide areas into grids, or use existing US census Blocks. Brewer (paper doing similar things) used census blocks, and it is related to ACS. However other places will lack these blocks. 
-
-2. **Stratify and sample**. 
-Stratified random sample of areas, using current imagery to define strata, plus a small stratum for areas that look undeveloped.
-
-3. **High and low flight over the streets**
-Build the point cloud from our High Nadir images. 
-From this we'll get volume, area footprint, and house location.
-Use Object detection on Low images. Potential items: cars (count. Maybe as the paper by Gebru talks about, type or age), garage doors, RVs and boats, solar panels, window AC units.
-We can also look into extracting other features (stated by Engstrom and Watmough): roof material, yard size, ground and vegetation condition, pools, solar panels, vehicles in driveways. 
-Other factors could be exterior materials, maintenance level (the Milà finding), landscaping and lawn condition, fences.
-We can also find a way to count dwellings (not just buildings) to get our population estimates.
-Indicators could include: number of front doors, mailboxes and electric meters. 
-We want to separate duplexes, multifamily buildings, and basement apartments from single-family homes.
-
-
-4. **Calibration.**
-We need to link our data to existing data to see how it compares. 
-Using ACS and popsim? 
-Maybe the Utah County Tax Parcel data set?
-Brewer has a NAIP-only approach, which we could use as a baseline to show what the drone adds.
-
-
-6. **Scale up** 
-Estimate per stratum we defined and expand by the number of areas in each stratum.
-Then we compare citywide results against census figures?
-Or something else.
+  Are there variables that we can't directly get, then to find correlations? 
 
 
 ## TODO {#sec-todo}
@@ -480,4 +471,4 @@ Or something else.
 
 **Heights and Angles**
 
-- All height/angle/overlap values in the table need field verification. Currently they are based off triangle relationships. See @sec-heights-and-angles.
+- All height/angle/overlap values in the table need field verification. See @sec-heights-and-angles.
