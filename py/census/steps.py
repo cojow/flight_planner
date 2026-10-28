@@ -185,9 +185,10 @@ def run_sample(folder):
     4. Sample. Airspace check, the draw from each cluster, fly order and the
     streets to fly. Reads the clusters saved by step 3.
 
-    Files: sample_block_groups.csv, sample_streets.csv, sample_streets.geojson,
-    sample_block_groups.png, sample_map.png, sample_streets_map.png, and
-    faa_facility_map.geojson (the airspace the draw used).
+    Files, each named with the draw's seed (e.g. sample_block_groups_seed2026.csv):
+    sample_block_groups, sample_streets (.csv and .geojson), sample_block_groups.png,
+    sample_map.png, sample_streets_map.png. Also faa_facility_map.geojson (the
+    airspace the draw used) and sources.json.
     """
     from . import pipeline
     return _run(folder, "sample", lambda config, out: pipeline.sample(config, folder, out))

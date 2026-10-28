@@ -290,10 +290,13 @@ def save_for_planner(folder):
         return
     st.divider()
     st.markdown("**Save for the flight planner**")
-    st.caption(f"Saves the picked block groups as census_samples/<name>.geojson. In the flight planner, "
+    st.caption(f"Saves the picked block groups as census_samples/<name>.geojson; the suggested name includes the draw's "
+               "seed so it's clear which draw it is. In the flight planner, "
                "tick *Show Sampled Block Groups* and pick this name to see them on the map.")
     key = folder.name
-    name = st.text_input("Sample name (letters, digits, - and _)", value=folder.name, key=f"{key}:sample_name")
+    seed = cfg.load(folder)["sample"]["seed"]
+    name = st.text_input("Sample name (letters, digits, - and _)", value=f"{folder.name}_seed{seed}",
+                         key=f"{key}:sample_name:{seed}")
     exists = name in export.list_samples()
     overwrite = st.checkbox(f"Replace the saved sample {name!r}", key=f"{key}:overwrite") if exists else False
     if st.button("Save sample", key=f"{key}:save_sample", disabled=exists and not overwrite):

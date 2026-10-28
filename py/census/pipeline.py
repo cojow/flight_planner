@@ -222,12 +222,13 @@ def sample(config, folder, out):
     df = df.merge(picked[["geoid", "fly_order"]], on="geoid", how="left")
 
     files = {
-        "Picked block groups (table)": out / "sample_block_groups.csv",
-        "Streets (table)": out / "sample_streets.csv",
-        "Streets (GeoJSON)": out / "sample_streets.geojson",
-        "Picks chart": out / "sample_block_groups.png",
-        "Map": out / "sample_map.png",
-        "Street maps": out / "sample_streets_map.png",
+        # The draw's files carry its seed in their names, so a file shows which draw it is from.
+        "Picked block groups (table)": out / f"sample_block_groups_seed{s['seed']}.csv",
+        "Streets (table)": out / f"sample_streets_seed{s['seed']}.csv",
+        "Streets (GeoJSON)": out / f"sample_streets_seed{s['seed']}.geojson",
+        "Picks chart": out / f"sample_block_groups_seed{s['seed']}.png",
+        "Map": out / f"sample_map_seed{s['seed']}.png",
+        "Street maps": out / f"sample_streets_map_seed{s['seed']}.png",
         "FAA airspace used (GeoJSON)": out / "faa_facility_map.geojson",
         "Sources (JSON)": out / "sources.json",
     }

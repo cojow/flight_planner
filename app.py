@@ -1592,7 +1592,8 @@ def census_sample_controls(prefix):
     info = sample.get("sample", {})
     if info:
         st.caption(f"{', '.join(info.get('cities', []))}: {len(sample.get('features', []))} block groups, "
-                   f"k = {info.get('k')}, {info.get('per_cluster')} per cluster (saved {info.get('saved')}).")
+                   f"k = {info.get('k')}, {info.get('per_cluster')} per cluster, seed {info.get('seed')} "
+                   f"(saved {info.get('saved')}).")
     return name, sample
 
 

@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from . import config as cfg
+from . import steps
 
 DRAFT = cfg.REPO_ROOT / "sampling_draft"
 
@@ -50,7 +51,8 @@ def check(name):
     draft = _csv(DRAFT / "sample_block_groups.csv")
     # Street counts and miles changed on purpose with the street fixes; the rest should not.
     same_cols = [c for c in draft.columns if c not in ("streets", "street_miles")]
-    picks = _csv(run / "4_sample" / "sample_block_groups.csv")
+    files = steps.outputs(run, "sample")
+    picks = _csv(files["Picked block groups (table)"])
     results["picks, fly order and weights"] = _same(draft[same_cols], picks[same_cols])
     draft = pd.read_csv(DRAFT / "kmeans_cluster_summary.csv")
     preview = pd.read_csv(run / "2_choose_k" / "preview_summary.csv")
@@ -58,7 +60,7 @@ def check(name):
     for label, ok in results.items():
         print(f"  {'same' if ok else 'DIFFERENT':<9} {label}")
     old = _csv(DRAFT / "sample_streets.csv")
-    new = _csv(run / "4_sample" / "sample_streets.csv")
+    new = _csv(files["Streets (table)"])
     flyable = new[~new["restricted"]] if "restricted" in new else new
     print(f"  (streets: draft {old['miles'].sum():.2f} mi in {len(old)} rows; "
           f"this run {flyable['miles'].sum():.2f} flyable mi in {len(flyable)} rows)")

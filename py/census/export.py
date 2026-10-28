@@ -7,7 +7,7 @@ cluster, fly order and street miles. app.py lists that folder and draws the
 chosen sample on its maps. The folder is kept in git (unlike data/), so a
 committed sample reaches everyone who plans flights.
 
-    python -m census export provo_orem provo_orem_fall_2026
+    python -m census export provo_orem provo_orem_seed2026
 """
 import json
 import re
@@ -20,7 +20,7 @@ from . import steps
 
 SAMPLES_DIR = cfg.REPO_ROOT / "census_samples"
 
-# Columns of sample_block_groups.csv carried into each feature, in order.
+# Columns of the picked block groups table carried into each feature, in order.
 FIELDS = ["geoid", "fly_order", "pick", "city", "cluster", "airspace", "faa_ceiling_ft",
           "street_miles", "streets", "weight", "lat", "lon"]
 
@@ -48,8 +48,8 @@ def export_sample(folder, name, overwrite=False):
         raise steps.StepError("Run step 4 (sample) with the current settings first.")
     config = cfg.load(folder)
 
-    sample_dir = steps.step_dir(folder, "sample")
-    picked = pd.read_csv(sample_dir / "sample_block_groups.csv", dtype={"geoid": str}).sort_values("fly_order")
+    files = steps.outputs(folder, "sample")
+    picked = pd.read_csv(files["Picked block groups (table)"], dtype={"geoid": str}).sort_values("fly_order")
     areas = pd.read_csv(steps.step_dir(folder, "areas") / "block_groups.csv", dtype={"geoid": str})
     names = dict(zip(areas["geoid"], areas["census_name"]))
     shapes = {f["properties"]["geoid"]: f["geometry"] for f in json.loads(
