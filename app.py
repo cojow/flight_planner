@@ -3649,8 +3649,17 @@ def split_mapping_path(path_coords, connector_segments, interval_ft,
         if count <= max_waypoints:
             oversized.append(((first, last), None))
             continue
+        # Each slice gains a pinned waypoint at its own new end, so count/max
+        # pieces can each come out a waypoint or so over - 160 made two of 81.
+        # Add pieces until every one fits.
         chunks = int(math.ceil(count / float(max_waypoints)))
-        for piece_coords in _split_polyline_evenly(coords, chunks):
+        while True:
+            slices = _split_polyline_evenly(coords, chunks)
+            if chunks >= count or all(
+                    count_mapping_waypoints(c, interval_ft, is_dji_fly) <= max_waypoints for c in slices):
+                break
+            chunks += 1
+        for piece_coords in slices:
             oversized.append((None, (piece_coords, [])))
 
     # Nothing packs across a stand-in, so any run of them is emitted as-is and
@@ -6334,8 +6343,11 @@ if page == 'Creator':
                             else:
                                 pieces = [(path_coords, map_info["connector_segments"])]
 
-                            os.makedirs(final_dir, exist_ok=True)
-                            saved_names = []
+                            # Every part is generated before any is written:
+                            # an elevation lookup failing partway used to leave
+                            # the new first parts beside the old later ones,
+                            # with nothing to tell the two sets apart.
+                            built = []
                             for part_no, (part_coords, part_connectors) in enumerate(pieces, start=1):
                                 # Each part is its own mission: its own turns,
                                 # its own photo ranges, its own waypoint count
@@ -6347,16 +6359,22 @@ if page == 'Creator':
                                 part_photos = count_mapping_photos(
                                     part_coords, gap_ft, part_connectors, is_dji_fly)
                                 part_prefix = f"Part_{part_no}_" if len(pieces) > 1 else ""
-                                part_name = f"{part_prefix}{prefixed_name}"
-                                part_filename = f"{part_prefix}{final_filename}"
 
                                 try:
                                     template_kml, waylines_wpml = generate_native_kmz_contents(
                                         part_coords, part_cfg, c_elev_source, c_tif_path)
                                 except ElevationLookupError as e:
-                                    notices.error(f"Save aborted: {e}")
+                                    notices.error(f"Save aborted, nothing was written: {e}")
+                                    built = []
                                     break
+                                built.append((part_prefix, part_coords, part_photos, template_kml, waylines_wpml))
 
+                            saved_names = []
+                            if built:
+                                os.makedirs(final_dir, exist_ok=True)
+                            for part_prefix, part_coords, part_photos, template_kml, waylines_wpml in built:
+                                part_name = f"{part_prefix}{prefixed_name}"
+                                part_filename = f"{part_prefix}{final_filename}"
                                 final_filepath = os.path.join(final_dir, f"{part_filename}.kmz")
                                 export_mission_kmz_from_strings(
                                     template_kml_str=template_kml,
@@ -6372,6 +6390,20 @@ if page == 'Creator':
                                 )
                                 saved_names.append(f"{part_filename}.kmz")
                                 offer_kmz_download(notices, "cmap", final_filepath, f"{part_filename}.kmz")
+
+                            # Parts left from an earlier, longer save of this same
+                            # mission name would read as part of the new set - a
+                            # 5-part save shrunk to 3 kept the old Part_4 and
+                            # Part_5. Remove the ones past the new count.
+                            if len(built) > 1:
+                                stale_re = re.compile(r'^Part_(\d+)_' + re.escape(final_filename) + r'\.(kmz|jpg)$', re.IGNORECASE)
+                                for fname in os.listdir(final_dir):
+                                    m = stale_re.match(fname)
+                                    if m and int(m.group(1)) > len(built):
+                                        try:
+                                            os.remove(os.path.join(final_dir, fname))
+                                        except OSError:
+                                            pass
 
                             if saved_names:
                                 if len(saved_names) == 1:
