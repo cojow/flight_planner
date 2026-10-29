@@ -1242,6 +1242,21 @@ def kill_macos_hijackers():
 WAYPOINT_PATH = ["Android", "data", "dji.go.v5", "files", "waypoint"]
 UUID_RE = re.compile(r'^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$', re.IGNORECASE)
 
+
+def _matches_uuid(name, uuid):
+    """
+    Folder and file names on the controller compared without regard to case.
+    The scan reports slots upper-cased, but nothing guarantees the device names
+    them that way; an exact comparison made a lower-case slot look missing.
+    """
+    return name.upper() == uuid.upper()
+
+
+def _is_preview_of(name, uuid):
+    """Whether a file name is the {uuid}.jpg preview picture for this slot, in any case."""
+    stem, ext = os.path.splitext(name)
+    return ext.lower() == ".jpg" and _matches_uuid(stem, uuid)
+
 def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbnails=True):
     """
     Scans the RC 2 for dummy missions and caches our custom hijacked
@@ -1277,7 +1292,7 @@ def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbn
             for item in waypoint_children:
                 if not item["is_folder"]:
                     continue
-                if item["name"] == "map_preview":
+                if item["name"].lower() == "map_preview":
                     preview_id = item["id"]
                 elif UUID_RE.match(item["name"]):
                     nests[item["name"].upper()] = item["id"]
@@ -1294,21 +1309,21 @@ def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbn
                 # Check A: the subfolder under map_preview named after this mission's
                 # UUID - this is the location DJI Fly's native UI actually reads
                 # mission preview thumbnails from.
-                preview_subfolder = next((it for it in preview_children if it["is_folder"] and it["name"] == uuid), None)
+                preview_subfolder = next((it for it in preview_children if it["is_folder"] and _matches_uuid(it["name"], uuid)), None)
                 if preview_subfolder:
-                    sub_match = next((it for it in session.list_children(preview_subfolder["id"]) if it["name"] == f"{uuid}.jpg"), None)
+                    sub_match = next((it for it in session.list_children(preview_subfolder["id"]) if _is_preview_of(it["name"], uuid)), None)
                     if sub_match:
                         file_id_to_pull = sub_match["id"]
 
                 # Check B: did we inject it directly into the UUID's own mission folder?
                 if file_id_to_pull is None:
-                    own_match = next((it for it in session.list_children(folder_id) if it["name"] == f"{uuid}.jpg"), None)
+                    own_match = next((it for it in session.list_children(folder_id) if _is_preview_of(it["name"], uuid)), None)
                     if own_match:
                         file_id_to_pull = own_match["id"]
 
                 # Check C: did we inject it flat into the map_preview folder?
                 if file_id_to_pull is None:
-                    flat_match = next((it for it in preview_children if it["name"] == f"{uuid}.jpg"), None)
+                    flat_match = next((it for it in preview_children if _is_preview_of(it["name"], uuid)), None)
                     if flat_match:
                         file_id_to_pull = flat_match["id"]
 
@@ -1331,6 +1346,27 @@ def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbn
         logger.exception("Unexpected error while scanning controller for DJI Fly missions")
         return {}, None, f"{type(e).__name__}: {e}"
 
+class PushResult(tuple):
+    """
+    What push_mission_to_nest returns: an (ok, message) pair - so callers that
+    unpack it as `ok, message = ...` keep working - plus:
+
+    - warnings: things that went wrong without stopping the mission landing,
+      e.g. its preview picture failing to copy. A slot whose mission arrived
+      but whose picture didn't is the one most likely to be mistaken for
+      another, so this is reported rather than folded into "Success".
+    - preview_sent: True only when the preview picture reached every place it
+      was sent, so the caller knows whether its cached copy of the slot's
+      picture now matches the controller.
+    """
+
+    def __new__(cls, ok, message, warnings=(), preview_sent=False):
+        self = super().__new__(cls, (ok, message))
+        self.warnings = list(warnings)
+        self.preview_sent = preview_sent
+        return self
+
+
 def push_mission_to_nest(local_kmz_path, target_uuid):
     """
     Pushes a local KMZ (and its paired JPG thumbnail, if present) to an
@@ -1341,38 +1377,119 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
     full-device enumeration those tools do and the device's tendency to
     renumber object IDs between separate connections.
 
+    Replacing a slot is delete-then-send, and the send can fail after the
+    delete - a dropped cable, a full device, a rejected file. That used to
+    leave the slot empty: the old mission gone, the new one never arrived.
+    So nothing on the controller changes until the local file has been
+    checked and the slot's current files copied to this computer, and if the
+    new mission doesn't land those copies are put back.
+
     Also garbage-collects the shared map_preview folder of stale thumbnails
     (this mission's old one, plus any orphaned from since-removed dummy
     slots) each time it's called, since that shared pool is otherwise never
     revisited and DJI Fly's own thumbnail cache appears to occasionally
     mismatch a mission to a neighboring file once it's grown large.
+
+    Returns a PushResult - an (ok, message) pair with warnings attached.
     """
+    # Imported here rather than at the top of the file: this function is also
+    # copied into the desktop helper's core, whose header doesn't carry them.
+    import tempfile
+    import zipfile
+
+    # Checked before anything on the controller is touched: a missing,
+    # unreadable or corrupt file would otherwise only be discovered after the
+    # slot it was meant to replace had already been emptied.
+    try:
+        with open(local_kmz_path, "rb") as f:
+            f.read(1)
+    except OSError as e:
+        return PushResult(False, f"Can't read the mission file ({e}). Nothing on the controller was changed.")
+    if not zipfile.is_zipfile(local_kmz_path):
+        return PushResult(False, f"{os.path.basename(local_kmz_path)} isn't a valid .kmz (it isn't a zip "
+                                 "archive). Nothing on the controller was changed.")
+
     kill_macos_hijackers()
 
     SessionClass = get_mtp_session_class()
     if SessionClass is None:
-        return False, "MTP bridge unavailable (Windows: is comtypes installed? Other platforms: is libmtp installed?)."
+        return PushResult(False, "MTP bridge unavailable (Windows: is comtypes installed? Other platforms: is libmtp installed?).")
+
+    backup_dir = None
+    purged = False
+
+    def kept_note():
+        # For failures after the purge: where the slot's old files are, so
+        # they can be put back by hand if the automatic restore couldn't.
+        if purged and backup_dir and os.path.isdir(backup_dir) and os.listdir(backup_dir):
+            return f" The slot's previous files are saved in {backup_dir}."
+        return ""
 
     try:
         with SessionClass() as session:
             waypoint_id = session.resolve_path(WAYPOINT_PATH)
             if waypoint_id is None:
-                return False, "Could not locate the 'waypoint' folder on the controller."
+                return PushResult(False, "Could not locate the 'waypoint' folder on the controller.")
 
             waypoint_children = session.list_children(waypoint_id)
-            target_folder_id = next((it["id"] for it in waypoint_children if it["is_folder"] and it["name"] == target_uuid), None)
-            map_preview_id = next((it["id"] for it in waypoint_children if it["is_folder"] and it["name"] == "map_preview"), None)
+            target = next((it for it in waypoint_children
+                           if it["is_folder"] and _matches_uuid(it["name"], target_uuid)), None)
+            map_preview_id = next((it["id"] for it in waypoint_children
+                                   if it["is_folder"] and it["name"].lower() == "map_preview"), None)
 
-            if not target_folder_id:
-                return False, "Target folder missing from controller. Please scan again."
+            if target is None:
+                return PushResult(False, "Target folder missing from controller. Please scan again.")
+            target_folder_id = target["id"]
+            # Files are named after the folder as the DEVICE spells it, not as
+            # the caller passed it in - DJI Fly pairs a slot with its .kmz by
+            # exact name.
+            slot_uuid = target["name"]
 
             # The subfolder under map_preview named after this mission's UUID - this
             # is the location DJI Fly's native UI actually reads preview thumbnails from.
-            preview_subfolder_id = session.find_child(map_preview_id, target_uuid) if map_preview_id else None
+            preview_subfolder_id = None
+            map_preview_children = session.list_children(map_preview_id) if map_preview_id else []
+            if map_preview_id:
+                preview_subfolder_id = next((it["id"] for it in map_preview_children
+                                             if it["is_folder"] and _matches_uuid(it["name"], slot_uuid)), None)
+
+            # 0. BACK UP THE SLOT
+            # Every file in the slot folder, plus this slot's own preview
+            # pictures, copied here before anything is deleted. The slot
+            # folder must back up completely or nothing proceeds - it holds
+            # the mission itself. A preview picture that won't copy only costs
+            # the picture, so that is noted rather than fatal.
+            backup_dir = tempfile.mkdtemp(prefix=f"dji_slot_{slot_uuid}_")
+            backups = []  # (local path, remote name, parent folder id)
+            backup_warnings = []
+            slot_children = session.list_children(target_folder_id)
+            for item in slot_children:
+                if item["is_folder"]:
+                    continue
+                local = os.path.join(backup_dir, f"slot_{item['name']}")
+                if not session.pull_file(item["id"], local):
+                    shutil.rmtree(backup_dir, ignore_errors=True)
+                    return PushResult(False, f"Couldn't copy {item['name']} off the controller to keep as a "
+                                             "backup, so nothing was changed. Try again, or scan the controller first.")
+                backups.append((local, item["name"], target_folder_id))
+            own_previews = []
+            if map_preview_id:
+                own_previews += [(it, map_preview_id) for it in map_preview_children
+                                 if not it["is_folder"] and _matches_uuid(os.path.splitext(it["name"])[0], slot_uuid)]
+            if preview_subfolder_id:
+                own_previews += [(it, preview_subfolder_id) for it in session.list_children(preview_subfolder_id)
+                                 if not it["is_folder"]]
+            for n, (item, parent) in enumerate(own_previews):
+                local = os.path.join(backup_dir, f"preview{n}_{item['name']}")
+                if session.pull_file(item["id"], local):
+                    backups.append((local, item["name"], parent))
+                else:
+                    backup_warnings.append(f"couldn't back up the preview picture {item['name']}")
 
             # 1. PURGE OLD FILES
+            purged = True
             deleted_something = False
-            for item in session.list_children(target_folder_id):
+            for item in slot_children:
                 if session.delete_object(item["id"]):
                     deleted_something = True
 
@@ -1397,14 +1514,14 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
                 # itself) don't guarantee consistent casing between a
                 # waypoint folder's own name and the filenames we pushed
                 # against it.
-                valid_uuids = {it["name"].upper() for it in waypoint_children if it["is_folder"] and it["name"] != "map_preview"}
-                for item in session.list_children(map_preview_id):
+                valid_uuids = {it["name"].upper() for it in waypoint_children if it["is_folder"] and it["name"].lower() != "map_preview"}
+                for item in map_preview_children:
                     if item["is_folder"]:
                         continue
                     name, ext = os.path.splitext(item["name"])
                     if ext.lower() != ".jpg" or not UUID_RE.match(name):
                         continue
-                    if name.upper() == target_uuid.upper() or name.upper() not in valid_uuids:
+                    if _matches_uuid(name, slot_uuid) or name.upper() not in valid_uuids:
                         if session.delete_object(item["id"]):
                             deleted_something = True
 
@@ -1432,27 +1549,57 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
             # a real JPEG so no disguise is needed).
             if platform.system() == "Darwin":
                 subprocess.run(f'xattr -c {shlex.quote(local_kmz_path)}', shell=True)
-            remote_kmz = f"{target_uuid}.kmz"
+            remote_kmz = f"{slot_uuid}.kmz"
             ok_kmz, msg_kmz = session.send_disguised_file(local_kmz_path, remote_kmz, target_folder_id)
             if not ok_kmz:
-                return False, f"KMZ transfer failed: {msg_kmz}"
+                # Put the slot back the way it was. Sent under their original
+                # names to their original folders, so DJI Fly finds the old
+                # mission exactly where it left it.
+                failed = [name for local, name, parent in backups
+                          if not session.send_disguised_file(local, name, parent)[0]]
+                if not failed:
+                    shutil.rmtree(backup_dir, ignore_errors=True)
+                    return PushResult(False, f"KMZ transfer failed: {msg_kmz}. The slot's previous mission "
+                                             "was put back, so it is as it was before.")
+                return PushResult(False, f"KMZ transfer failed: {msg_kmz}. Putting the previous mission back "
+                                         f"also failed for {', '.join(failed)}; copies are saved in {backup_dir}.")
 
+            # The mission is in. Everything below is the preview picture, and
+            # a failure there is reported, not treated as a failed transfer.
+            warnings = list(backup_warnings)
+            preview_sent = False
             local_jpg_path = kmz_companion_path(local_kmz_path)
             if os.path.exists(local_jpg_path):
                 if platform.system() == "Darwin":
                     subprocess.run(f'xattr -c {shlex.quote(local_jpg_path)}', shell=True)
-                remote_jpg = f"{target_uuid}.jpg"
+                remote_jpg = f"{slot_uuid}.jpg"
+                picture_failures = []
+                for place, parent in (("the slot folder", target_folder_id),
+                                      ("map_preview", map_preview_id),
+                                      ("its map_preview subfolder", preview_subfolder_id)):
+                    if not parent:
+                        continue
+                    ok_jpg, msg_jpg = session.send_disguised_file(local_jpg_path, remote_jpg, parent)
+                    if not ok_jpg:
+                        picture_failures.append(f"{place} ({msg_jpg})")
+                if picture_failures:
+                    warnings.append("the preview picture didn't copy to " + "; ".join(picture_failures)
+                                    + ", so DJI Fly may show this slot with an old or blank picture")
+                else:
+                    preview_sent = True
+            else:
+                warnings.append(f"there was no preview picture next to {os.path.basename(local_kmz_path)}, "
+                                "so DJI Fly will show this slot without one")
 
-                session.send_disguised_file(local_jpg_path, remote_jpg, target_folder_id)
-                if map_preview_id:
-                    session.send_disguised_file(local_jpg_path, remote_jpg, map_preview_id)
-                if preview_subfolder_id:
-                    session.send_disguised_file(local_jpg_path, remote_jpg, preview_subfolder_id)
-
-            return True, "Success. (Reminder: Ensure DJI Fly is closed on the RC 2 before opening!)"
+            shutil.rmtree(backup_dir, ignore_errors=True)
+            if warnings:
+                return PushResult(True, "Mission sent, but " + "; ".join(warnings) + ".",
+                                  warnings=warnings, preview_sent=preview_sent)
+            return PushResult(True, "Success. (Reminder: Ensure DJI Fly is closed on the RC 2 before opening!)",
+                              preview_sent=preview_sent)
     except MTPBridgeError as e:
         logger.warning("MTP/WPD bridge error while pushing %s to nest %s: %s", local_kmz_path, target_uuid, e)
-        return False, str(e)
+        return PushResult(False, str(e) + kept_note())
     except Exception as e:
         # Previously uncaught here - any exception besides MTPBridgeError
         # (a COM error mid-transfer, a bad file path, etc.) would propagate
@@ -1461,7 +1608,13 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
         # missions in the batch. Logged with a traceback and reported back
         # as a normal failure instead.
         logger.exception("Unexpected error while pushing %s to nest %s", local_kmz_path, target_uuid)
-        return False, f"Unexpected error: {type(e).__name__}: {e}"
+        return PushResult(False, f"Unexpected error: {type(e).__name__}: {e}" + kept_note())
+    finally:
+        # A backup is only kept when it may still be needed: after a purge
+        # whose restore didn't complete. Otherwise it's clutter in a temp
+        # folder nobody looks in.
+        if backup_dir and os.path.isdir(backup_dir) and not purged:
+            shutil.rmtree(backup_dir, ignore_errors=True)
 
 def export_mission_kmz_from_strings(template_kml_str, waylines_wpml_str, output_kmz_path, is_dji_fly):
     """
