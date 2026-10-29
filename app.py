@@ -4198,7 +4198,9 @@ def gather_flight_log_rows(folder, kmz_filenames, progress=None):
 
         rows.append({
             "flight_name": flight_name,
-            "aircraft": "DJI Fly",
+            # Read from the file, not assumed: a folder can hold missions for
+            # either app, and DJI Pilot 2 ones were all labelled DJI Fly.
+            "aircraft": "DJI Fly" if is_dji_fly_kmz(full_path) else "DJI Pilot 2",
             "location": location or "",
             "height": height,
             "pitch": pitch,
