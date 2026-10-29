@@ -3069,7 +3069,7 @@ def _strip_spans(poly, lo, hi, min_span_ft=1.0):
     return spans
 
 
-def _decomposed_passes(rot_pts, centers, ymin, ymax, half_strip, runout):
+def _decomposed_passes(rot_pts, centers, ymin, ymax, half_strip, runout, side_sign=1.0, offset=0.0):
     """
     Build the pass list by boustrophedon cell decomposition instead of one
     full-width pass per strip. Returns (path_rot, num_cells).
@@ -3081,6 +3081,12 @@ def _decomposed_passes(rot_pts, centers, ymin, ymax, half_strip, runout):
     involved and opens fresh ones. Those split/merge events are precisely the
     critical points of a boustrophedon decomposition. Each cell is then flown
     serpentine, and the cells are visited nearest-end-first.
+
+    `side_sign` and `offset` place the drone off each strip's centre so a
+    sideways camera's footprint lands on the strip, exactly as the classic
+    path does. They are applied last, once each pass's final direction of
+    travel is known - the cell ordering below can reverse a pass. Leaving
+    them out shifted every strip a sideways camera imaged off the area.
     """
     poly = ShapelyPolygon(rot_pts)
     if not poly.is_valid:
@@ -3149,7 +3155,11 @@ def _decomposed_passes(rot_pts, centers, ymin, ymax, half_strip, runout):
 
     path_rot = []
     for a, b in ordered:
-        path_rot += [a, b]
+        # Same rule as the classic path: the camera looks to the chosen side
+        # of travel, so the drone sits on the opposite side of the strip.
+        eastbound = b[0] >= a[0]
+        dy = side_sign * offset if eastbound else -side_sign * offset
+        path_rot += [(a[0], a[1] + dy), (b[0], b[1] + dy)]
     return path_rot, len(cell_runs)
 
 
@@ -3296,7 +3306,8 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
         # inside the area rather than one full-width pass. Everything above -
         # sweep bearing, strip centres, run-out - is shared with the classic
         # path, so the two can be compared like for like.
-        path_rot, num_cells = _decomposed_passes(rot, centers, ymin, ymax, half_strip, runout)
+        path_rot, num_cells = _decomposed_passes(rot, centers, ymin, ymax, half_strip, runout,
+                                                 side_sign=side_sign, offset=offset)
         if not path_rot:
             decompose = False       # nothing usable came back; fall through
 
