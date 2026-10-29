@@ -1086,6 +1086,34 @@ def _multi_user_mode():
 
 MULTI_USER_MODE = _multi_user_mode()
 
+# How long a hosted session's missions folder is kept after anything in it
+# last changed. Streamlit gives no signal when a tab closes, so nothing else
+# ever removed these, and one piled up per visit (every refresh is a new
+# session). A day is far past any class period - a student who comes back
+# later has a new session anyway.
+SESSION_MAX_AGE_SEC = 24 * 3600
+
+
+def _prune_old_sessions(sessions_dir):
+    """Delete session folders nothing has touched for SESSION_MAX_AGE_SEC."""
+    try:
+        entries = list(os.scandir(sessions_dir))
+    except OSError:
+        return
+    cutoff = time.time() - SESSION_MAX_AGE_SEC
+    for entry in entries:
+        if not entry.is_dir(follow_symlinks=False):
+            continue
+        newest = 0.0
+        for root, dirs, files in os.walk(entry.path):
+            for name in [root] + [os.path.join(root, f) for f in files]:
+                try:
+                    newest = max(newest, os.path.getmtime(name))
+                except OSError:
+                    pass
+        if newest < cutoff:
+            shutil.rmtree(entry.path, ignore_errors=True)
+
 if MULTI_USER_MODE:
     # session_state is what's genuinely per-browser-session in Streamlit (the
     # script itself re-runs top to bottom for every user), so the isolation
@@ -1093,6 +1121,7 @@ if MULTI_USER_MODE:
     # request-derived. Generated once and kept for the life of the tab.
     if "session_id" not in st.session_state:
         st.session_state.session_id = uuid.uuid4().hex[:10]
+        _prune_old_sessions(os.path.join(MISSION_DIR, "_sessions"))
     MISSION_DIR = os.path.join(MISSION_DIR, "_sessions", st.session_state.session_id)
     os.makedirs(MISSION_DIR, exist_ok=True)
 
@@ -1685,8 +1714,8 @@ def offer_kmz_download(container, scope, filepath=None, filename=None):
     flow is pure redundancy. In multi-user mode it's the only way a saved
     mission gets onto a student's own computer at all - there's no
     filesystem for them to browse to, and once their tab closes the
-    session's mission folder is gone for good (see MULTI_USER_MODE above
-    generate_mapping_flight_path's session_id block). A no-op call is cheap
+    session's mission folder can't be reached again and is deleted a day
+    later (see the MULTI_USER_MODE block near the top). A no-op call is cheap
     enough that every save flow can call this unconditionally rather than
     each needing its own MULTI_USER_MODE check.
 
@@ -3910,6 +3939,9 @@ def save_creator_presets(presets):
     no permission, disk full) still reported "Saved preset", and the preset was
     simply gone the next time the app started.
     """
+    if MULTI_USER_MODE:
+        st.session_state[_HOSTED_PRESETS_KEY] = dict(presets)
+        return None
     try:
         with open(CREATOR_PRESETS_FILE, 'w', encoding="utf-8") as f:
             json.dump(presets, f, indent=2)
@@ -3922,6 +3954,8 @@ PILOT_INFO_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".pil
 
 
 def load_pilot_info():
+    if MULTI_USER_MODE:
+        return dict(st.session_state.get(_HOSTED_PILOT_INFO_KEY, {}))
     if not os.path.exists(PILOT_INFO_FILE):
         return {}
     try:
@@ -3940,6 +3974,9 @@ def save_pilot_info(name, certificate_number):
     silently swallowed write failure would report "Saved" while leaving
     nothing on disk for the next launch to load.
     """
+    if MULTI_USER_MODE:
+        st.session_state[_HOSTED_PILOT_INFO_KEY] = {"name": name, "certificate_number": certificate_number}
+        return None
     try:
         with open(PILOT_INFO_FILE, 'w', encoding="utf-8") as f:
             json.dump({"name": name, "certificate_number": certificate_number}, f, indent=2)
@@ -3948,6 +3985,8 @@ def save_pilot_info(name, certificate_number):
         return f"{type(e).__name__}: {e}"
 
 
+# Left by older versions, which kept per-folder flight-log counters here.
+# Nothing reads it any more; "Reset All Local Settings" still clears it.
 FLIGHT_LOG_COUNTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".flight_log_counts.json")
 
 
@@ -5669,7 +5708,10 @@ if "pilot_name" not in st.session_state:
 
 @st.dialog("Pilot Info")
 def _pilot_info_dialog():
-    st.write("Saved on this computer and reused every time a flight log template is generated, so you only enter it once.")
+    if MULTI_USER_MODE:
+        st.write("Kept for this browser tab and used on every flight log template you download from it.")
+    else:
+        st.write("Saved on this computer and reused every time a flight log template is generated, so you only enter it once.")
     name = st.text_input("Pilot Name", value=st.session_state.pilot_name, key="pilot_name_input")
     cert = st.text_input("Certificate Number", value=st.session_state.pilot_cert, key="pilot_cert_input")
     if st.button("💾 Save", width='stretch'):
@@ -5696,22 +5738,33 @@ def _pilot_info_dialog():
         if st.button("⚠️ Reset All Local Settings", width='stretch'):
             st.session_state._show_reset_confirm = True
     else:
-        st.warning(
-            "This permanently deletes your saved pilot info, Creator parameter presets, "
-            "and flight-log folder counters from this computer. This cannot be undone."
-        )
+        if MULTI_USER_MODE:
+            st.warning("This clears the pilot info and Creator parameter presets saved in this browser tab.")
+        else:
+            st.warning(
+                "This permanently deletes your saved pilot info, Creator parameter presets, "
+                "and flight-log folder counters from this computer. This cannot be undone."
+            )
         reset_cancel_col, reset_ok_col = st.columns(2)
         if reset_cancel_col.button("Cancel", width='stretch'):
             st.session_state._show_reset_confirm = False
         if reset_ok_col.button("Yes, Reset Everything", type="primary", width='stretch'):
-            for f in (PILOT_INFO_FILE, CREATOR_PRESETS_FILE, FLIGHT_LOG_COUNTS_FILE):
-                try:
-                    if os.path.exists(f):
-                        os.remove(f)
-                except Exception:
-                    pass
+            if MULTI_USER_MODE:
+                # Only this tab's copies - the files belong to nobody here.
+                st.session_state.pop(_HOSTED_PILOT_INFO_KEY, None)
+                st.session_state.pop(_HOSTED_PRESETS_KEY, None)
+            else:
+                for f in (PILOT_INFO_FILE, CREATOR_PRESETS_FILE, FLIGHT_LOG_COUNTS_FILE):
+                    try:
+                        if os.path.exists(f):
+                            os.remove(f)
+                    except Exception:
+                        pass
             st.session_state.pilot_name = ""
             st.session_state.pilot_cert = ""
+            # The preset select box would otherwise still hold a name that no
+            # longer exists (same as deleting one preset).
+            st.session_state["_c_preset_deleted"] = True
             st.session_state._show_reset_confirm = False
             st.success("All local settings have been reset.")
 
@@ -5853,7 +5906,10 @@ if page == 'Creator':
                 st.warning("Loaded, with changes: " + "; ".join(c_preset_notes) + ".")
             c_preset_names = sorted(c_presets.keys())
             c_selected_preset = st.selectbox("Preset", ["Select a preset..."] + c_preset_names, key="c_preset_select", help=param_help("Parameter Presets"))
-            c_no_preset = (c_selected_preset == "Select a preset...")
+            # Also true for a name that has just gone (reset, or deleted) -
+            # the box can still hand that back for a run, and Load then hit a
+            # KeyError on it.
+            c_no_preset = c_selected_preset not in c_presets
             c_pcol1, c_pcol2 = st.columns(2)
             with c_pcol1:
                 if st.button("📥 Load", width='stretch', disabled=c_no_preset):
@@ -6132,9 +6188,10 @@ if page == 'Creator':
     def _c_new_folder_dialog():
         folder_name_input = st.text_input("Folder Name", key="c_popup_new_folder_name")
         if st.button("Create", key="c_popup_create_folder_btn"):
-            if folder_name_input.strip():
-                os.makedirs(os.path.join(MISSION_DIR, folder_name_input.strip()), exist_ok=True)
-                st.success(f"Created '{folder_name_input.strip()}'")
+            folder_name = mission_folder_name(folder_name_input)
+            if folder_name:
+                os.makedirs(os.path.join(MISSION_DIR, folder_name), exist_ok=True)
+                st.success(f"Created '{folder_name}'")
                 st.rerun()
             else:
                 st.warning("Enter a folder name.")
@@ -6789,13 +6846,16 @@ elif page == 'Editor':
     row1 = select_half.columns([3, 0.7, 3, 1.6])
     with row1[0]:
         selected_dir_name = st.selectbox("Select Folder", ["Root (missions/)"] + existing_dirs, key="edit_dir", on_change=_clear_e_browsed_dir)
-    with row1[1]:
-        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        if st.button("📂", key="e_btn_browse_dir", help="Browse for a mission directory outside missions/"):
-            picked = pick_folder_dialog("Select Mission Directory")
-            if picked:
-                st.session_state.e_browsed_dir = picked
-                st.rerun()
+    # No browse button on the hosted site, same as the Creator: there's no
+    # desktop on the server to show a folder picker on, so it did nothing.
+    if not MULTI_USER_MODE:
+        with row1[1]:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("📂", key="e_btn_browse_dir", help="Browse for a mission directory outside missions/"):
+                picked = pick_folder_dialog("Select Mission Directory")
+                if picked:
+                    st.session_state.e_browsed_dir = picked
+                    st.rerun()
 
     if st.session_state.e_browsed_dir:
         active_dir = st.session_state.e_browsed_dir
@@ -7333,13 +7393,15 @@ elif page == 'Viewer  |':
     col_mission, col_dir, col_browse = top_bar.columns([4, 4, 1])
     with col_dir:
         selected_dir_name = st.selectbox("Select Folder", ["Root (missions/)"] + existing_dirs, key="view_dir", on_change=_clear_v_browsed_dir)
-    with col_browse:
-        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        if st.button("📂", key="v_btn_browse_dir", help="Browse for a mission directory outside missions/"):
-            picked = pick_folder_dialog("Select Mission Directory")
-            if picked:
-                st.session_state.v_browsed_dir = picked
-                st.rerun()
+    # Hidden on the hosted site - see the Editor's browse button.
+    if not MULTI_USER_MODE:
+        with col_browse:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("📂", key="v_btn_browse_dir", help="Browse for a mission directory outside missions/"):
+                picked = pick_folder_dialog("Select Mission Directory")
+                if picked:
+                    st.session_state.v_browsed_dir = picked
+                    st.rerun()
 
     if st.session_state.v_browsed_dir:
         active_dir = st.session_state.v_browsed_dir
