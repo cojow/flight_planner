@@ -7136,7 +7136,15 @@ elif page == 'Viewer  |':
                                     t_param = action_group.find('.//{*}actionTriggerParam')
                                     if t_param is not None: meta['t_val'] = float(t_param.text)
                                     start_idx = action_group.find('.//{*}actionGroupStartIndex')
-                                    if start_idx is not None: meta['start_idx'] = int(start_idx.text)
+                                    end_idx = action_group.find('.//{*}actionGroupEndIndex')
+                                    if start_idx is not None:
+                                        # A DJI Pilot mapping mission has one
+                                        # trigger per pass; keep them all, not
+                                        # just whichever came last.
+                                        r_start = int(start_idx.text)
+                                        r_end = int(end_idx.text) if end_idx is not None else r_start
+                                        meta.setdefault('ranges', []).append((r_start, r_end))
+                                        meta['start_idx'] = min(r[0] for r in meta['ranges'])
                                 elif 'reachPoint' in t_type.text:
                                     pass
 
@@ -7214,7 +7222,12 @@ elif page == 'Viewer  |':
                         # mean something and summarise each span between them:
                         # the distance is the length of the whole span and the
                         # elevation figure its net change, not a single leg's.
-                        is_dense_mission = (len(wp_data) > 4 and meta['mode'] == "None")
+                        # No interval trigger means one photo per waypoint
+                        # (DJI Fly), however few waypoints there are - only
+                        # the label thinning needs a longer route. Tying both
+                        # to "more than 4" showed 0 photos for a short one.
+                        per_waypoint_photos = meta['mode'] == "None"
+                        is_dense_mission = per_waypoint_photos and len(wp_data) > 4
                         label_idx = (major_waypoint_indices([(w['lat'], w['lon']) for w in wp_data])
                                      if is_dense_mission else list(range(len(wp_data))))
                         for a, b in zip(label_idx, label_idx[1:]):
@@ -7243,7 +7256,7 @@ elif page == 'Viewer  |':
                             ).add_to(m_view)
                     
                         photo_count = 0
-                        if is_dense_mission:
+                        if per_waypoint_photos:
                             for w in wp_data:
                                 # Turn waypoints between mapping passes carry no
                                 # takePhoto action - they are flown through, not
@@ -7258,28 +7271,31 @@ elif page == 'Viewer  |':
                                 folium.CircleMarker([w['lat'], w['lon']], radius=2.5, color="yellow", fill=True).add_to(m_view)
                                 photo_count += 1
                         elif gap > 0 and meta['start_idx'] < len(wp_data):
-                            current_dist = cum_dist[meta['start_idx']]
-                            while current_dist <= total_dist_m + 0.01:
-                                for i in range(len(cum_dist) - 1):
-                                    if cum_dist[i] <= current_dist <= cum_dist[i+1] + 0.001:
-                                        seg_len = cum_dist[i+1] - cum_dist[i]
-                                        if seg_len > 0:
-                                            frac = (current_dist - cum_dist[i]) / seg_len
-                                            lat = wp_data[i]['lat'] + (wp_data[i+1]['lat'] - wp_data[i]['lat']) * frac
-                                            lon = wp_data[i]['lon'] + (wp_data[i+1]['lon'] - wp_data[i]['lon']) * frac
-                                        else:
-                                            lat, lon = wp_data[i]['lat'], wp_data[i]['lon']
+                            last_wp = len(wp_data) - 1
+                            for r_start, r_end in (meta.get('ranges') or [(meta['start_idx'], last_wp)]):
+                                r_start, r_end = min(r_start, last_wp), min(r_end, last_wp)
+                                current_dist = cum_dist[r_start]
+                                while current_dist <= cum_dist[r_end] + 0.01:
+                                    for i in range(r_start, max(r_end, r_start + 1)):
+                                        if i + 1 < len(cum_dist) and cum_dist[i] <= current_dist <= cum_dist[i+1] + 0.001:
+                                            seg_len = cum_dist[i+1] - cum_dist[i]
+                                            if seg_len > 0:
+                                                frac = (current_dist - cum_dist[i]) / seg_len
+                                                lat = wp_data[i]['lat'] + (wp_data[i+1]['lat'] - wp_data[i]['lat']) * frac
+                                                lon = wp_data[i]['lon'] + (wp_data[i+1]['lon'] - wp_data[i]['lon']) * frac
+                                            else:
+                                                lat, lon = wp_data[i]['lat'], wp_data[i]['lon']
                                     
-                                        if show_footprints:
-                                            yaw = wp_data[i]['target_yaw']
-                                            footprint = get_photo_footprint(lat, lon, meta['alt']*M_TO_FT, meta['pitch'], yaw)
-                                            if footprint:
-                                                folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_view)
+                                            if show_footprints:
+                                                yaw = wp_data[i]['target_yaw']
+                                                footprint = get_photo_footprint(lat, lon, meta['alt']*M_TO_FT, meta['pitch'], yaw)
+                                                if footprint:
+                                                    folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_view)
                                         
-                                        folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_view)
-                                        photo_count += 1
-                                        break
-                                current_dist += gap
+                                            folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_view)
+                                            photo_count += 1
+                                            break
+                                    current_dist += gap
                     
                         grand_total_photos += photo_count
 
@@ -7300,6 +7316,11 @@ elif page == 'Viewer  |':
                         photo_pts = [w for w in wp_data if w['photo']]
                         if meta['mode'] == 'Distance':
                             interval_ft = meta['t_val'] * M_TO_FT
+                        elif meta['mode'] == 'Time':
+                            # Only the trigger's own waypoint carries the
+                            # takePhoto action, so there are no photo
+                            # waypoints to measure - it's speed x time.
+                            interval_ft = meta['speed'] * meta['t_val'] * M_TO_FT
                         elif len(photo_pts) > 1:
                             gaps = sorted(
                                 get_haversine_dist((photo_pts[i]['lat'], photo_pts[i]['lon']),
@@ -7353,7 +7374,9 @@ elif page == 'Viewer  |':
                         if interval_ft:
                             st.sidebar.write(f"Photo Interval: {interval_ft:.1f} ft")
                         st.sidebar.write(f"Forward Overlap: {overlap_text}")
-                        if meta['mode'] != 'None' and meta['start_idx']:
+                        if meta['mode'] != 'None' and len(meta.get('ranges') or ()) > 1:
+                            st.sidebar.write(f"Photo Passes: {len(meta['ranges'])}")
+                        elif meta['mode'] != 'None' and meta['start_idx']:
                             st.sidebar.write(f"Photos Start at WP: {meta['start_idx']}")
                         # Side overlap and the mapping camera aim aren't stored
                         # anywhere in the KMZ, so they come off the filename
