@@ -2334,8 +2334,17 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
     is banded by altitude (see ALTITUDE_COLOR_BANDS) so missions sharing a
     path but flown at different heights are easy to tell apart.
     """
+    # A Figure of its own rather than pyplot. pyplot keeps one "current
+    # figure" for the whole process, and on the hosted site several people's
+    # saves run on separate threads at once - one session's plt.savefig()
+    # or plt.close() could land on another session's half-drawn thumbnail.
+    # A Figure made directly is only ever touched by the code that made it.
+    from matplotlib.figure import Figure
+    from matplotlib.patches import Rectangle
+
     fig_w, fig_h = 8, 4.5
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h), facecolor='#121212')
+    fig = Figure(figsize=(fig_w, fig_h), facecolor='#121212')
+    ax = fig.subplots()
     ax.set_facecolor('#121212')
 
     # The controller's own preview display crops roughly the outer 7% off
@@ -2413,7 +2422,7 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
                 transform=ax.transAxes, aspect='auto', zorder=1,
             )
 
-        ax.add_patch(plt.Rectangle(
+        ax.add_patch(Rectangle(
             (box_x0_frac, box_y0_frac), box_w_frac, box_h_frac,
             transform=ax.transAxes, facecolor='none', edgecolor='#FFFFFF', linewidth=1.2, zorder=2,
         ))
@@ -2433,12 +2442,12 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
 
     # Strip away all axes, borders, and margins
     ax.axis('off')
-    plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-    plt.margins(0, 0)
+    fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+    ax.margins(0, 0)
 
-    # Save as a standard low-footprint JPG
-    plt.savefig(output_filepath, format='jpg', dpi=120, bbox_inches='tight', pad_inches=0)
-    plt.close()
+    # Save as a standard low-footprint JPG. No close() needed: nothing but
+    # this function holds the figure, so it's freed when the function ends.
+    fig.savefig(output_filepath, format='jpg', dpi=120, bbox_inches='tight', pad_inches=0)
 
 def _fill_missing_elevations(coords, elevations):
     """
