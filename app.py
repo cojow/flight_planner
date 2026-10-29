@@ -137,6 +137,45 @@ except ImportError:
 #
 # Requires libmtp's shared library to be installed (the same dependency the
 # `mtp-*` CLI tools already require).
+
+# DJI's USB vendor ID. Both controllers tested with this tool report it - the
+# RC 2 as 2ca3:1021 ("Controller 2"), the plain RC as 2ca3:1023. Matched on the
+# number rather than the name because libmtp's device database has no DJI
+# entry, so on macOS and Linux an unopened controller's vendor and product
+# names come back empty; the ID is the only identifying thing there is.
+DJI_USB_VENDOR_ID = 0x2CA3
+
+
+def _choose_controller(devices):
+    """
+    Which of the connected MTP devices to talk to: (index, None), or
+    (None, message) when none of them is a DJI controller.
+
+    `devices` is one dict per device, in the order the backend found them,
+    with "vendor_id", "product_id" and "name" (name may be empty). Both
+    backends used to take whichever device came first, so a phone or camera
+    plugged in alongside the controller could be scanned - or written to -
+    in its place. A DJI device wins wherever it sits in the list; with none,
+    the message names what WAS found, so the cause is visible rather than a
+    puzzling "no mission slots".
+    """
+    for index, device in enumerate(devices):
+        if device.get("vendor_id") == DJI_USB_VENDOR_ID or "dji" in (device.get("name") or "").lower():
+            return index, None
+    described = []
+    for device in devices:
+        ids = ""
+        if device.get("vendor_id") is not None:
+            ids = f"{device['vendor_id']:04x}:{device.get('product_id') or 0:04x}"
+        name = device.get("name") or "unnamed device"
+        described.append(f"{name} ({ids})" if ids else name)
+    return None, (
+        f"Found {len(devices)} USB device(s), but none is a DJI controller: "
+        + "; ".join(described)
+        + ". Unplug other phones and cameras, and check the controller is switched on."
+    )
+
+
 try:
     LIBMTP_FILETYPE_FOLDER = 0
     LIBMTP_FILETYPE_JPEG = 14
@@ -312,7 +351,17 @@ try:
             if ret != 0 or num_devices.value == 0:
                 raise MTPBridgeError("No MTP device detected.")
             try:
-                self.device = _mtp.LIBMTP_Open_Raw_Device_Uncached(ctypes.byref(raw_device_list[0]))
+                found = []
+                for i in range(num_devices.value):
+                    entry = raw_device_list[i].device_entry
+                    name = " ".join(
+                        part.decode("utf-8", "replace") for part in (entry.vendor, entry.product) if part
+                    )
+                    found.append({"vendor_id": entry.vendor_id, "product_id": entry.product_id, "name": name})
+                chosen, problem = _choose_controller(found)
+                if problem:
+                    raise MTPBridgeError(problem)
+                self.device = _mtp.LIBMTP_Open_Raw_Device_Uncached(ctypes.byref(raw_device_list[chosen]))
             finally:
                 _libc.free(ctypes.cast(raw_device_list, ctypes.c_void_p))
             if not self.device:
@@ -650,6 +699,7 @@ try:
                 pass  # already initialized on this thread
 
             device_paths = _wpd_enumerate_device_paths()
+            mgr = None
             if not device_paths:
                 # Fall back to IPortableDeviceManager in case some other
                 # machine/device combination needs it instead (see the
@@ -659,10 +709,36 @@ try:
                 if count:
                     arr = (c_wchar_p * count)()
                     arr, count = mgr.GetDevices(arr, count)
-                    device_paths = [arr[0]]
+                    device_paths = [arr[i] for i in range(count)]
             if not device_paths:
                 raise MTPBridgeError("No MTP device detected.")
-            device_id = device_paths[0]
+
+            # A WPD device path embeds the USB IDs ("...usb#vid_2ca3&pid_1021#...").
+            # Friendly names are a courtesy for the error message only - the
+            # choice itself rests on the vendor ID - so failing to read them
+            # never stops the scan.
+            found = []
+            for path in device_paths:
+                ids = re.search(r"vid_([0-9a-f]{4})&pid_([0-9a-f]{4})", path, re.IGNORECASE)
+                name = ""
+                try:
+                    mgr = mgr or _wpd_cc.CreateObject(_WpdApi.PortableDeviceManager,
+                                                      interface=_WpdApi.IPortableDeviceManager)
+                    length = mgr.GetDeviceFriendlyName(path, None, 0)[1]
+                    if length:
+                        buf = ctypes.create_unicode_buffer(length)
+                        name = mgr.GetDeviceFriendlyName(path, buf, length)[0] or buf.value
+                except Exception:
+                    logger.debug("Could not read a friendly name for %s", path, exc_info=True)
+                found.append({
+                    "vendor_id": int(ids.group(1), 16) if ids else None,
+                    "product_id": int(ids.group(2), 16) if ids else None,
+                    "name": str(name or ""),
+                })
+            chosen, problem = _choose_controller(found)
+            if problem:
+                raise MTPBridgeError(problem)
+            device_id = device_paths[chosen]
 
             client_info = _wpd_make_values()
             client_info.SetStringValue(byref(WPD_CLIENT_NAME_KEY), "Flight Planner")
