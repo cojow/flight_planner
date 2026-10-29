@@ -1257,6 +1257,24 @@ def _is_preview_of(name, uuid):
     stem, ext = os.path.splitext(name)
     return ext.lower() == ".jpg" and _matches_uuid(stem, uuid)
 
+def _drop_stale_previews(cache_dir, keep):
+    """
+    Delete cached slot pictures ({uuid}.jpg) other than those in `keep`.
+    Only files named like a slot are touched, so nothing else that happens to
+    share the cache folder is affected.
+    """
+    for name in os.listdir(cache_dir):
+        leftover = name.endswith(".part")          # from a pull that never finished
+        stem, ext = os.path.splitext(name[:-len(".part")] if leftover else name)
+        if ext.lower() != ".jpg" or not UUID_RE.match(stem):
+            continue
+        if leftover or stem.upper() not in keep:
+            try:
+                os.remove(os.path.join(cache_dir, name))
+            except OSError:
+                logger.warning("Could not remove a stale preview %s", name, exc_info=True)
+
+
 def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbnails=True):
     """
     Scans the RC 2 for dummy missions and caches our custom hijacked
@@ -1297,10 +1315,16 @@ def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbn
                 elif UUID_RE.match(item["name"]):
                     nests[item["name"].upper()] = item["id"]
 
-            if not pull_thumbnails or not preview_id:
+            if not pull_thumbnails:
+                return nests, preview_id, None
+            if not preview_id:
+                # No map_preview folder means no previews to show - and any
+                # still in the cache are from some earlier scan.
+                _drop_stale_previews(cache_dir, keep=set())
                 return nests, preview_id, None
 
             preview_children = session.list_children(preview_id)
+            refreshed = set()
 
             for uuid, folder_id in nests.items():
                 cache_path = os.path.join(cache_dir, f"{uuid}.jpg")
@@ -1327,10 +1351,23 @@ def fetch_controller_nests_and_previews(cache_dir="missions/.cache", pull_thumbn
                     if flat_match:
                         file_id_to_pull = flat_match["id"]
 
-                # If we found our custom hijacked image, pull it to the Mac
+                # If we found our custom hijacked image, pull it to the Mac.
+                # Into a side file first: a pull that fails partway would
+                # otherwise leave a truncated picture, or the previous one,
+                # under this slot's name.
                 if file_id_to_pull is not None:
-                    session.pull_file(file_id_to_pull, cache_path)
+                    partial = cache_path + ".part"
+                    if session.pull_file(file_id_to_pull, partial):
+                        os.replace(partial, cache_path)
+                        refreshed.add(uuid)
+                    elif os.path.exists(partial):
+                        os.remove(partial)
 
+            # Whatever this scan didn't just pull is from an earlier one, and
+            # may show a mission the slot no longer holds - the picture is what
+            # people pick a slot to overwrite by, so a stale one is worse than
+            # none.
+            _drop_stale_previews(cache_dir, keep=refreshed)
             return nests, preview_id, None
     except MTPBridgeError as e:
         # "No MTP device detected" is the everyday case (nothing plugged
