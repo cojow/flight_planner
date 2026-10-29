@@ -3277,6 +3277,21 @@ if "e_trigger_type" not in st.session_state: st.session_state.e_trigger_type = "
 if "e_t_dist_val" not in st.session_state: st.session_state.e_t_dist_val = 9.0
 if "e_target_gap_ft" not in st.session_state: st.session_state.e_target_gap_ft = 26.2
 if "e_overlap_pct" not in st.session_state: st.session_state.e_overlap_pct = 70.0
+if "e_bounds" not in st.session_state: st.session_state.e_bounds = True
+
+# The Editor's settings are kept across reruns the same way the Creator's
+# are (see CREATOR_DEFAULTS): without this, opening another tab and coming
+# back reset them to the defaults above - 50 ft, -60 degrees - while the
+# Editor still showed the same mission, so "Save & Update Mission" would
+# write those defaults into it. They are only reloaded from the file when a
+# different mission is picked.
+EDITOR_KEPT_KEYS = [
+    "e_name_input", "e_alt_ft", "e_pitch", "e_side", "e_source", "e_tif", "e_bounds",
+    "e_trigger_type", "e_t_dist_val", "e_overlap_pct", "e_t_time_val", "e_target_gap_ft",
+]
+for _key in EDITOR_KEPT_KEYS:
+    if _key in st.session_state:
+        st.session_state[_key] = st.session_state[_key]
 
 # Bulletproof getter intercepting any NoneType errors caused by Streamlit clearing fields
 def safe_get_float(key, default_val):
@@ -6126,9 +6141,13 @@ elif page == 'Editor':
             if meta['trigger_type'] == 'distance':
                 st.session_state.e_t_dist_val = meta['t_val']
                 st.session_state.e_target_gap_ft = 26.2
+                st.session_state.e_t_time_val = 2.0
             else:
                 st.session_state.e_target_gap_ft = meta['speed_m'] * M_TO_FT * meta['t_val']
                 st.session_state.e_t_dist_val = 9.0
+                # Set on every load now that it's kept across reruns -
+                # otherwise the first mission's interval stuck to the next.
+                st.session_state.e_t_time_val = meta['t_val']
             e_sync_geometry()
             
         meta = st.session_state.meta
@@ -6162,7 +6181,7 @@ elif page == 'Editor':
             st.header("2. Modify Parameters")
             e_safe = st.number_input("Safe Takeoff Alt (ft)", value=meta['safe_takeoff_ft'], help=param_help("Safe Takeoff Alt (ft)"))
             e_trans = st.number_input("Takeoff Speed (mph)", value=meta['trans_speed_mph'], help=param_help("Takeoff Speed (mph)"))
-            st.number_input("Relative Altitude (ft)", value=60.0, key="e_alt_ft", step=1.0, on_change=e_sync_geometry, help=param_help("Relative Altitude (ft)"))
+            st.number_input("Relative Altitude (ft)", key="e_alt_ft", step=1.0, on_change=e_sync_geometry, help=param_help("Relative Altitude (ft)"))
             st.info("❗Elevation is relative to the take off point, NOT the mission start point.")
 
             e_elev_source = st.selectbox("Elevation Source", ["Open-Elevation (Global)", "USGS 3DEP (US High-Res)", "Local GeoTIFF"], key="e_source", help=param_help("Elevation Source"))
@@ -6181,11 +6200,11 @@ elif page == 'Editor':
                     if tif_files:
                         selected_tif = st.selectbox("Select Surface File", tif_files, key="e_tif")
                         e_tif_path = os.path.join(SURFACES_DIR, selected_tif)
-                        e_show_bounds = st.checkbox("Show GeoTIFF Boundaries on Map", value=True, key="e_bounds")
+                        e_show_bounds = st.checkbox("Show GeoTIFF Boundaries on Map", key="e_bounds")
                     else:
                         st.warning("No .tif files found in the 'surfaces' folder.")
 
-            st.slider("Gimbal Pitch (°)", -90, 0, value= -60, key="e_pitch", on_change=e_sync_geometry, help=param_help("Gimbal Pitch (°)"))
+            st.slider("Gimbal Pitch (°)", -90, 0, key="e_pitch", on_change=e_sync_geometry, help=param_help("Gimbal Pitch (°)"))
 
             current_e_pitch = safe_get_float('e_pitch', -60.0)
             pitch_rad_e = math.radians(abs(current_e_pitch))
@@ -6233,8 +6252,10 @@ elif page == 'Editor':
                 if e_speed_m > max_speed_m:
                     st.error(f"Speed Too High! Lower your speed to {max_speed_m * MS_TO_MPH:.1f} mph.")
             else:
-                if 'e_t_time_val' not in st.session_state:
-                    st.session_state.e_t_time_val = meta['t_val'] if meta['trigger_type'] == 'time' else max(2.0, min_photo_interval_sec)
+                # Raised to the camera's minimum before the field is drawn, as
+                # in the Creator - the field throws on anything less.
+                if safe_get_float('e_t_time_val', 2.0) < min_photo_interval_sec:
+                    st.session_state.e_t_time_val = min_photo_interval_sec
                 e_tval_sec = st.number_input("Interval (sec)", key="e_t_time_val", min_value=min_photo_interval_sec, help=param_help("Interval (sec)"))
                 e_auto_speed = st.checkbox("Auto-Calc Speed", True)
                 if e_auto_speed:
