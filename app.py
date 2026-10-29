@@ -3688,6 +3688,11 @@ def split_mapping_path(path_coords, connector_segments, interval_ft,
 # SESSION STATE INITIALIZATION & SAFE CALLBACKS
 # ==========================================
 # The Creator's own settings are seeded further down, from CREATOR_DEFAULTS.
+
+# Counts full runs of the script, so a widget can tell whether it was drawn on
+# the run before this one (see render_photo_limit_override).
+st.session_state["_run_id"] = st.session_state.get("_run_id", 0) + 1
+
 if "e_alt_ft" not in st.session_state: st.session_state.e_alt_ft = 50.0
 if "e_pitch" not in st.session_state: st.session_state.e_pitch = -60
 if "e_trigger_type" not in st.session_state: st.session_state.e_trigger_type = "distance"
@@ -5334,8 +5339,31 @@ def render_photo_limit_override(container, scope, est_photos):
     rendered inside `container` directly under the limit message. Only call it
     when the mission is actually over the cap. Returns True while the override
     is active, i.e. while saving should be allowed.
+
+    The override only lasts while the box stays on screen. The grant used to
+    live on in session state after the box disappeared (mission back under the
+    cap, another tab, save-in-parts ticked), so a mission could grow to any
+    size afterwards and save with nobody asked again. So when this wasn't
+    drawn on the previous run, it starts over.
     """
+    run_id = st.session_state.get("_run_id", 0)
+    if st.session_state.get(f"{scope}_limit_seen") != run_id - 1:
+        st.session_state.pop(f"{scope}_limit_override_ok", None)
+        st.session_state.pop(f"{scope}_limit_dialog", None)
+        st.session_state[f"{scope}_limit_override_cb"] = False
+    st.session_state[f"{scope}_limit_seen"] = run_id
+
     if st.session_state.pop(f"{scope}_limit_reset", False):
+        st.session_state[f"{scope}_limit_override_cb"] = False
+
+    # The dialog is opened once, on the run right after the box is ticked.
+    # Kept as a standing flag, a dialog closed with X or Esc (which never
+    # reaches Cancel) reopened after every later click in the app.
+    open_dialog = st.session_state.pop(f"{scope}_limit_dialog", False)
+    if (not open_dialog and st.session_state.get(f"{scope}_limit_override_cb")
+            and not st.session_state.get(f"{scope}_limit_override_ok")):
+        # Ticked but never confirmed - the dialog was dismissed. Untick it so
+        # the box doesn't claim an override that isn't in force.
         st.session_state[f"{scope}_limit_override_cb"] = False
 
     with container:
@@ -5346,7 +5374,7 @@ def render_photo_limit_override(container, scope, est_photos):
             args=(scope,),
         )
 
-    if st.session_state.get(f"{scope}_limit_dialog"):
+    if open_dialog:
         _confirm_photo_limit_override(scope, est_photos)
 
     return bool(st.session_state.get(f"{scope}_limit_override_ok"))
