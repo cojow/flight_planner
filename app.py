@@ -3767,9 +3767,8 @@ CREATOR_DEFAULTS = {
 # not the Filename field, per the user's request. Includes the mission type
 # itself, so loading a preset also switches between the two kinds. c_tif
 # (which GeoTIFF) has no default - it depends on the files present - so it
-# is added on its own. map_decompose is kept across reruns like the rest but
-# isn't saved in presets yet; whether it should be is still the user's call.
-CREATOR_PRESET_KEYS = [k for k in CREATOR_DEFAULTS if k != "map_decompose"] + ["c_tif"]
+# is added on its own.
+CREATOR_PRESET_KEYS = list(CREATOR_DEFAULTS) + ["c_tif"]
 
 # Allowed values for the choice settings, and limits for the numeric ones -
 # the same limits their widgets enforce, so a hand-edited or out-of-date
@@ -3799,7 +3798,7 @@ CREATOR_PRESET_LIMITS = {
 for _key, _default in CREATOR_DEFAULTS.items():
     if _key not in st.session_state:
         st.session_state[_key] = _default
-for _key in CREATOR_PRESET_KEYS + ["map_decompose"]:
+for _key in CREATOR_PRESET_KEYS:
     if _key in st.session_state:
         st.session_state[_key] = st.session_state[_key]
 
@@ -3869,7 +3868,19 @@ def resolve_creator_preset(preset):
     return settings, notes
 
 
+# On a hosted deployment these settings files would sit next to app.py, shared
+# by every visitor: one student's pilot name and certificate number pre-filled
+# the next student's flight logs, anyone could overwrite or delete anyone's
+# presets, and "Reset All Local Settings" wiped them for the whole class. In
+# MULTI_USER_MODE they are kept in the browser session instead - private to
+# the tab, and gone when it closes, like the session's missions.
+_HOSTED_PRESETS_KEY = "_hosted_creator_presets"
+_HOSTED_PILOT_INFO_KEY = "_hosted_pilot_info"
+
+
 def load_creator_presets():
+    if MULTI_USER_MODE:
+        return dict(st.session_state.get(_HOSTED_PRESETS_KEY, {}))
     if not os.path.exists(CREATOR_PRESETS_FILE):
         return {}
     try:
@@ -6004,7 +6015,7 @@ if page == 'Creator':
             tuple(tuple(p) for p in (st.session_state.map_boundary or ())),
             (safe_get_float('map_alt_ft', 100.0), safe_get_float('map_pitch', -90.0),
              safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0),
-             side, map_runout, map_bearing) if mapping_mode else None,
+             side, map_runout, map_bearing, bool(map_decompose)) if mapping_mode else None,
             st.session_state.measure_mode,
             tuple(st.session_state.measure_points),
             tuple(tuple(p) for p in (st.session_state.corridor_line or ())),
