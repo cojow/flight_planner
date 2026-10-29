@@ -4125,11 +4125,49 @@ def strip_flight_suffix(name):
     """
     return re.sub(r'(?:_(?:Fly|Pilot))?_H\d+A\d+OL\d+(?:SO\d+)?$', '', name)
 
+def mission_suffix(alt_ft, pitch, overlap_pct, side_overlap_pct=None):
+    """
+    The "_H<height>A<pitch>OL<overlap>(SO<side overlap>)" filename suffix -
+    the one place it is built, so the Creator and Editor can't disagree.
+    Rounded rather than truncated: int() turned a 49.9 ft height (50 ft after
+    a trip through the KMZ's 0.1 m precision) into _H49.
+    """
+    suffix = f"_H{round(alt_ft)}A{round(abs(pitch))}OL{round(overlap_pct)}"
+    if side_overlap_pct is not None:
+        suffix += f"SO{round(side_overlap_pct)}"
+    return suffix
+
+def flown_forward_overlap(pitch, alt_ft, side, gap_m):
+    """
+    The forward overlap a line mission actually flies with, for its filename.
+    The Forward Overlap field isn't always the one in force - a time trigger at
+    a manual speed, or a pitch with no bounded footprint, leaves it at whatever
+    it last said - and the flight log reads the OL in the name. 0 when the
+    footprint has no far edge or the photos don't touch.
+    """
+    fw_ft = finite_center_footprint(pitch, alt_ft, camera_yaw_mode(side))
+    if not fw_ft or fw_ft <= 0 or gap_m <= 0:
+        return 0
+    return max(0.0, min(99.0, (1 - gap_m * M_TO_FT / fw_ft) * 100))
+
 # Characters that are legal in a macOS filename (this app's original
 # platform - only '/' is illegal there) but raise a raw, unhandled OSError
 # on Windows: '<>:"/\|?*' and control characters. Windows also forbids a
 # trailing dot or space, which a plain character strip won't catch.
 _WINDOWS_ILLEGAL_FILENAME_CHARS_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+def mission_folder_name(raw):
+    """
+    A typed folder name made safe to create inside the missions folder, or
+    None if nothing usable is left. Separators are removed, so "../x" or an
+    absolute path can't reach outside it (on the hosted site, outside the
+    student's own session folder). Leading dots and underscores are dropped
+    too: the Download dialog hides such folders, so missions saved into one
+    could never be downloaded.
+    """
+    cleaned = _WINDOWS_ILLEGAL_FILENAME_CHARS_RE.sub('', raw or '').strip().rstrip('. ').lstrip('._ ')
+    return cleaned or None
+
 
 def sanitize_filename_component(name):
     """
@@ -4508,19 +4546,83 @@ def recover_entered_value(stored_text, factor, decimals):
     return raw
 
 
+def _side_from_heading(heading, bearing):
+    """
+    The camera aim (one of LINE_CAMERA_SIDES) that turns a leg flown on
+    `bearing` into the waypoint heading the mission actually stored - the
+    inverse of camera_yaw_for. The aim isn't written into the KMZ anywhere,
+    and without this the Editor re-saved every mission aimed "right", whatever
+    it was planned with.
+    """
+    offset = (heading - bearing) % 360
+    aims = {side: camera_yaw_for(0.0, side) for side in LINE_CAMERA_SIDES}
+    return min(aims, key=lambda side: abs((offset - aims[side] + 180) % 360 - 180))
+
+
+def _dense_photo_spacing_m(coords):
+    """
+    The photo interval a DJI Fly mission was densified with, read back from
+    its waypoints. interpolate_path spaces them at exactly that distance along
+    the route, so it is the spacing that repeats - the first gap alone was
+    wrong whenever the first drawn leg was shorter than the interval, since
+    every corner is pinned as a waypoint of its own.
+    """
+    gaps = [get_haversine_dist(coords[i], coords[i + 1]) for i in range(len(coords) - 1)]
+    gaps = [g for g in gaps if g > 0.01]
+    if not gaps:
+        return 0.0
+    bins = {}
+    for g in gaps:
+        bins.setdefault(round(g, 1), []).append(g)
+    best = max(len(b) for b in bins.values())
+    if best > 1:
+        # The largest of the most common spacings, averaged within its bin -
+        # the bin key itself is rounded to 0.1 m, which is 4% off at 9 ft.
+        key = max(k for k, b in bins.items() if len(b) == best)
+        return sum(bins[key]) / len(bins[key])
+    return sorted(gaps)[len(gaps) // 2]
+
+
 def parse_kmz_for_editing(full_path):
+    """
+    Everything the Editor needs to re-save a mission the way it was planned.
+
+    Besides the plain parameters, a mapping mission brings back its photo
+    layout - which stretches of the route take photos and which are the turns
+    between passes. That layout isn't recomputable from the waypoints alone,
+    so it is read straight out of the file:
+
+    - DJI Pilot 2: one interval trigger per pass. Their waypoint ranges come
+      back as `photo_index_ranges`. Reading only the start index kept just
+      the LAST pass's, so a re-save photographed one pass.
+    - DJI Fly: one waypoint per photo, and the turn waypoints have no photo.
+      Those come back as a per-waypoint `photo_mask`, with each waypoint's
+      stored heading, and the waypoints are kept as they are rather than
+      collapsed to corners and densified again.
+
+    `is_mapping` says whether either was found.
+    """
     meta = {
         "safe_takeoff_ft": 60.0, "trans_speed_mph": 22.0, "speed_m": 4.11, "speed_mph": 6.0,
         "alt_ft": 50.0, "pitch": -60.0, "trigger_type": "distance", 
         "t_val": 9.0, "photo_start_wp": 0, "coords": [], "camera_type": "visible",
-        "drone_sub": "0", "payload_sub": "3"
+        "drone_sub": "0", "payload_sub": "3", "side": "right",
+        "is_mapping": False, "photo_index_ranges": None, "photo_mask": None,
+        "wp_headings": None, "side_overlap": None,
     }
+    so_match = re.search(r'SO(\d+)$', os.path.splitext(os.path.basename(full_path))[0])
+    if so_match:
+        meta['side_overlap'] = int(so_match.group(1))
+
     with zipfile.ZipFile(full_path, 'r') as kmz:
-        is_fly = any(name.startswith('wpmz/') for name in kmz.namelist())
-        waylines_file = [name for name in kmz.namelist() if name.endswith('waylines.wpml')][0]
-        template_file = [name for name in kmz.namelist() if name.endswith('template.kml')][0]
-        root_w = ET.fromstring(kmz.read(waylines_file))
-        root_t = ET.fromstring(kmz.read(template_file))
+        names = kmz.namelist()
+        is_fly = any(name.startswith('wpmz/') for name in names)
+        waylines_files = [name for name in names if name.endswith('waylines.wpml')]
+        template_files = [name for name in names if name.endswith('template.kml')]
+        if not waylines_files or not template_files:
+            raise ValueError("not a DJI waypoint mission (no waylines.wpml/template.kml inside)")
+        root_w = ET.fromstring(kmz.read(waylines_files[0]))
+        root_t = ET.fromstring(kmz.read(template_files[0]))
 
         # Check namespaces generically in case of DJI Fly (1.0.2)
         # Read back as the values that were typed - see recover_entered_value.
@@ -4528,9 +4630,13 @@ def parse_kmz_for_editing(full_path):
         if safe_node is not None: meta['safe_takeoff_ft'] = recover_entered_value(safe_node.text, FT_TO_M, 1)
         trans_node = root_w.find('.//{*}globalTransitionalSpeed')
         if trans_node is not None: meta['trans_speed_mph'] = recover_entered_value(trans_node.text, MPH_TO_MS, 1)
-        speed_node = root_w.find('.//{*}autoFlightSpeed')
+        # The per-waypoint speed is written to 0.01 m/s, the global one only
+        # to 0.1 - prefer the finer one when it's there.
+        speed_node, speed_decimals = root_w.find('.//{*}Placemark/{*}waypointSpeed'), 2
+        if speed_node is None:
+            speed_node, speed_decimals = root_w.find('.//{*}autoFlightSpeed'), 1
         if speed_node is not None:
-            meta['speed_mph'] = recover_entered_value(speed_node.text, MPH_TO_MS, 1)
+            meta['speed_mph'] = recover_entered_value(speed_node.text, MPH_TO_MS, speed_decimals)
             meta['speed_m'] = meta['speed_mph'] * MPH_TO_MS
 
         drone_info = root_t.find('.//{*}droneInfo')
@@ -4543,19 +4649,34 @@ def parse_kmz_for_editing(full_path):
             p_sub = payload_info.find('.//{*}payloadSubEnumValue')
             if p_sub is not None and p_sub.text: meta['payload_sub'] = p_sub.text
 
-        hw_key = "Mavic 3 Multispectral (Drone: 0, Payload: 3)"
-        for k, v in HARDWARE_MAP.items():
+        # The KMZ's layout says which app it was written for (DJI Fly needs the
+        # wpmz/ folder), and that decides far more about the file than the
+        # sub-enums do - two platforms can share those. The sub-enums only pick
+        # between hardware entries of the same app. Falls back to a real key:
+        # the old default named an entry HARDWARE_MAP doesn't have, and the
+        # Editor crashed on any mission from other hardware.
+        same_app = [k for k, v in HARDWARE_MAP.items() if v.get("is_dji_fly", False) == is_fly]
+        hw_key = same_app[0] if same_app else next(iter(HARDWARE_MAP))
+        for k in same_app:
+            v = HARDWARE_MAP[k]
             if v["drone_sub"] == meta['drone_sub'] and v["payload_sub"] == meta['payload_sub']:
                 hw_key = k
+                break
         meta['hardware_key'] = hw_key
 
         raw_coords = []
+        has_photo = []
+        headings = []
+        photo_ranges = []
         pms = root_w.findall('.//{*}Placemark')
         for i, pm in enumerate(pms):
             c_node = pm.find('.//{*}coordinates')
-            if c_node is not None:
-                c_raw = c_node.text.strip().split(',')
-                raw_coords.append((float(c_raw[1]), float(c_raw[0])))
+            if c_node is None:
+                continue
+            c_raw = c_node.text.strip().split(',')
+            raw_coords.append((float(c_raw[1]), float(c_raw[0])))
+            heading_node = pm.find('.//{*}waypointHeadingParam/{*}waypointHeadingAngle')
+            headings.append(float(heading_node.text) if heading_node is not None and heading_node.text else None)
 
             if i == 0:
                 alt_node = pm.find('.//{*}executeHeight')
@@ -4576,6 +4697,7 @@ def parse_kmz_for_editing(full_path):
                                 meta['pitch'] = float(p_angle.text)
                             break
 
+            photo_here = False
             for ag in pm.findall('.//{*}actionGroup'):
                 t_type = ag.find('.//{*}actionTriggerType')
                 if t_type is not None and 'multiple' in t_type.text:
@@ -4585,37 +4707,113 @@ def parse_kmz_for_editing(full_path):
                         meta['t_val'] = (recover_entered_value(t_param.text, FT_TO_M, 2)
                                          if meta['trigger_type'] == 'distance' else float(t_param.text))
                     start_idx = ag.find('.//{*}actionGroupStartIndex')
-                    if start_idx is not None: meta['photo_start_wp'] = int(start_idx.text)
+                    end_idx = ag.find('.//{*}actionGroupEndIndex')
+                    if start_idx is not None:
+                        r_start = int(start_idx.text)
+                        r_end = int(end_idx.text) if end_idx is not None else r_start
+                        photo_ranges.append((r_start, r_end))
 
                 for a in ag.findall('.//{*}action'):
                     func = a.find('.//{*}actionActuatorFunc')
                     if func is not None and func.text == 'takePhoto':
+                        photo_here = True
                         params = a.find('.//{*}actionActuatorFuncParam')
                         if params is not None:
                             lens = params.find('.//{*}payloadLensIndex')
                             if lens is not None: meta['camera_type'] = lens.text
+            has_photo.append(photo_here)
+
+        if len(raw_coords) >= 2 and headings[0] is not None:
+            meta['side'] = _side_from_heading(headings[0], get_bearing(raw_coords[0], raw_coords[1]))
 
         if is_fly and len(raw_coords) >= 2:
             # DJI Fly missions store every densified photo waypoint, not the
             # original drawn corners, and use a per-waypoint reachPoint
             # trigger rather than Pilot's single multipleDistance/
             # multipleTiming action, so trigger_type/t_val/photo_start_wp
-            # never match above. Recover the corners by keeping only points
-            # where the flight direction actually changes (dense points
-            # along one straight segment share an identical bearing), and
-            # recover the photo spacing from the distance between the first
-            # two dense points. Without this, re-saving the mission would
-            # re-densify the already-dense coordinate list on top of itself.
-            # That distance is measured, not stored, so it comes back a hair
-            # off each time and crept by about 0.001 ft per save; to the
-            # hundredth of a foot it stays put.
+            # never match above. The photo spacing is measured, not stored, so
+            # it comes back a hair off each time and crept by about 0.001 ft
+            # per save; to the hundredth of a foot it stays put.
             meta['trigger_type'] = "distance"
-            meta['t_val'] = round(get_haversine_dist(raw_coords[0], raw_coords[1]) * M_TO_FT, 2)
+            meta['t_val'] = round(_dense_photo_spacing_m(raw_coords) * M_TO_FT, 2)
             meta['photo_start_wp'] = 0
-            meta['coords'] = dedensify_coords(raw_coords)
+            if not all(has_photo) and any(has_photo):
+                # A mapping mission: the waypoints with no photo are the turns
+                # between passes. Kept exactly as written - see the docstring.
+                meta['is_mapping'] = True
+                meta['coords'] = raw_coords
+                meta['photo_mask'] = has_photo
+                if all(h is not None for h in headings):
+                    meta['wp_headings'] = headings
+            else:
+                # A line mission: recover the corners by keeping only points
+                # where the flight direction actually changes, so re-saving
+                # doesn't densify the already-dense list on top of itself.
+                meta['coords'] = dedensify_coords(raw_coords)
         else:
             meta['coords'] = raw_coords
+            photo_ranges.sort()
+            if photo_ranges:
+                meta['photo_start_wp'] = photo_ranges[0][0]
+            if len(photo_ranges) > 1:
+                meta['is_mapping'] = True
+                meta['photo_index_ranges'] = photo_ranges
     return meta
+
+def mapping_connectors_from_ranges(n_coords, photo_ranges):
+    """
+    The segments of a route that no photo range covers - the turns between
+    passes - in the form generate_mapping_flight_path hands out, so a DJI Pilot
+    mapping mission read back from its triggers can be counted the same way.
+    """
+    covered = set()
+    for r_start, r_end in photo_ranges or ():
+        covered.update(range(r_start, r_end))
+    return [j for j in range(max(0, n_coords - 1)) if j not in covered]
+
+
+def reaim_headings(headings, old_side, new_side):
+    """
+    Stored waypoint headings turned from one camera aim to another. Each one
+    is its leg's bearing plus the aim's offset (camera_yaw_for), so swapping
+    the offset re-aims it without having to know which leg it belonged to.
+    """
+    delta = camera_yaw_for(0.0, new_side) - camera_yaw_for(0.0, old_side)
+    return [((h + delta + 180) % 360) - 180 for h in headings]
+
+
+def editor_new_file_path(folder, filename_base, source_path):
+    """
+    Where "Make new file?" saves: the usual name, unless that is the mission
+    being edited or another file already there, in which case -edited (then
+    -edited2, ...) is added. Checked at save time - the name used to be fixed
+    when the mission loaded, before the box could be ticked, so ticking it
+    overwrote the original anyway.
+    """
+    def taken(path):
+        return os.path.exists(path) or same_file(path, source_path)
+
+    path = os.path.join(folder, f"{filename_base}.kmz")
+    if not taken(path):
+        return path
+    n = 1
+    while True:
+        tag = "-edited" if n == 1 else f"-edited{n}"
+        path = os.path.join(folder, f"{filename_base}{tag}.kmz")
+        if not taken(path):
+            return path
+        n += 1
+
+
+def same_file(path_a, path_b):
+    """
+    Whether two paths name one file. Comparing the strings isn't enough: macOS
+    and Windows ignore case, so X.KMZ and X.kmz are the same file there.
+    """
+    try:
+        return os.path.samefile(path_a, path_b)
+    except OSError:
+        return os.path.normcase(os.path.abspath(path_a)) == os.path.normcase(os.path.abspath(path_b))
 
 # ==========================================
 # CORE MISSION GENERATOR
@@ -4624,8 +4822,21 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
     is_dji_fly = cfg.get("is_dji_fly", False)
     wpml_ns = "1.0.2" if is_dji_fly else "1.0.6"
     
-    if is_dji_fly:
-        gap_m = max(1.0, cfg['interval_ft'] * FT_TO_M) if cfg["trigger_type"] == "distance" else cfg['speed_m'] * cfg['interval_sec']
+    photo_mask = cfg.get("photo_mask") if is_dji_fly else None
+    if photo_mask is not None and len(photo_mask) == len(coords):
+        # The Editor re-saving a DJI Fly mapping mission: `coords` are already
+        # the mission's own photo and turn waypoints, flagged one by one, so
+        # they are written back as they are - densifying them again would
+        # lose which ones are the turns between passes.
+        elevations = get_elevations_batch(coords, elev_source, tif_path)
+        takes_photo = [bool(f) for f in photo_mask]
+        corner_coords, fracs = coords, None
+    elif is_dji_fly:
+        # Same gap the photo estimate uses (photo_gap_m), floor included - a
+        # time trigger at a crawl came out under 1 m here, writing more
+        # waypoints than the estimate the photo limit was checked against.
+        gap_m = photo_gap_m(cfg["trigger_type"], cfg.get('interval_ft', 0.0),
+                            cfg.get('interval_sec', 0.0), cfg['speed_m'])
         # Query elevations only for the original corner waypoints (same as
         # DJI Pilot), then interpolate for the densified in-between points.
         # Re-querying every dense waypoint's elevation was the choke point
@@ -4694,7 +4905,9 @@ def generate_native_kmz_contents(coords, cfg, elev_source, tif_path):
     # a pass/connector vertex needs its heading pinned to the pass under either
     # camera aim, and only a mapping mission has connectors to begin with.
     wp_headings = None
-    if is_dji_fly and cfg.get("no_photo_segments") and len(corner_coords) >= 2:
+    if photo_mask is not None and cfg.get("wp_headings") and len(cfg["wp_headings"]) == len(coords):
+        wp_headings = [int(round(h)) for h in cfg["wp_headings"]]
+    elif is_dji_fly and cfg.get("no_photo_segments") and len(corner_coords) >= 2:
         seg_aim = [aim(get_bearing(corner_coords[j], corner_coords[j+1]))
                    for j in range(len(corner_coords) - 1)]
         wp_headings = [seg_aim[min(seg, len(seg_aim) - 1)] for seg in photo_segments]
@@ -6370,7 +6583,7 @@ if page == 'Creator':
                             }
 
                             prefixed_name = f"{mission_name}_{'Fly' if is_dji_fly else 'Pilot'}"
-                            suffix = f"_H{int(map_alt)}A{int(abs(map_pitch_val))}OL{int(map_front_ol)}SO{int(map_side_ol)}"
+                            suffix = mission_suffix(map_alt, map_pitch_val, map_front_ol, map_side_ol)
                             final_filename = f"{prefixed_name}{suffix}"
 
                             if st.session_state.c_browsed_dir:
@@ -6518,7 +6731,10 @@ if page == 'Creator':
 
                     platform_prefix = "Fly" if is_dji_fly else "Pilot"
                     prefixed_name = f"{mission_name}_{platform_prefix}"
-                    suffix = f"_H{int(safe_get_float('alt_ft', 50.0))}A{int(abs(safe_get_float('pitch', -60.0)))}OL{int(safe_get_float('overlap_pct', 70.0))}"
+                    line_overlap = flown_forward_overlap(
+                        cfg["pitch"], cfg["alt_ft"], side,
+                        photo_gap_m(cfg["trigger_type"], cfg["interval_ft"], cfg["interval_sec"], speed_m))
+                    suffix = mission_suffix(cfg["alt_ft"], cfg["pitch"], line_overlap)
                     final_filename = f"{prefixed_name}{suffix}"
 
                     if st.session_state.c_browsed_dir:
@@ -6543,7 +6759,7 @@ if page == 'Creator':
                         thumbnail_path = kmz_companion_path(final_filepath)
                         generate_name_thumbnail(
                             prefixed_name, safe_get_float('alt_ft', 50.0), safe_get_float('pitch', -60.0),
-                            safe_get_float('overlap_pct', 70.0), thumbnail_path, coords=coords, photo_count=est_photos
+                            line_overlap, thumbnail_path, coords=coords, photo_count=est_photos
                         )
                         notices.success(f"Saved {final_filename}.kmz to {final_dir}/")
                         offer_kmz_download(notices, "cline", final_filepath, f"{final_filename}.kmz")
@@ -6607,8 +6823,14 @@ elif page == 'Editor':
         full_path = os.path.join(active_dir, selected_kmz)
 
         if 'editor_kmz' not in st.session_state or st.session_state.editor_kmz != full_path:
+            try:
+                meta = parse_kmz_for_editing(full_path)
+            except Exception as e:
+                # Same as the Viewer: one unreadable file shouldn't take the
+                # whole tab down with a traceback.
+                notices.error(f"Couldn't read {selected_kmz}: {e}")
+                st.stop()
             st.session_state.editor_kmz = full_path
-            meta = parse_kmz_for_editing(full_path)
             st.session_state.meta = meta
             st.session_state.editor_key = str(datetime.now().timestamp())
 
@@ -6616,11 +6838,15 @@ elif page == 'Editor':
                 st.session_state.locked_editor_center = list(meta['coords'][0])
                 st.session_state.editor_center = list(meta['coords'][0])
 
-            clean_base_name = strip_flight_suffix(kmz_companion_path(selected_kmz, ""))
-            st.session_state.e_name_input = f"{clean_base_name}-edited" if make_new_file else clean_base_name
+            # The plain name, whatever "Make new file?" says - that box is
+            # usually ticked after loading, so a name decided here ignored it.
+            # The save itself keeps the original when asked to (see
+            # editor_new_file_path).
+            st.session_state.e_name_input = strip_flight_suffix(kmz_companion_path(selected_kmz, ""))
 
             st.session_state.e_alt_ft = meta['alt_ft']
             st.session_state.e_pitch = int(meta['pitch'])
+            st.session_state.e_side = meta['side']
             st.session_state.e_trigger_type = meta['trigger_type']
             if meta['trigger_type'] == 'distance':
                 st.session_state.e_t_dist_val = meta['t_val']
@@ -6629,9 +6855,14 @@ elif page == 'Editor':
             else:
                 st.session_state.e_target_gap_ft = meta['speed_m'] * M_TO_FT * meta['t_val']
                 st.session_state.e_t_dist_val = 9.0
-                # Set on every load now that it's kept across reruns -
-                # otherwise the first mission's interval stuck to the next.
-                st.session_state.e_t_time_val = meta['t_val']
+                # Set on every load, not only when missing - it used to carry
+                # the previous mission's interval into the next one opened.
+                st.session_state.e_t_time_val = max(
+                    meta['t_val'], 2.0 if "narrow_band" in meta['camera_type'] else 0.7)
+            # An override granted for the last mission isn't one for this.
+            for k in ("edit_limit_override_ok", "edit_limit_dialog"):
+                st.session_state.pop(k, None)
+            st.session_state.edit_limit_reset = True
             e_sync_geometry()
             
         meta = st.session_state.meta
@@ -6659,9 +6890,9 @@ elif page == 'Editor':
             min_photo_interval_sec = 2.0 if "narrow_band" in e_camera_type else 0.7
 
             edit_name = sanitize_filename_component(st.text_input("Mission Name", key="e_name_input", help=param_help("Mission Name")))
-            e_preview_suffix = f"_H{int(safe_get_float('e_alt_ft', 50.0))}A{int(abs(safe_get_float('e_pitch', -60.0)))}OL{int(safe_get_float('e_overlap_pct', 70.0))}"
+            # Built again once the trigger settings below are known.
+            e_preview_slot = st.empty()
             e_preview_platform = "Fly" if e_is_dji_fly else "Pilot"
-            st.info(f"Will save as: {edit_name}_{e_preview_platform}{e_preview_suffix}.kmz")
             st.header("2. Modify Parameters")
             e_safe = st.number_input("Safe Takeoff Alt (ft)", value=meta['safe_takeoff_ft'], help=param_help("Safe Takeoff Alt (ft)"))
             e_trans = st.number_input("Takeoff Speed (mph)", value=meta['trans_speed_mph'], help=param_help("Takeoff Speed (mph)"))
@@ -6711,22 +6942,43 @@ elif page == 'Editor':
             e_side = st.selectbox("Camera side of flight path", LINE_CAMERA_SIDES, key="e_side",
                                   on_change=e_sync_geometry, help=param_help("Yaw Side"))
 
+            # A mapping mission's photo layout (which stretches are passes and
+            # which are the turns between them) is carried over from the file
+            # as it is. It can't be re-planned here - the pass spacing comes
+            # from the Creator's side-overlap maths - so the settings that
+            # would need that are fixed, and the rest say so.
+            e_is_mapping = bool(meta.get('is_mapping'))
+            # A DJI Fly mapping mission keeps its exact waypoints (one per
+            # photo), so its photo spacing is fixed too.
+            e_fixed_layout = e_is_mapping and meta.get('photo_mask') is not None
+            if e_is_mapping:
+                st.info("Mapping mission: its passes and the turns between them are kept as planned. "
+                        "Changing altitude, pitch or camera side here does not re-space the passes - "
+                        "to change the coverage, plan it again in the Creator.")
+
             st.header("3. Trigger Settings")
-            # Same as the Creator: inert on DJI Fly, so don't offer it.
+            # Same as the Creator: inert on DJI Fly, so don't offer it. A
+            # mapping mission starts a trigger on every pass instead.
             e_start_wp = st.number_input(
                 "Start Photos at WP", min_value=0, value=meta['photo_start_wp'], step=1,
-                disabled=e_is_dji_fly,
+                disabled=e_is_dji_fly or e_is_mapping,
                 help=("Not available on DJI Fly - it shoots at every waypoint from the start."
-                      if e_is_dji_fly else param_help("Start Photos at WP")))
+                      if e_is_dji_fly else
+                      "Set per pass on a mapping mission." if e_is_mapping
+                      else param_help("Start Photos at WP")))
             if e_is_dji_fly:
                 e_start_wp = 0
-            e_trigger = st.radio("Type", ["distance", "time"], key="e_trigger_type", on_change=e_sync_geometry, help=param_help("Type"))
+            e_trigger = st.radio("Type", ["distance", "time"], key="e_trigger_type", on_change=e_sync_geometry,
+                                 disabled=e_fixed_layout, help=param_help("Type"))
             safe_e_speed = max(2.3, float(meta.get('speed_mph', 6.0)))
 
             if st.session_state.get('e_trigger_type', 'distance') == "distance":
-                st.number_input("Interval (ft)", key="e_t_dist_val", min_value=1.0, step=1.0, on_change=e_sync_dist_to_overlap, help=param_help("Interval (ft)"))
+                st.number_input("Interval (ft)", key="e_t_dist_val", min_value=1.0, step=1.0, on_change=e_sync_dist_to_overlap,
+                                disabled=e_fixed_layout,
+                                help=("Fixed: this DJI Fly mapping mission keeps its own waypoints, one per photo."
+                                      if e_fixed_layout else param_help("Interval (ft)")))
                 st.number_input("Forward Overlap (%)", key="e_overlap_pct", min_value=0.0, max_value=99.9, step=1.0,
-                                on_change=e_sync_overlap_to_dist, disabled=not e_overlap_ok,
+                                on_change=e_sync_overlap_to_dist, disabled=not e_overlap_ok or e_fixed_layout,
                                 help=(param_help("Forward Overlap (%)") if e_overlap_ok else
                                       "Unavailable at this gimbal pitch - see the notice above."))
                 e_speed_m = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=safe_e_speed, help=param_help("Flight Speed (mph)")) * MPH_TO_MS
@@ -6755,6 +7007,16 @@ elif page == 'Editor':
                     fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'))
                     st.info(f"Current Overlap: {format_overlap(fw, e_speed_m * M_TO_FT * e_tval_sec)}")
 
+            e_flown_overlap = flown_forward_overlap(
+                safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), e_side,
+                photo_gap_m(st.session_state.get('e_trigger_type', 'distance'), safe_get_float('e_t_dist_val', 9.0),
+                            safe_get_float('e_t_time_val', 2.0), e_speed_m))
+            e_preview_suffix = mission_suffix(safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0),
+                                              e_flown_overlap,
+                                              meta.get('side_overlap') if meta.get('is_mapping') else None)
+            e_preview_slot.info(f"Will save as: {edit_name}_{e_preview_platform}{e_preview_suffix}.kmz"
+                                + (" (with -edited added if that name is taken)" if make_new_file else ""))
+
             st.header("4. Visuals")
             show_footprints = st.checkbox("Show Image Footprints", value=True, help=param_help("Show Image Footprints"))
             if show_footprints and abs(safe_get_float('e_pitch', -60.0)) < VERT_HALF_FOV_DEG:
@@ -6777,7 +7039,10 @@ elif page == 'Editor':
 
         df = pd.DataFrame(meta['coords'], columns=['Latitude', 'Longitude'])
         edited_df = side_panel.data_editor(df, num_rows="dynamic", key=st.session_state.editor_key, width='stretch')
-        current_coords = [(row['Latitude'], row['Longitude']) for _, row in edited_df.iterrows()]
+        # A row added to the table starts out blank - skip it until it has
+        # both numbers, rather than handing NaN to the map and the save.
+        current_coords = [(float(row['Latitude']), float(row['Longitude'])) for _, row in edited_df.iterrows()
+                          if pd.notna(row['Latitude']) and pd.notna(row['Longitude'])]
 
         with map_layer:
             # Constant view arguments - see the note on the Creator map.
@@ -6866,25 +7131,48 @@ elif page == 'Editor':
                     icon=DivIcon(icon_size=(24,24), icon_anchor=(12,12), html=f'<div style="font-size: 11pt; color: black; background: white; border-radius: 50%; text-align: center; border: 2px solid black; font-weight: bold; width: 24px; height: 24px; line-height: 20px;">{i}</div>')
                 ).add_to(m_edit)
             
-            if show_footprints and gap_ft_preview > 0 and e_start_wp < len(current_coords):
-                current_dist = cum_dist[int(e_start_wp)]
-                while current_dist <= total_dist_ft + 0.01:
-                    for i in range(len(cum_dist) - 1):
-                        if cum_dist[i] <= current_dist <= cum_dist[i+1] + 0.001:
-                            seg_len = cum_dist[i+1] - cum_dist[i]
-                            if seg_len > 0:
-                                frac = (current_dist - cum_dist[i]) / seg_len
-                                lat = current_coords[i][0] + (current_coords[i+1][0] - current_coords[i][0]) * frac
-                                lon = current_coords[i][1] + (current_coords[i+1][1] - current_coords[i][1]) * frac
-                            else:
-                                lat, lon = current_coords[i][0], current_coords[i][1]
-                        
-                            footprint = get_photo_footprint(lat, lon, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0), yaws[i])
-                            if footprint:
-                                folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_edit)
-                            folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_edit)
-                            break
-                    current_dist += gap_ft_preview
+            # Where the photos fall, by mission kind - the same layout the
+            # save writes, so the preview can't show photos the mission
+            # won't take (a mapping mission's turns between passes take none).
+            e_layout_kept = e_is_mapping and len(current_coords) == len(meta['coords'])
+            if e_fixed_layout and e_layout_kept:
+                e_preview_headings = reaim_headings(meta['wp_headings'], meta['side'], e_side) if meta.get('wp_headings') else None
+            if show_footprints and e_fixed_layout and e_layout_kept:
+                for i, c in enumerate(current_coords):
+                    if not meta['photo_mask'][i]:
+                        continue
+                    if e_preview_headings is not None:
+                        yaw = e_preview_headings[i] % 360
+                    else:
+                        yaw = yaws[min(i, len(yaws) - 1)] if yaws else 0.0
+                    footprint = get_photo_footprint(c[0], c[1], safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0), yaw)
+                    if footprint:
+                        folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_edit)
+                    folium.CircleMarker(list(c), radius=2.5, color="yellow", fill=True).add_to(m_edit)
+            elif show_footprints and gap_ft_preview > 0 and e_start_wp < len(current_coords):
+                if e_layout_kept and meta.get('photo_index_ranges'):
+                    preview_ranges = meta['photo_index_ranges']
+                else:
+                    preview_ranges = [(int(e_start_wp), len(current_coords) - 1)]
+                for r_start, r_end in preview_ranges:
+                    current_dist = cum_dist[r_start]
+                    while current_dist <= cum_dist[r_end] + 0.01:
+                        for i in range(r_start, r_end):
+                            if cum_dist[i] <= current_dist <= cum_dist[i+1] + 0.001:
+                                seg_len = cum_dist[i+1] - cum_dist[i]
+                                if seg_len > 0:
+                                    frac = (current_dist - cum_dist[i]) / seg_len
+                                    lat = current_coords[i][0] + (current_coords[i+1][0] - current_coords[i][0]) * frac
+                                    lon = current_coords[i][1] + (current_coords[i+1][1] - current_coords[i][1]) * frac
+                                else:
+                                    lat, lon = current_coords[i][0], current_coords[i][1]
+
+                                footprint = get_photo_footprint(lat, lon, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0), yaws[i])
+                                if footprint:
+                                    folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_edit)
+                                folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_edit)
+                                break
+                        current_dist += gap_ft_preview
 
             map_data_edit = st_folium(m_edit, use_container_width=True, height=1000, key="editor_map")
 
@@ -6925,7 +7213,22 @@ elif page == 'Editor':
             e_gap_m = photo_gap_m(st.session_state.get('e_trigger_type', 'distance'),
                                   safe_get_float('e_t_dist_val', 9.0),
                                   safe_get_float('e_t_time_val', 2.0), e_speed_m)
-            est_photos = count_corridor_photos(final_coords, e_gap_m, e_is_dji_fly, e_start_wp)
+            # A mapping mission's photo layout belongs to its waypoints, so it
+            # only carries over while they are the same ones - not after rows
+            # are added or removed, or a new line is drawn.
+            e_layout_kept = e_is_mapping and len(final_coords) == len(meta['coords'])
+            if e_is_mapping and not e_layout_kept:
+                notices.error("This mapping mission's waypoints were added to or removed, so its passes "
+                              "can't be kept. Undo that, or plan the area again in the Creator.")
+            e_ranges = meta.get('photo_index_ranges') if e_layout_kept else None
+            if e_fixed_layout and e_layout_kept:
+                est_photos = sum(1 for f in meta['photo_mask'] if f)
+            elif e_ranges:
+                est_photos = count_mapping_photos(final_coords, e_gap_m * M_TO_FT,
+                                                  mapping_connectors_from_ranges(len(final_coords), e_ranges),
+                                                  is_dji_fly=False)
+            else:
+                est_photos = count_corridor_photos(final_coords, e_gap_m, e_is_dji_fly, e_start_wp)
             
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Path Distance", f"{total_dist_ft:.1f} ft",
@@ -6939,6 +7242,9 @@ elif page == 'Editor':
                 notices.error(f"DJI Fly greatly lags with more than {DJI_FLY_PHOTO_LIMIT} waypoints (photos). To prevent a crash please reduce your distance or increase the interval.")
                 save_disabled = not render_photo_limit_override(notices, "edit", est_photos)
 
+            if e_is_mapping and not e_layout_kept:
+                save_disabled = True
+
             if st.button("Save & Update Mission", disabled=save_disabled):
                 with notices.spinner("Calculating terrain elevations and generating KMZ..."):
                     new_cfg = {
@@ -6951,18 +7257,27 @@ elif page == 'Editor':
                         "drone_sub": e_drone_sub_enum, "payload_sub": e_payload_sub_enum,
                         "is_dji_fly": e_is_dji_fly
                     }
+                    if e_ranges:
+                        new_cfg["photo_index_ranges"] = e_ranges
+                    if e_fixed_layout and e_layout_kept:
+                        new_cfg["photo_mask"] = meta['photo_mask']
+                        if meta.get('wp_headings'):
+                            new_cfg["wp_headings"] = reaim_headings(meta['wp_headings'], meta['side'], e_side)
                     
                     e_platform_prefix = "Fly" if e_is_dji_fly else "Pilot"
                     e_prefixed_name = f"{edit_name}_{e_platform_prefix}"
-                    suffix = f"_H{int(safe_get_float('e_alt_ft', 50.0))}A{int(abs(safe_get_float('e_pitch', -60.0)))}OL{int(safe_get_float('e_overlap_pct', 70.0))}"
-                    final_filename = f"{e_prefixed_name}{suffix}"
+                    final_filename = f"{e_prefixed_name}{e_preview_suffix}"
 
                     try:
                         template_kml, waylines_wpml = generate_native_kmz_contents(final_coords, new_cfg, e_elev_source, e_tif_path)
                     except ElevationLookupError as e:
                         notices.error(f"Save aborted: {e}")
                     else:
-                        final_filepath = os.path.join(active_dir, f"{final_filename}.kmz")
+                        if make_new_file:
+                            final_filepath = editor_new_file_path(active_dir, final_filename, full_path)
+                            final_filename = os.path.splitext(os.path.basename(final_filepath))[0]
+                        else:
+                            final_filepath = os.path.join(active_dir, f"{final_filename}.kmz")
                         export_mission_kmz_from_strings(
                             template_kml_str=template_kml,
                             waylines_wpml_str=waylines_wpml,
@@ -6973,7 +7288,7 @@ elif page == 'Editor':
                         thumbnail_path = kmz_companion_path(final_filepath)
                         generate_name_thumbnail(
                             e_prefixed_name, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0),
-                            safe_get_float('e_overlap_pct', 70.0), thumbnail_path, coords=final_coords, photo_count=est_photos
+                            e_flown_overlap, thumbnail_path, coords=final_coords, photo_count=est_photos
                         )
 
                         # "Make new file?" unchecked means overwrite, not "keep both" -
@@ -6982,7 +7297,10 @@ elif page == 'Editor':
                         # very often differs from the source file even when the user
                         # never intended to keep a second copy. Remove the original
                         # (and its paired thumbnail) once the new save has succeeded.
-                        if not make_new_file and final_filepath != full_path:
+                        # Compared as files, not strings: on macOS/Windows a
+                        # source named X.KMZ IS the X.kmz just written, and
+                        # removing "the original" deleted the new save.
+                        if not make_new_file and not same_file(final_filepath, full_path):
                             if os.path.exists(full_path):
                                 os.remove(full_path)
                             old_thumbnail = kmz_companion_path(full_path)
