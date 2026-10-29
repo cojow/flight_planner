@@ -939,6 +939,30 @@ def add_basemap(fmap):
     ).add_to(fmap)
     return fmap
 
+
+def add_path_end_markers(fmap, path):
+    """
+    Put an "S" badge on the first point of a flight path and an "E" on the
+    last, so the map says where to launch from and where the drone finishes.
+    Shared by both mission types so the two badges look the same whichever
+    kind of mission is being planned.
+    """
+    for point, letter, word, fill in ((path[0], "S", "Start", "#19b35a"),
+                                      (path[-1], "E", "End", "#e03131")):
+        folium.Marker(
+            point,
+            tooltip=f"{word} of the flight path",
+            # Round badge rather than a word: these sit on top of the path,
+            # and at the scale an area mission is drawn at a pill long enough
+            # to read "START" covers the first pass.
+            icon=DivIcon(icon_size=(26, 26), icon_anchor=(13, 13), html=(
+                f'<div style="box-sizing: border-box; width: 26px; height: 26px; '
+                f'font-size: 12pt; font-weight: bold; color: #ffffff; '
+                f'background: {fill}; border: 2px solid #ffffff; border-radius: 50%; '
+                f'text-align: center; line-height: 22px;">{letter}</div>'
+            )),
+        ).add_to(fmap)
+
 # Creator's "📏 Measure distance" tool. Hidden from the UI for now; the code
 # is kept intact so flipping this back to True restores it unchanged.
 MEASURE_TOOL_ENABLED = False
@@ -5486,22 +5510,7 @@ if page == 'Creator':
                         # Which corner to launch from, and where it finishes.
                         # The arrows along the line give the direction but not
                         # the ends, and on a serpentine the two look alike.
-                        for point, letter, word, fill in ((preview_path[0], "S", "Start", "#19b35a"),
-                                                          (preview_path[-1], "E", "End", "#e03131")):
-                            folium.Marker(
-                                point,
-                                tooltip=f"{word} of the flight path",
-                                # Round badge rather than a word: these sit on
-                                # top of the path, and at the scale an area
-                                # mission is drawn at a pill long enough to
-                                # read "START" covers the first pass.
-                                icon=DivIcon(icon_size=(26, 26), icon_anchor=(13, 13), html=(
-                                    f'<div style="box-sizing: border-box; width: 26px; height: 26px; '
-                                    f'font-size: 12pt; font-weight: bold; color: #ffffff; '
-                                    f'background: {fill}; border: 2px solid #ffffff; border-radius: 50%; '
-                                    f'text-align: center; line-height: 22px;">{letter}</div>'
-                                )),
-                            ).add_to(m)
+                        add_path_end_markers(m, preview_path)
                 except Exception as e:
                     # Previously swallowed, which made a genuine failure look
                     # identical to "no path could be drawn for this area".
@@ -5529,6 +5538,10 @@ if page == 'Creator':
                     st.session_state.corridor_line, color="#00ffff", weight=5,
                     tooltip="Flight line",
                 ).add_to(m)
+                # The drone flies the line in the order it was drawn, which a
+                # finished line no longer shows - so the end it starts from
+                # is marked, as on an area mission.
+                add_path_end_markers(m, st.session_state.corridor_line)
 
         if st.session_state.measure_mode:
             # Points are redrawn from session state each render rather than
