@@ -3270,13 +3270,7 @@ def split_mapping_path(path_coords, connector_segments, interval_ft,
 # ==========================================
 # SESSION STATE INITIALIZATION & SAFE CALLBACKS
 # ==========================================
-if "alt_ft" not in st.session_state: st.session_state.alt_ft = 50.0
-if "pitch" not in st.session_state: st.session_state.pitch = -60
-if "trigger_type" not in st.session_state: st.session_state.trigger_type = "distance"
-if "t_dist_val" not in st.session_state: st.session_state.t_dist_val = 9.0
-if "target_gap_ft" not in st.session_state: st.session_state.target_gap_ft = 26.2
-if "overlap_pct" not in st.session_state: st.session_state.overlap_pct = 70.0
-
+# The Creator's own settings are seeded further down, from CREATOR_DEFAULTS.
 if "e_alt_ft" not in st.session_state: st.session_state.e_alt_ft = 50.0
 if "e_pitch" not in st.session_state: st.session_state.e_pitch = -60
 if "e_trigger_type" not in st.session_state: st.session_state.e_trigger_type = "distance"
@@ -3296,8 +3290,9 @@ def safe_get_float(key, default_val):
     except (TypeError, ValueError):
         return default_val
 
-# The two kinds of mission the Creator plans. Mapping leads because it is the
-# usual job - an area to cover - and the flight line is the special case.
+# The two kinds of mission the Creator plans. Mapping is listed first, but a
+# flight line is what this version of the planner opens on - see
+# CREATOR_DEFAULTS. (The class fork opens on mapping.)
 MISSION_TYPE_MAPPING = "Mapping mission"
 MISSION_TYPE_LINE = "Flight line mission"
 MISSION_TYPES = [MISSION_TYPE_MAPPING, MISSION_TYPE_LINE]
@@ -3310,21 +3305,136 @@ MISSION_TYPE_CAPTIONS = [
 
 CREATOR_PRESETS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".creator_presets.json")
 
-# Every Creator sidebar parameter a preset can capture/restore - deliberately
-# excludes the Filename field, per the user's request. Includes the mission
-# type itself, so loading a preset also switches between the two kinds.
-CREATOR_PRESET_KEYS = [
-    "mission_type", "hw_choice", "cam_choice",
-    "trans_speed_mph", "safe_takeoff_ft",
-    "alt_ft", "map_alt_ft",
-    "c_source", "c_tif", "c_bounds",
-    "pitch", "map_pitch", "side", "map_side",
-    "photo_start_wp", "trigger_type",
-    "t_dist_val", "overlap_pct", "manual_mph_dist",
-    "t_val_sec", "auto_speed", "target_gap_ft", "manual_mph_time",
-    "map_front_ol", "map_side_ol", "map_speed_mph",
-    "map_fix_bearing", "map_bearing", "map_runout_on", "map_runout",
-]
+CREATOR_SENSOR_MODES = ["RGB Only", "Multispectral Only", "RGB + Multispectral"]
+ELEVATION_SOURCES = ["USGS 3DEP (US High-Res)", "Open-Elevation (Global)", "Local GeoTIFF"]
+
+# The one place the Creator's sidebar settings get their starting values.
+# The widgets themselves carry no value=/index= of their own. Two places to
+# set a default had already drifted apart (altitude was seeded at 50 here
+# and written as 60 on its widget; 50 was what anyone actually saw), and
+# Streamlit warns whenever a widget has a default of its own AND its key
+# was set through st.session_state, which is how presets load. These are
+# today's effective values; the one deliberate choice is the mission type,
+# which opens on a flight line on this branch.
+CREATOR_DEFAULTS = {
+    "mission_type": MISSION_TYPE_LINE,
+    "hw_choice": next(iter(HARDWARE_MAP)), "cam_choice": CREATOR_SENSOR_MODES[0],
+    "trans_speed_mph": 22.0, "safe_takeoff_ft": 60.0,
+    "alt_ft": 50.0, "map_alt_ft": 100.0,
+    "c_source": ELEVATION_SOURCES[0], "c_bounds": True,
+    "pitch": -60, "map_pitch": -90, "side": LINE_CAMERA_SIDES[0], "map_side": MAPPING_CAMERA_SIDES[0],
+    "photo_start_wp": 0, "trigger_type": "distance",
+    "t_dist_val": 9.0, "overlap_pct": 70.0, "manual_mph_dist": 6.0,
+    "t_val_sec": 2.0, "auto_speed": True, "target_gap_ft": 26.2, "manual_mph_time": 6.0,
+    "map_front_ol": 75.0, "map_side_ol": 65.0, "map_speed_mph": 6.0,
+    "map_fix_bearing": False, "map_bearing": 90, "map_runout_on": False, "map_runout": 1.0,
+    "map_decompose": False,
+}
+
+# Every Creator sidebar setting a preset captures and restores - deliberately
+# not the Filename field, per the user's request. Includes the mission type
+# itself, so loading a preset also switches between the two kinds. c_tif
+# (which GeoTIFF) has no default - it depends on the files present - so it
+# is added on its own. map_decompose is kept across reruns like the rest but
+# isn't saved in presets yet; whether it should be is still the user's call.
+CREATOR_PRESET_KEYS = [k for k in CREATOR_DEFAULTS if k != "map_decompose"] + ["c_tif"]
+
+# Allowed values for the choice settings, and limits for the numeric ones -
+# the same limits their widgets enforce, so a hand-edited or out-of-date
+# preset is brought into range before a widget can reject it. Numbers not
+# listed here only need to be finite.
+CREATOR_PRESET_CHOICES = {
+    "mission_type": MISSION_TYPES, "hw_choice": list(HARDWARE_MAP), "cam_choice": CREATOR_SENSOR_MODES,
+    "c_source": ELEVATION_SOURCES, "side": LINE_CAMERA_SIDES, "map_side": MAPPING_CAMERA_SIDES,
+    "trigger_type": ["distance", "time"],
+}
+CREATOR_PRESET_LIMITS = {
+    "pitch": (-90, 0), "map_pitch": (-90, -int(math.ceil(MIN_MAPPING_PITCH_DEG))),
+    "photo_start_wp": (0, None), "t_dist_val": (1.0, None), "overlap_pct": (0.0, 99.9),
+    "manual_mph_dist": (2.3, None), "t_val_sec": (0.7, None), "target_gap_ft": (1.0, None),
+    "manual_mph_time": (2.3, None), "map_front_ol": (0.0, 95.0), "map_side_ol": (0.0, 95.0),
+    "map_speed_mph": (2.3, None), "map_bearing": (0, 179), "map_runout": (0.0, 3.0),
+}
+
+# Streamlit deletes a widget's value at the end of any run in which that
+# widget wasn't drawn. Most of the Creator's settings are drawn only some of
+# the time - waypoint vs mapping, distance vs time trigger, Auto-Calc Speed,
+# GeoTIFF, the whole page while another tab is open - so switching away and
+# back reset them to defaults (altitude 120 came back as 50), and a preset
+# saved afterwards stored the defaults. Writing each value back to itself at
+# the top of every run is Streamlit's own documented way to stop that
+# clean-up. It runs here, before the page is chosen, so it covers every page.
+for _key, _default in CREATOR_DEFAULTS.items():
+    if _key not in st.session_state:
+        st.session_state[_key] = _default
+for _key in CREATOR_PRESET_KEYS + ["map_decompose"]:
+    if _key in st.session_state:
+        st.session_state[_key] = st.session_state[_key]
+
+
+def resolve_creator_preset(preset):
+    """
+    The settings a stored preset loads as, and a list of what had to be
+    changed to load it.
+
+    Starts from CREATOR_DEFAULTS, so a setting the preset doesn't mention
+    (one saved before that setting existed) comes back at its default rather
+    than at whatever the sidebar happened to hold - loading a preset gives
+    the same sidebar every time. Unknown keys are ignored, and values that
+    are the wrong type, out of range or no longer an option are corrected
+    and named in the notes, rather than quietly swapped. The drawn flight
+    line and the mapping boundary are not settings, and are left alone.
+    """
+    if not isinstance(preset, dict):
+        return dict(CREATOR_DEFAULTS), ["The preset isn't readable, so the defaults were loaded."]
+    preset = dict(preset)
+    # Presets saved before the mission type was a choice carry the old
+    # mapping_mode flag instead. Translate rather than ignore, or an old
+    # mapping preset silently loads as a flight line.
+    if "mission_type" not in preset and "mapping_mode" in preset:
+        preset["mission_type"] = MISSION_TYPE_MAPPING if preset.pop("mapping_mode") else MISSION_TYPE_LINE
+
+    settings, notes = dict(CREATOR_DEFAULTS), []
+    for key, value in preset.items():
+        if key not in CREATOR_PRESET_KEYS or key == "c_tif":
+            continue
+        default = CREATOR_DEFAULTS[key]
+        if key in CREATOR_PRESET_CHOICES:
+            if value not in CREATOR_PRESET_CHOICES[key]:
+                notes.append(f"{key}: {value!r} is no longer an option, so the default {default!r} was used")
+                continue
+        elif isinstance(default, bool):
+            if not isinstance(value, bool):
+                notes.append(f"{key}: {value!r} isn't on/off, so the default was used")
+                continue
+        else:
+            # Numbers. bool is an int in Python, so it's turned away by name.
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                notes.append(f"{key}: {value!r} isn't a number, so the default {default} was used")
+                continue
+            low, high = CREATOR_PRESET_LIMITS.get(key, (None, None))
+            clamped = max(low, value) if low is not None else value
+            clamped = min(high, clamped) if high is not None else clamped
+            if clamped != value:
+                notes.append(f"{key}: {value} is outside {low} to {high}, so {clamped} was used")
+            # Same number type the widget works in - Streamlit refuses an int
+            # in a float field and the other way around.
+            value = int(round(clamped)) if isinstance(default, int) else float(clamped)
+        settings[key] = value
+
+    # The GeoTIFF is only worth restoring if the file is still there.
+    tif = preset.get("c_tif")
+    if tif is not None:
+        try:
+            available = [f for f in os.listdir(SURFACES_DIR) if f.lower().endswith((".tif", ".tiff"))]
+        except OSError:
+            available = []
+        if tif in available:
+            settings["c_tif"] = tif
+        elif settings["c_source"] == "Local GeoTIFF":
+            notes.append(f"the GeoTIFF {tif!r} isn't in the surfaces folder any more"
+                         + (f", so {available[0]!r} was chosen" if available else ""))
+    return settings, notes
 
 
 def load_creator_presets():
@@ -4907,17 +5017,17 @@ if page == 'Creator':
     # session_state key after that widget has already rendered once in the
     # same script run, so the "Load" button just stashes the preset here and
     # reruns, and this is where it actually gets applied.
-    if st.session_state.get("_c_pending_preset"):
-        pending = st.session_state.pop("_c_pending_preset")
-        # Presets saved before the mission type was a choice carry the old
-        # mapping_mode flag instead. Translate rather than ignore, or an old
-        # mapping preset silently loads as a flight line.
-        if "mission_type" not in pending and "mapping_mode" in pending:
-            pending = dict(pending)
-            pending["mission_type"] = (
-                MISSION_TYPE_MAPPING if pending.pop("mapping_mode") else MISSION_TYPE_LINE)
-        for k, v in pending.items():
+    # Checked by presence, not truthiness: an empty preset is still a request
+    # to load, and loads as all defaults.
+    if "_c_pending_preset" in st.session_state:
+        settings, notes = resolve_creator_preset(st.session_state.pop("_c_pending_preset"))
+        # No usable GeoTIFF in the preset: drop the old choice so the
+        # selector starts from the first file present.
+        if "c_tif" not in settings:
+            st.session_state.pop("c_tif", None)
+        for k, v in settings.items():
             st.session_state[k] = v
+        st.session_state["_c_preset_notes"] = notes
 
     # A deleted preset's name is still sitting in the select box's state, and
     # Streamlit rejects a stored value that isn't among the widget's options.
@@ -4968,6 +5078,8 @@ if page == 'Creator':
         # The label stays visible because Streamlit hangs the "?" on it - with
         # the label collapsed the tooltip is still in the page at zero size,
         # which is no help to anyone.
+        # Opens on a flight line - see CREATOR_DEFAULTS, which is where every
+        # one of these settings gets its starting value.
         mission_type = st.radio(
             "What are you planning?", MISSION_TYPES, key="mission_type",
             captions=MISSION_TYPE_CAPTIONS,
@@ -4998,7 +5110,7 @@ if page == 'Creator':
             st.selectbox("Sensor Mode", ["RGB Only"], disabled=True,
                          help="DJI Fly aircraft are RGB only - sensor mode is not applicable.")
         else:
-            cam_choice = st.selectbox("Sensor Mode", ["RGB Only", "Multispectral Only", "RGB + Multispectral"], key="cam_choice", help=param_help("Sensor Mode"))
+            cam_choice = st.selectbox("Sensor Mode", CREATOR_SENSOR_MODES, key="cam_choice", help=param_help("Sensor Mode"))
         camera_type = CAM_VAL_MAP[cam_choice]
         min_photo_interval_sec = 2.0 if "narrow_band" in camera_type else 0.7
 
@@ -5013,6 +5125,10 @@ if page == 'Creator':
                     "They are shown as empty below - saving a preset now would overwrite the existing "
                     f"file. Back up {os.path.basename(CREATOR_PRESETS_FILE)} first if you want to keep it."
                 )
+            # Shown once, on the run right after a load.
+            c_preset_notes = st.session_state.pop("_c_preset_notes", None)
+            if c_preset_notes:
+                st.warning("Loaded, with changes: " + "; ".join(c_preset_notes) + ".")
             c_preset_names = sorted(c_presets.keys())
             c_selected_preset = st.selectbox("Preset", ["Select a preset..."] + c_preset_names, key="c_preset_select", help=param_help("Parameter Presets"))
             c_no_preset = (c_selected_preset == "Select a preset...")
@@ -5032,18 +5148,18 @@ if page == 'Creator':
                          help="Permanently delete the selected preset"):
                 _c_delete_preset_dialog(c_selected_preset)
 
-        trans_speed_mph = st.number_input("Takeoff Speed (mph)", value=22.0, step=1.0, key="trans_speed_mph", help=param_help("Takeoff Speed (mph)"))
-        safe_takeoff_ft = st.number_input("Safe Takeoff Alt (ft)", value=60.0, step=1.0, key="safe_takeoff_ft", help=param_help("Safe Takeoff Alt (ft)"))
+        trans_speed_mph = st.number_input("Takeoff Speed (mph)", step=1.0, key="trans_speed_mph", help=param_help("Takeoff Speed (mph)"))
+        safe_takeoff_ft = st.number_input("Safe Takeoff Alt (ft)", step=1.0, key="safe_takeoff_ft", help=param_help("Safe Takeoff Alt (ft)"))
 
         if mapping_mode:
             st.header("4. Mapping Settings")
-            st.number_input("Relative Altitude (ft)", value=100.0, key="map_alt_ft", step=1.0, help=param_help("Relative Altitude (ft)"))
+            st.number_input("Relative Altitude (ft)", key="map_alt_ft", step=1.0, help=param_help("Relative Altitude (ft)"))
         else:
             st.header("4. Waypoint Settings")
-            st.number_input("Relative Altitude (ft)", value=60.0, key="alt_ft", step=1.0, on_change=sync_geometry, help=param_help("Relative Altitude (ft)"))
+            st.number_input("Relative Altitude (ft)", key="alt_ft", step=1.0, on_change=sync_geometry, help=param_help("Relative Altitude (ft)"))
         st.info("❗Elevation is relative to the take off point, NOT the mission start point.")
 
-        c_elev_source = st.selectbox("Elevation Source", ["USGS 3DEP (US High-Res)", "Open-Elevation (Global)", "Local GeoTIFF"], key="c_source", help=param_help("Elevation Source"))
+        c_elev_source = st.selectbox("Elevation Source", ELEVATION_SOURCES, key="c_source", help=param_help("Elevation Source"))
         if c_elev_source == "Open-Elevation (Global)":
             st.warning("Can be off by several dozen feet. Use with caution.")
         elif c_elev_source == "USGS 3DEP (US High-Res)":
@@ -5059,7 +5175,7 @@ if page == 'Creator':
                 if tif_files:
                     selected_tif = st.selectbox("Select Surface File", tif_files, key="c_tif")
                     c_tif_path = os.path.join(SURFACES_DIR, selected_tif)
-                    c_show_bounds = st.checkbox("Show GeoTIFF Boundaries on Map", value=True, key="c_bounds")
+                    c_show_bounds = st.checkbox("Show GeoTIFF Boundaries on Map", key="c_bounds")
                 else:
                     st.warning("No .tif files found in the 'surfaces' folder.")
 
@@ -5073,7 +5189,7 @@ if page == 'Creator':
             # outright - pull any such value back in before the slider reads it.
             if "map_pitch" in st.session_state:
                 st.session_state.map_pitch = int(max(-90, min(map_pitch_min, st.session_state.map_pitch)))
-            st.slider("Gimbal Pitch (°)", -90, map_pitch_min, value=-90,
+            st.slider("Gimbal Pitch (°)", -90, map_pitch_min,
                       key="map_pitch", help=param_help("Gimbal Pitch (°)"))
 
             map_alt = safe_get_float('map_alt_ft', 100.0)
@@ -5094,29 +5210,29 @@ if page == 'Creator':
                                 key="map_side", help=param_help("Camera side of flight path"))
 
             st.header("5. Coverage & Speed")
-            st.number_input("Frontal Overlap (%)", min_value=0.0, max_value=95.0, value=75.0, step=1.0, key="map_front_ol")
-            st.number_input("Side Overlap (%)", min_value=0.0, max_value=95.0, value=65.0, step=1.0, key="map_side_ol")
+            st.number_input("Frontal Overlap (%)", min_value=0.0, max_value=95.0, step=1.0, key="map_front_ol")
+            st.number_input("Side Overlap (%)", min_value=0.0, max_value=95.0, step=1.0, key="map_side_ol")
 
             # Off by default: the automatic bearing is the one that needs the
             # fewest passes, so a fixed bearing is opt-in and normally costs
             # passes (and photos) in exchange for lines pointing a chosen way.
-            map_fix_bearing = st.checkbox("Set flight line direction", value=False, key="map_fix_bearing",
+            map_fix_bearing = st.checkbox("Set flight line direction", key="map_fix_bearing",
                                           help=param_help("Set flight line direction"))
             map_bearing = None
             if map_fix_bearing:
-                map_bearing = float(st.slider("Flight Line Bearing (°)", 0, 179, value=90, key="map_bearing",
+                map_bearing = float(st.slider("Flight Line Bearing (°)", 0, 179, key="map_bearing",
                                               help=param_help("Flight Line Bearing (°)")))
 
             # Off by default: with the outer passes now centred on the
             # boundary, the ends of each pass already carry a photo centred on
             # the edge, so run-out is extra coverage rather than the thing
             # making the edge work.
-            map_runout_on = st.checkbox("Add edge run-out", value=False, key="map_runout_on",
+            map_runout_on = st.checkbox("Add edge run-out", key="map_runout_on",
                                         help="Fly each pass past the boundary before turning, so "
                                              "the edge is not the last frame. Off by default.")
             map_runout = 0.0
             if map_runout_on:
-                map_runout = st.slider("Edge Run-out (photo intervals)", 0.0, 3.0, value=1.0, step=0.25,
+                map_runout = st.slider("Edge Run-out (photo intervals)", 0.0, 3.0, step=0.25,
                                        key="map_runout", help=param_help("Edge Run-out (photo intervals)"))
 
             # Experimental coverage strategy, off by default. It only ever
@@ -5124,7 +5240,7 @@ if page == 'Creator':
             # pieces (a U, a ring, an H); on anything else it produces exactly
             # the same flight plan, so it is safe to leave on.
             map_decompose = st.checkbox(
-                "Split passes at gaps (beta)", value=False, key="map_decompose",
+                "Split passes at gaps (beta)", key="map_decompose",
                 disabled=not SHAPELY_AVAILABLE,
                 help=(param_help("Split passes at gaps (beta)") if SHAPELY_AVAILABLE
                       else "Needs the shapely package - run: pip install -r requirements.txt"))
@@ -5139,13 +5255,13 @@ if page == 'Creator':
                 f"Run-out past each edge: {map_geom['interval_ft'] * map_runout:.0f} ft"
             )
 
-            manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=6.0, key="map_speed_mph", help=param_help("Flight Speed (mph)"))
+            manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, key="map_speed_mph", help=param_help("Flight Speed (mph)"))
             speed_m = manual_mph * MPH_TO_MS
             max_speed_m = (map_geom['interval_ft'] * FT_TO_M) / min_photo_interval_sec
             if speed_m > max_speed_m:
                 st.error(f"Speed Too High! Lower your speed to {max_speed_m * MS_TO_MPH:.1f} mph.")
         else:
-            st.slider("Gimbal Pitch (°)", -90, 0, value= -60, key="pitch", on_change=sync_geometry, help=param_help("Gimbal Pitch (°)"))
+            st.slider("Gimbal Pitch (°)", -90, 0, key="pitch", on_change=sync_geometry, help=param_help("Gimbal Pitch (°)"))
 
             current_pitch = safe_get_float('pitch', -60.0)
             pitch_rad = math.radians(abs(current_pitch))
@@ -5184,7 +5300,7 @@ if page == 'Creator':
             # the start index to 0, so the control does nothing there - greyed
             # out rather than left to imply an effect it can't have.
             photo_start_wp = st.number_input(
-                "Start Photos at Waypoint Index", min_value=0, value=0, step=1,
+                "Start Photos at Waypoint Index", min_value=0, step=1,
                 key="photo_start_wp", disabled=is_dji_fly,
                 help=("Not available on DJI Fly - it shoots at every waypoint from the start."
                       if is_dji_fly else param_help("Start Photos at Waypoint Index")))
@@ -5198,7 +5314,7 @@ if page == 'Creator':
                                 on_change=sync_overlap_to_dist, disabled=not c_overlap_ok,
                                 help=(param_help("Forward Overlap (%)") if c_overlap_ok else
                                       "Unavailable at this gimbal pitch - see the notice above."))
-                manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, value=6.0, key="manual_mph_dist", help=param_help("Flight Speed (mph)"))
+                manual_mph = st.number_input("Flight Speed (mph)", min_value=2.3, step=1.0, key="manual_mph_dist", help=param_help("Flight Speed (mph)"))
                 speed_m = manual_mph * MPH_TO_MS
 
                 gap_m = max(1.0, safe_get_float('t_dist_val', 9.0) * FT_TO_M)
@@ -5206,8 +5322,14 @@ if page == 'Creator':
                 if speed_m > max_speed_m:
                     st.error(f"Speed Too High! Lower your speed to {max_speed_m * MS_TO_MPH:.1f} mph.")
             else:
-                t_val_sec = st.number_input("Interval (sec)", min_value=min_photo_interval_sec, value=max(2.0, min_photo_interval_sec), key="t_val_sec", help=param_help("Interval (sec)"))
-                auto_speed = st.checkbox("Auto-Calc Speed", True, key="auto_speed")
+                # The shortest interval depends on the camera, and Streamlit
+                # throws an error rather than drawing a field holding less
+                # than its minimum - so an interval set on an RGB camera is
+                # raised here, before the field, once a slower one is chosen.
+                if safe_get_float('t_val_sec', 2.0) < min_photo_interval_sec:
+                    st.session_state.t_val_sec = min_photo_interval_sec
+                t_val_sec = st.number_input("Interval (sec)", min_value=min_photo_interval_sec, key="t_val_sec", help=param_help("Interval (sec)"))
+                auto_speed = st.checkbox("Auto-Calc Speed", key="auto_speed")
                 if auto_speed:
                     st.number_input("Target Gap (ft)", key="target_gap_ft", min_value=1.0, on_change=sync_gap_to_overlap)
                     st.number_input("Forward Overlap (%)", key="overlap_pct", min_value=0.0, max_value=99.9, step=1.0,
@@ -5217,7 +5339,7 @@ if page == 'Creator':
                     speed_m = min(max((safe_get_float('target_gap_ft', 26.2) * FT_TO_M) / t_val_sec, 1.0), 10.0)
                     st.info(f"Auto-Calculated Speed: {speed_m * MS_TO_MPH:.1f} mph")
                 else:
-                    manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, value=6.0, step=1.0, key="manual_mph_time", help=param_help("Manual Speed (mph)"))
+                    manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, step=1.0, key="manual_mph_time", help=param_help("Manual Speed (mph)"))
                     speed_m = manual_mph * MPH_TO_MS
                     current_gap = speed_m * M_TO_FT * t_val_sec
                     fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode())
