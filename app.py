@@ -2895,15 +2895,15 @@ def footprint_extents_ft(alt_ft, pitch, side="right", yaw_mode="perpendicular"):
 
     yaw_mode picks how the camera is aimed relative to the direction of
     travel, and must match what generate_native_kmz_contents actually writes:
-    - "backward": the same geometry mirrored - camera aimed back along the
-      direction of travel ("backwards" in the UI), so the drone flies
-      tail-first. Footprint dimensions are identical to "forward"; only
-      along_offset_ft changes sign.
     - "forward": camera aimed along the direction of travel ("parallel" in the
       UI). Puts the sensor's LONG axis across-track - a 33% wider swath for
       the same altitude, so proportionally fewer flight lines and photos. It
       also keeps any tilt in the along-track plane, so the cross-track offset
       stays 0 and the drone flies straight down each strip's centerline.
+    - "backward": the same geometry mirrored - camera aimed back along the
+      direction of travel ("backwards" in the UI), so the drone flies
+      tail-first. Footprint dimensions are identical to "forward"; only
+      along_offset_ft changes sign.
     - "perpendicular": camera yawed 90 deg off the flight line, tilting to
       the chosen side. The corridor/line-mission aim, where the point is to
       image something beside the flight path.
