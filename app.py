@@ -6224,7 +6224,7 @@ elif page == 'Editor':
                     "the photo interval directly. Tilt to about -28° or steeper to use overlap."
                 )
             
-            e_side = st.selectbox("Yaw Side", LINE_CAMERA_SIDES, key="e_side",
+            e_side = st.selectbox("Camera side of flight path", LINE_CAMERA_SIDES, key="e_side",
                                   on_change=e_sync_geometry, help=param_help("Yaw Side"))
 
             st.header("3. Trigger Settings")

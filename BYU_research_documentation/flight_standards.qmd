@@ -414,7 +414,9 @@ Waypoint altitudes are relative to wherever the drone takes off, not to the miss
 
 ### Flight Tracker {#sec-flight-tracker}
 
-The flight tracker is a companion app to the flight planner. It runs independently of it, but is downloaded from GitHub along with it. See the documentation [here](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_tracker.html) to learn how to use it. 
+The flight tracker is a companion app to the flight planner.
+It can run independently of it, but it is also included in the flight planner. 
+See the documentation [here](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_tracker.html) to learn how to use the standalone version. 
 
 ### Box
 

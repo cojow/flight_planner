@@ -25,10 +25,6 @@ flight_log/
 #User-specific Creator parameter presets
 .creator_presets.json
 
-#Ignore Transfer Tool (For class version only)
-py/transfer_tool/*
-*transfer_tool
-
 #Machine-specific pilot name/certificate number, for flight log templates
 .pilot_info.json
 

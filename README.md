@@ -129,7 +129,7 @@ This is very important if your flight plan is not over a flat surface.
 * **Camera side of flight path**: Which way the camera points on a mapping mission.
 *parallel* aims it along each pass. 
 *right* and *left* aim the camera across the pass to that side.
-* **Yaw Side**: Same as Side of flight path, but named for the Editor - the aircraft takes pictures to the left or right side of the path.
+*Backwards* aims the camera behind the flight path.
 
 </td>
 <td width="40%">
@@ -196,7 +196,7 @@ In app submitting is not available, you must use another app to do so.
 * **Show Sampled Block Groups**: Outlines the Census block groups picked for the research sample, saved from the [Census Sampling](#census-sampling) app.
 Each is labelled with its GEOID; click a label for its city, cluster, street miles and airspace.
 * **Jump to Block Group**: Moves the Creator map to one of the sampled block groups, so you can plan its flights.
-* **Show Logged Flights**: Draws every flight in the shared flight-log folder (the same folder as the [Flight Log Tracker](https://cojow.github.io/flight_planner/BYU_research_documentation/flight_tracker.html)), so you can see what has already been flown while planning.
+* **Show Logged Flights**: Draws every flight in the shared flight-log folder so you can see what has already been flown while planning.
 Click a line for its date, height, pitch, overlap, and photo count. 
 The folder, upload, and flight list are under *Flight log folder, upload and list*; setting the folder here also sets it for the tracker.
 * **Show Camera Direction Cones**: Adds small wedges along each logged flight showing which way the camera faced.
