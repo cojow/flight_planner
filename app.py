@@ -1807,7 +1807,27 @@ def get_kmz_first_waypoint(kmz_path):
         return None
 
 
+# st.cache_data keeps whatever a function returns - including the None or
+# [None, ...] it used to return on a failed request - so one dropped
+# connection or timeout used to stick for the whole TTL, and every retry in
+# that hour got the cached failure back without trying again. Exceptions
+# aren't cached. So each network lookup below is split: a cached _fetch
+# that raises on any failure, and the public function, which catches that
+# and returns the same "nothing" value callers have always handled. A
+# success is cached; a failure is simply tried again next time.
+#
+# Every request also carries a timeout. Without one a server that accepts
+# the connection and never answers holds the page's script run forever.
+NETWORK_TIMEOUT_SECONDS = 10
+
+
 @st.cache_data(show_spinner=False, ttl=86400)
+def _fetch_address(lat, lon):
+    geolocator = Nominatim(user_agent="dji_flight_planner_app")
+    location = geolocator.reverse((lat, lon), exactly_one=True, zoom=17, timeout=NETWORK_TIMEOUT_SECONDS)
+    return location.address if location else None
+
+
 def get_address_from_coords(lat, lon):
     """
     General address for a mission's location, via the same Nominatim service
@@ -1816,16 +1836,18 @@ def get_address_from_coords(lat, lon):
     changed doesn't re-hit the network for every mission again.
     """
     try:
-        geolocator = Nominatim(user_agent="dji_flight_planner_app")
-        location = geolocator.reverse((lat, lon), exactly_one=True, zoom=17, timeout=10)
-        if location:
-            return location.address
+        return _fetch_address(lat, lon)
     except Exception:
-        pass
-    return None
+        return None
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
+def _fetch_geocode(query):
+    geolocator = Nominatim(user_agent="dji_flight_planner_app")
+    location = geolocator.geocode(query, timeout=NETWORK_TIMEOUT_SECONDS)
+    return [location.latitude, location.longitude] if location else None
+
+
 def get_coords_from_search(query):
     """Parses a lat,lon string or geocodes an address to return [lat, lon]."""
     if not query:
@@ -1834,16 +1856,13 @@ def get_coords_from_search(query):
     if match:
         return [float(match.group(1)), float(match.group(3))]
     try:
-        geolocator = Nominatim(user_agent="dji_flight_planner_app")
-        location = geolocator.geocode(query)
-        if location:
-            return [location.latitude, location.longitude]
+        return _fetch_geocode(query)
     except Exception:
-        pass
-    return None
+        return None
+
 
 @st.cache_data(ttl=3600)
-def fetch_uasfm_data(center_lat, center_lon, radius_deg=0.05):
+def _fetch_uasfm_data(center_lat, center_lon, radius_deg):
     xmin = center_lon - radius_deg
     ymin = center_lat - radius_deg
     xmax = center_lon + radius_deg
@@ -1853,13 +1872,21 @@ def fetch_uasfm_data(center_lat, center_lon, radius_deg=0.05):
         "inSR": "4326", "spatialRel": "esriSpatialRelIntersects", "outFields": "*", "outSR": "4326", "f": "geojson"
     }
     url = f"https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/FAA_UAS_FacilityMap_Data/FeatureServer/0/query?{urllib.parse.urlencode(params)}"
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        response = urllib.request.urlopen(req)
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECONDS) as response:
         data = json.loads(response.read().decode('utf-8'))
-        if "features" in data and len(data["features"]) == 0:
-            return {"type": "FeatureCollection", "features": []}
-        return data if "error" not in data else None
+    # ArcGIS reports its own failures inside a 200 response. Raised, so
+    # that isn't cached as if it were the facility map either.
+    if "error" in data:
+        raise RuntimeError(f"UAS facility map service error: {data['error']}")
+    if "features" in data and len(data["features"]) == 0:
+        return {"type": "FeatureCollection", "features": []}
+    return data
+
+
+def fetch_uasfm_data(center_lat, center_lon, radius_deg=0.05):
+    try:
+        return _fetch_uasfm_data(center_lat, center_lon, radius_deg)
     except Exception:
         return None
 
@@ -2099,58 +2126,106 @@ class ElevationLookupError(Exception):
 # returning, so downstream code never has to check for None itself.
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def get_elevations_open_elev(coords):
+def _fetch_open_elev(coords):
     url = "https://api.open-elevation.com/api/v1/lookup"
     locations = [{"latitude": lat, "longitude": lon} for lat, lon in coords]
     data = json.dumps({"locations": locations}).encode('utf-8')
+    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
+    # Longer than the others: one request carries the whole mission.
+    with urllib.request.urlopen(req, timeout=3 * NETWORK_TIMEOUT_SECONDS) as response:
+        res_json = json.loads(response.read().decode('utf-8'))
+    return [r.get('elevation') for r in res_json['results']]
+
+
+def get_elevations_open_elev(coords):
+    # The warning lives out here, not in the cached function: Streamlit
+    # replays a cached function's st.* calls on every cache hit, so a
+    # warning raised inside one keeps reappearing after the problem is gone.
     try:
-        req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
-            res_json = json.loads(response.read().decode('utf-8'))
-            results = res_json['results']
-            return [r.get('elevation') for r in results]
+        return _fetch_open_elev(coords)
     except Exception as e:
         st.warning(f"Open-Elevation error: {e}")
         return [None] * len(coords)
 
-@st.cache_data(show_spinner=False, ttl=3600)
-def get_elevations_usgs(coords):
-    elevations = []
-    for lat, lon in coords:
-        url = f"https://epqs.nationalmap.gov/v1/json?x={lon}&y={lat}&wkid=4326&units=Meters&includeDate=false"
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req) as response:
-                res_json = json.loads(response.read().decode('utf-8'))
-                val = res_json.get('value')
-                elevations.append(None if val is None or str(val).lower() == 'null' or str(val).strip() == '' else float(val))
-        except Exception as e:
-            elevations.append(None)
-    return elevations
 
 @st.cache_data(show_spinner=False, ttl=3600)
+def _fetch_usgs_point(lat, lon):
+    """One point's USGS elevation, or None where USGS has no data there.
+    Raises on a network failure, so that isn't cached as "no data"."""
+    url = f"https://epqs.nationalmap.gov/v1/json?x={lon}&y={lat}&wkid=4326&units=Meters&includeDate=false"
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECONDS) as response:
+        res_json = json.loads(response.read().decode('utf-8'))
+    val = res_json.get('value')
+    return None if val is None or str(val).lower() == 'null' or str(val).strip() == '' else float(val)
+
+
+# After this many failed requests in a row the service is taken to be down
+# and the rest of the mission isn't asked for. USGS is one request per
+# point, so a mission of a few hundred waypoints against an unreachable
+# server used to wait out every one of them in turn.
+USGS_GIVE_UP_AFTER_FAILURES = 3
+
+
+def get_elevations_usgs(coords):
+    # Cached per point rather than per mission, so moving one waypoint only
+    # asks for that one again, and a retry after a partial failure only
+    # fetches the points that failed.
+    elevations = []
+    failures_in_a_row = 0
+    for lat, lon in coords:
+        if failures_in_a_row >= USGS_GIVE_UP_AFTER_FAILURES:
+            elevations.append(None)
+            continue
+        try:
+            elevations.append(_fetch_usgs_point(lat, lon))
+            failures_in_a_row = 0
+        except Exception:
+            elevations.append(None)
+            failures_in_a_row += 1
+    if failures_in_a_row >= USGS_GIVE_UP_AFTER_FAILURES:
+        st.warning(f"USGS 3DEP stopped answering after {USGS_GIVE_UP_AFTER_FAILURES} failed requests "
+                   "in a row, so the remaining points weren't looked up.")
+    return elevations
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _read_raster_elevations(coords, tif_path, file_stamp):
+    """file_stamp (the file's size and modification time) is only part of
+    the cache key: replacing the GeoTIFF at the same path reads the new one
+    instead of returning the old file's heights for the next hour."""
+    elevations = []
+    with rasterio.open(tif_path) as src:
+        nodata = src.nodata
+        bounds = src.bounds
+        lons = [c[1] for c in coords]
+        lats = [c[0] for c in coords]
+        xs, ys = transform('EPSG:4326', src.crs, lons, lats)
+        pts = list(zip(xs, ys))
+
+        for (x, y), val in zip(pts, src.sample(pts)):
+            v = float(val[0])
+            # A point off the edge of the raster samples as the fill value -
+            # 0 when the file declares no nodata, which reads as sea level -
+            # and a float raster can mark gaps with NaN, which isclose()
+            # never matches. Both are a missing reading, not a height.
+            outside = not (bounds.left <= x <= bounds.right and bounds.bottom <= y <= bounds.top)
+            if outside or math.isnan(v) or (nodata is not None and math.isclose(v, nodata, rel_tol=1e-5)):
+                elevations.append(None)
+            else:
+                elevations.append(v)
+    return elevations
+
+
 def get_elevations_raster(coords, tif_path):
     if not RASTERIO_AVAILABLE:
         return [None] * len(coords)
-    elevations = []
     try:
-        with rasterio.open(tif_path) as src:
-            nodata = src.nodata
-            lons = [c[1] for c in coords]
-            lats = [c[0] for c in coords]
-            xs, ys = transform('EPSG:4326', src.crs, lons, lats)
-            pts = list(zip(xs, ys))
-
-            for val in src.sample(pts):
-                v = float(val[0])
-                if nodata is not None and math.isclose(v, nodata, rel_tol=1e-5):
-                    elevations.append(None)
-                else:
-                    elevations.append(v)
+        stat = os.stat(tif_path)
+        return _read_raster_elevations(coords, tif_path, (stat.st_size, stat.st_mtime))
     except Exception as e:
         st.warning(f"Error reading GeoTIFF: {e}")
         return [None] * len(coords)
-    return elevations
 
 def get_tif_bounds_wgs84(tif_path):
     if not RASTERIO_AVAILABLE:
@@ -2195,14 +2270,23 @@ def latlon_to_global_px(lat, lon, zoom, tile_size=256):
     y = (1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi) / 2.0 * n * tile_size
     return x, y
 
-@st.cache_data(show_spinner=False, ttl=3600)
 def fetch_basemap_image(min_lat, min_lon, max_lat, max_lon, target_px=420):
     """
-    Fetches a Google roadmap tile mosaic cropped exactly to the given
+    Fetches an Esri street-map tile mosaic cropped exactly to the given
     lat/lon bounding box, for use as street context behind a thumbnail's
     flight-path drawing. Returns None (caller falls back to a plain
-    background) if the network is unavailable or the fetch fails.
+    background) if the network is unavailable or the fetch fails - and,
+    as with the lookups above, that None isn't cached, so the next
+    thumbnail tries the network again.
     """
+    try:
+        return _fetch_basemap_image(min_lat, min_lon, max_lat, max_lon, target_px)
+    except Exception:
+        return None
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _fetch_basemap_image(min_lat, min_lon, max_lat, max_lon, target_px):
     tile_size = 256
     lat0 = (min_lat + max_lat) / 2
     lon0 = (min_lon + max_lon) / 2
@@ -2226,16 +2310,13 @@ def fetch_basemap_image(min_lat, min_lon, max_lat, max_lon, target_px=420):
 
     mosaic = Image.new('RGB', ((tile_x1 - tile_x0 + 1) * tile_size, (tile_y1 - tile_y0 + 1) * tile_size), '#e8e8e0')
 
-    try:
-        for tx in range(tile_x0, tile_x1 + 1):
-            for ty in range(tile_y0, tile_y1 + 1):
-                url = ESRI_STREET_TILE_URL.format(z=zoom, x=tx, y=ty)
-                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=5) as response:
-                    tile_img = Image.open(io.BytesIO(response.read())).convert('RGB')
-                mosaic.paste(tile_img, ((tx - tile_x0) * tile_size, (ty - tile_y0) * tile_size))
-    except Exception:
-        return None
+    for tx in range(tile_x0, tile_x1 + 1):
+        for ty in range(tile_y0, tile_y1 + 1):
+            url = ESRI_STREET_TILE_URL.format(z=zoom, x=tx, y=ty)
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=5) as response:
+                tile_img = Image.open(io.BytesIO(response.read())).convert('RGB')
+            mosaic.paste(tile_img, ((tx - tile_x0) * tile_size, (ty - tile_y0) * tile_size))
 
     crop_box = (
         int(x0 - tile_x0 * tile_size), int(y0 - tile_y0 * tile_size),
@@ -2387,7 +2468,17 @@ def get_elevations_batch(coords, source, tif_path=None):
         return []
     if source == "USGS 3DEP (US High-Res)":
         raw = get_elevations_usgs(coords)
-    elif source == "Local GeoTIFF" and tif_path and os.path.exists(tif_path):
+    elif source == "Local GeoTIFF":
+        # Refused rather than quietly answered from Open-Elevation instead:
+        # someone who chose their own survey raster expects its heights, and
+        # a coarser global model's can differ by metres - enough to matter
+        # at the low heights these missions are flown.
+        if not tif_path or not os.path.exists(tif_path):
+            raise ElevationLookupError(
+                "Local GeoTIFF is selected, but "
+                + (f"the file {tif_path!r} can't be found." if tif_path else "no GeoTIFF file has been given.")
+                + " Choose the file again, or pick another elevation source."
+            )
         raw = get_elevations_raster(coords, tif_path)
     else:
         raw = get_elevations_open_elev(coords)
