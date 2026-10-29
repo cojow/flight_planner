@@ -4026,6 +4026,35 @@ def dedensify_coords(coords, angle_tol_deg=1.0):
     corners.append(coords[-1])
     return corners
 
+def recover_entered_value(stored_text, factor, decimals):
+    """
+    The value someone most likely typed (in feet or mph), given the number a
+    mission file holds for it (in metres or m/s) and how many decimals the
+    generator writes that number with.
+
+    The generator rounds - heights and speeds to 0.1, the Pilot photo
+    interval to 0.01 - so converting straight back gave 70 ft -> 21.3 m ->
+    69.88 ft, and every reopen-and-save in the Editor carried the error
+    forward (and renamed the file _H69). This returns the simplest value -
+    whole, then half, tenth, hundredth - that the generator would write as
+    exactly the same digits, so a mission saved at 70 ft reopens at 70 ft.
+    Any value with that property produces an identical file, so nothing about
+    the flight changes. A number with more decimals than the generator writes
+    didn't come from this app, and is converted as it stands.
+    """
+    stored = float(stored_text)
+    raw = stored / factor
+    fraction = stored_text.strip().partition('.')[2]
+    if len(fraction) > decimals:
+        return raw
+    written = f"{stored:.{decimals}f}"
+    for step in (1.0, 0.5, 0.1, 0.01):
+        candidate = round(round(raw / step) * step, 2)
+        if f"{candidate * factor:.{decimals}f}" == written:
+            return candidate
+    return raw
+
+
 def parse_kmz_for_editing(full_path):
     meta = {
         "safe_takeoff_ft": 60.0, "trans_speed_mph": 22.0, "speed_m": 4.11, "speed_mph": 6.0,
@@ -4041,14 +4070,15 @@ def parse_kmz_for_editing(full_path):
         root_t = ET.fromstring(kmz.read(template_file))
 
         # Check namespaces generically in case of DJI Fly (1.0.2)
+        # Read back as the values that were typed - see recover_entered_value.
         safe_node = root_w.find('.//{*}takeOffSecurityHeight')
-        if safe_node is not None: meta['safe_takeoff_ft'] = float(safe_node.text) * M_TO_FT
+        if safe_node is not None: meta['safe_takeoff_ft'] = recover_entered_value(safe_node.text, FT_TO_M, 1)
         trans_node = root_w.find('.//{*}globalTransitionalSpeed')
-        if trans_node is not None: meta['trans_speed_mph'] = float(trans_node.text) * MS_TO_MPH
+        if trans_node is not None: meta['trans_speed_mph'] = recover_entered_value(trans_node.text, MPH_TO_MS, 1)
         speed_node = root_w.find('.//{*}autoFlightSpeed')
-        if speed_node is not None: 
-            meta['speed_m'] = float(speed_node.text)
-            meta['speed_mph'] = float(speed_node.text) * MS_TO_MPH
+        if speed_node is not None:
+            meta['speed_mph'] = recover_entered_value(speed_node.text, MPH_TO_MS, 1)
+            meta['speed_m'] = meta['speed_mph'] * MPH_TO_MS
 
         drone_info = root_t.find('.//{*}droneInfo')
         if drone_info is not None:
@@ -4076,7 +4106,7 @@ def parse_kmz_for_editing(full_path):
 
             if i == 0:
                 alt_node = pm.find('.//{*}executeHeight')
-                if alt_node is not None: meta['alt_ft'] = float(alt_node.text) * M_TO_FT
+                if alt_node is not None: meta['alt_ft'] = recover_entered_value(alt_node.text, FT_TO_M, 1)
                 pitch_node = pm.find('.//{*}waypointGimbalHeadingParam/{*}waypointGimbalPitchAngle')
                 if pitch_node is not None:
                     meta['pitch'] = float(pitch_node.text)
@@ -4099,8 +4129,8 @@ def parse_kmz_for_editing(full_path):
                     meta['trigger_type'] = "distance" if "Distance" in t_type.text else "time"
                     t_param = ag.find('.//{*}actionTriggerParam')
                     if t_param is not None:
-                        val = float(t_param.text)
-                        meta['t_val'] = val * M_TO_FT if meta['trigger_type'] == 'distance' else val
+                        meta['t_val'] = (recover_entered_value(t_param.text, FT_TO_M, 2)
+                                         if meta['trigger_type'] == 'distance' else float(t_param.text))
                     start_idx = ag.find('.//{*}actionGroupStartIndex')
                     if start_idx is not None: meta['photo_start_wp'] = int(start_idx.text)
 
@@ -4123,8 +4153,11 @@ def parse_kmz_for_editing(full_path):
             # recover the photo spacing from the distance between the first
             # two dense points. Without this, re-saving the mission would
             # re-densify the already-dense coordinate list on top of itself.
+            # That distance is measured, not stored, so it comes back a hair
+            # off each time and crept by about 0.001 ft per save; to the
+            # hundredth of a foot it stays put.
             meta['trigger_type'] = "distance"
-            meta['t_val'] = get_haversine_dist(raw_coords[0], raw_coords[1]) * M_TO_FT
+            meta['t_val'] = round(get_haversine_dist(raw_coords[0], raw_coords[1]) * M_TO_FT, 2)
             meta['photo_start_wp'] = 0
             meta['coords'] = dedensify_coords(raw_coords)
         else:
