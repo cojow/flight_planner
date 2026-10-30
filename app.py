@@ -1458,8 +1458,8 @@ def push_mission_to_nest(local_kmz_path, target_uuid):
 
     Returns a PushResult - an (ok, message) pair with warnings attached.
     """
-    # Imported here rather than at the top of the file: this function is also
-    # copied into the desktop helper's core, whose header doesn't carry them.
+    # Imported here rather than at the top of the file, so the function stands
+    # on its own: the class repo copies it into its desktop helper's core.
     import tempfile
     import zipfile
 
@@ -2751,8 +2751,8 @@ def copy_photo_groups(groups, output_folder, group_names=None, progress=None):
     report; copying a full outing moves gigabytes, so neither the count nor
     the progress is something to leave to a print statement.
     """
-    # Imported here rather than at the top of the file: this function is also
-    # copied into the desktop helper's core, whose header doesn't carry it.
+    # Imported here rather than at the top of the file, so the function stands
+    # on its own: the class repo copies it into its desktop helper's core.
     import filecmp
 
     os.makedirs(output_folder, exist_ok=True)
@@ -4301,8 +4301,8 @@ def mission_folder_name(raw):
     None if nothing usable is left. Separators are removed, so "../x" or an
     absolute path can't reach outside it (on the hosted site, outside the
     student's own session folder). Leading dots and underscores are dropped
-    too: the Download dialog hides such folders, so missions saved into one
-    could never be downloaded.
+    too: names like that are the app's own (.cache, _sessions), and the class
+    repo's Download dialog hides them.
     """
     cleaned = _WINDOWS_ILLEGAL_FILENAME_CHARS_RE.sub('', raw or '').strip().rstrip('. ').lstrip('._ ')
     return cleaned or None
@@ -7949,7 +7949,7 @@ elif page == 'Photo Sorter':
                 st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
                 st.button("📂", key="btn_pick_output", on_click=pick_output_folder, help="Browse for Output Directory")
             
-            # Seconds, matching the desktop helper's Sort photos tab - see
+            # Seconds, as in the class repo's desktop helper - see
             # SORTER_DEFAULT_GAP_SECONDS for why 20 and not minutes.
             gap_seconds = st.number_input(
                 "Time Gap (seconds)", min_value=SORTER_MIN_GAP_SECONDS,
