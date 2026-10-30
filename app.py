@@ -3710,6 +3710,7 @@ if "e_bounds" not in st.session_state: st.session_state.e_bounds = True
 EDITOR_KEPT_KEYS = [
     "e_name_input", "e_alt_ft", "e_pitch", "e_side", "e_source", "e_tif", "e_bounds",
     "e_trigger_type", "e_t_dist_val", "e_overlap_pct", "e_t_time_val", "e_target_gap_ft",
+    "edit_dir", "editor_faa_toggle",
 ]
 for _key in EDITOR_KEPT_KEYS:
     if _key in st.session_state:
@@ -3803,7 +3804,9 @@ CREATOR_PRESET_LIMITS = {
 for _key, _default in CREATOR_DEFAULTS.items():
     if _key not in st.session_state:
         st.session_state[_key] = _default
-for _key in CREATOR_PRESET_KEYS:
+# The Save Destination and the FAA map layer aren't preset settings, but
+# they are kept the same way, so a tab switch doesn't reset them either.
+for _key in CREATOR_PRESET_KEYS + ["c_save_option", "creator_faa_toggle"]:
     if _key in st.session_state:
         st.session_state[_key] = st.session_state[_key]
 
