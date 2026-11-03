@@ -307,9 +307,11 @@ def groups(config, folder, out):
     for _, bg in picked.iterrows():
         mine = [f for f in street_features if f["properties"]["geoid"] == bg["geoid"]]
         for piece in street_groups.group_block_group(mine, boundaries[bg["geoid"]], config["sample"]["buffer_m"], n):
-            piece["group_name"] = names.get(f"{bg['geoid']}:{piece['group']}", "")
+            # One name per group number, the same in every block group.
+            piece["group_name"] = names.get(str(piece["group"]), "")
             rows.append({"fly_order": int(bg["fly_order"]), "geoid": bg["geoid"], "city": bg["city"],
                          "group": piece["group"], "group_name": piece["group_name"],
+                         "restricted": piece["restricted"],
                          "mission": piece["mission"], "street": piece["street"],
                          "from": piece["from"], "to": piece["to"], "miles": piece["miles"]})
             features.append(street_groups.to_feature(piece, geoid=bg["geoid"], fly_order=int(bg["fly_order"])))
@@ -317,8 +319,13 @@ def groups(config, folder, out):
         raise ValueError("The picked block groups have no flyable streets to group.")
 
     table = pd.DataFrame(rows).sort_values(["fly_order", "group", "street", "from"])
+    table["restricted_miles"] = table["miles"].where(table["restricted"], 0.0)
     summary = (table.groupby(["fly_order", "geoid", "city", "group", "group_name"], as_index=False)
-               .agg(stretches=("mission", "size"), miles=("miles", "sum")))
+               .agg(stretches=("mission", "size"), miles=("miles", "sum"),
+                    restricted_miles=("restricted_miles", "sum")))
+    table = table.drop(columns="restricted_miles")
+    summary["restricted_miles"] = summary["restricted_miles"].round(2)
+    restricted = table[table["restricted"]]
     table["miles"] = table["miles"].round(3)
     summary["miles"] = summary["miles"].round(2)
 
@@ -334,9 +341,13 @@ def groups(config, folder, out):
     plots.street_groups_map(picked, boundaries, features, files["Street group maps"])
 
     report = io.StringIO()
-    report.write(f"Each picked block group's flyable streets in up to {n} groups of about equal miles, "
+    report.write(f"Each picked block group's streets in up to {n} groups of about equal miles, "
                  "cut only at corners (cross streets).\n")
     report.write("Missions are named Street1_Street2: the street flown, then the cross street at its south or "
                  "west end (END = dead end, EDGE = leaves the block group, AIRSPACE = enters restricted airspace).\n\n")
     report.write(summary.to_string(index=False) + "\n")
+    if len(restricted):
+        report.write(f"\n{len(restricted)} stretches ({restricted['miles'].sum():.2f} mi) are in restricted airspace: "
+                     "they are in their groups like the rest, listed with restricted = True and drawn dashed. "
+                     "Get FAA authorization before flying them.\n")
     return files, report.getvalue()

@@ -249,16 +249,18 @@ def street_groups_map(picked, boundaries, group_features, path):
         ax.add_collection(LineCollection(rings(boundaries[row["geoid"]]), colors="black", linewidths=1.2))
         mine = [f for f in group_features if f["properties"]["geoid"] == row["geoid"]]
         for g in sorted({f["properties"]["group"] for f in mine}):
-            lines, miles, name = [], 0.0, ""
-            for f in mine:
-                if f["properties"]["group"] != g:
-                    continue
-                name = f["properties"].get("group_name") or name
-                geom = shape(f["geometry"])
-                lines += [np.array(part.coords) for part in getattr(geom, "geoms", [geom])]
-                miles += f["properties"]["miles"]
-            ax.add_collection(LineCollection(lines, colors=color(g - 1), linewidths=1.6,
-                                             label=f"Group {g}{f' ({name})' if name else ''}: {miles:.1f} mi"))
+            name = next((f["properties"].get("group_name") for f in mine
+                         if f["properties"]["group"] == g and f["properties"].get("group_name")), "")
+            miles = sum(f["properties"]["miles"] for f in mine if f["properties"]["group"] == g)
+            label = f"Group {g}{f' ({name})' if name else ''}: {miles:.1f} mi"
+            for restricted, style in ((False, "solid"), (True, "dashed")):
+                lines = [np.array(part.coords) for f in mine
+                         if f["properties"]["group"] == g and bool(f["properties"].get("restricted")) == restricted
+                         for part in getattr(shape(f["geometry"]), "geoms", [shape(f["geometry"])])]
+                if lines:
+                    ax.add_collection(LineCollection(lines, colors=color(g - 1), linewidths=1.6,
+                                                     linestyles=style, label=label))
+                    label = None                # one legend entry per group
         minx, miny, maxx, maxy = boundaries[row["geoid"]].bounds
         pad = 0.05 * max(maxx - minx, maxy - miny)
         ax.set_xlim(minx - pad, maxx + pad)
@@ -266,5 +268,6 @@ def street_groups_map(picked, boundaries, group_features, path):
         ax.set_aspect(1 / np.cos(np.radians(LATITUDE)))
         ax.set_title(f"{int(row['fly_order'])}. {row['geoid']}", fontsize=11)
         ax.legend(loc="lower left", fontsize=8, frameon=True)
-    fig.suptitle("Streets to fly, by group (each group about the same miles)", fontsize=13)
+    fig.suptitle("Streets to fly, by group (each group about the same miles; dashed = restricted airspace, "
+                 "needs FAA authorization)", fontsize=13)
     return save(fig, path)

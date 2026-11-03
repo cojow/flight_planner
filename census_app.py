@@ -296,24 +296,15 @@ def tab_groups(folder, config):
     n = st.number_input("Street groups per block group", 1, 20, int(g["per_block_group"]), step=1,
                         key=f"{key}:groups_n")
 
-    # Names for the groups, typed into a table of the groups from the last run.
-    names = dict(g["names"])
-    summary_path = steps.outputs(folder, "groups").get("Group summary (table)")
-    if int(n) != int(g["per_block_group"]):
-        if names:
-            st.caption("Changing the number of groups renumbers them, so their names will be cleared.")
-        names = {}
-    elif summary_path and summary_path.exists():
-        summary = read_csv(summary_path)
-        summary["name"] = [names.get(f"{r.geoid}:{r.group}", "") for r in summary.itertuples()]
-        st.markdown("**Group names** - optional; type a name for any group, then Save + run.")
-        edited = st.data_editor(
-            summary[["fly_order", "geoid", "group", "stretches", "miles", "name"]], hide_index=True,
-            disabled=["fly_order", "geoid", "group", "stretches", "miles"],
-            column_config={"name": st.column_config.TextColumn("Name", help="e.g. North half, or who flies it")},
-            key=f"{key}:group_names:{summary_path.stat().st_mtime}")
-        names = {f"{r.geoid}:{r.group}": str(r.name).strip() for r in edited.itertuples()
-                 if isinstance(r.name, str) and r.name.strip()}
+    # One name per group number, used for that group in every block group.
+    st.markdown("**Group names** - optional; one name per group number, used in every block group "
+                "(e.g. a name for all the group 1s).")
+    table = pd.DataFrame({"group": list(range(1, int(n) + 1)),
+                          "name": [g["names"].get(str(i), "") for i in range(1, int(n) + 1)]})
+    edited = st.data_editor(table, hide_index=True, disabled=["group"],
+                            column_config={"name": st.column_config.TextColumn("Name", help="e.g. North, or who flies it")},
+                            key=f"{key}:group_names:{int(n)}")
+    names = {str(r.group): r.name.strip() for r in edited.itertuples() if isinstance(r.name, str) and r.name.strip()}
 
     save_and_run(folder, "groups", {"groups": dict(g, per_block_group=int(n), names=names)})
     show_outputs(folder, "groups")

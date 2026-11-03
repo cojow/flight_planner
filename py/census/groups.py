@@ -60,9 +60,11 @@ def corner_to_corner(features, polygon, buffer_m):
     The flyable streets of one block group cut into corner-to-corner pieces.
 
     features is the block group's street GeoJSON features (with street and
-    restricted properties); restricted stretches aren't flown, but still count
-    as corners. Returns a list of dicts: street, from, to (the cross streets at
-    each end), mission, miles, geometry (metres), x, y (its middle).
+    restricted properties). Stretches in restricted airspace are cut the same
+    way and marked restricted, so they can be drawn differently (they need
+    FAA authorization to fly). Returns a list of dicts: street, from, to (the cross
+    streets at each end), mission, miles, restricted, geometry (metres), x, y
+    (its middle).
     """
     lines = [transform(to_metres, shape(f["geometry"])) for f in features]
     names = [f["properties"]["street"] for f in features]
@@ -93,8 +95,6 @@ def corner_to_corner(features, polygon, buffer_m):
     edge_zone = transform(to_metres, polygon).buffer(buffer_m).exterior.buffer(EDGE_M)
     pieces = []
     for i, own in by_street.items():
-        if restricted[i]:
-            continue
         merged = shapely.line_merge(shapely.union_all(own))
         for line in getattr(merged, "geoms", [merged]):
             # Cut the street at every corner it passes through (3 or more pieces meet there).
@@ -102,20 +102,20 @@ def corner_to_corner(features, polygon, buffer_m):
             for x, y in line.coords[1:]:
                 run.append((x, y))
                 if degree[_key(x, y)] >= 3 and len(run) > 1:
-                    pieces.append(_piece(LineString(run), names[i], streets_at, edge_zone))
+                    pieces.append(_piece(LineString(run), names[i], restricted[i], streets_at, edge_zone))
                     run = [(x, y)]
             if len(run) > 1:
-                pieces.append(_piece(LineString(run), names[i], streets_at, edge_zone))
+                pieces.append(_piece(LineString(run), names[i], restricted[i], streets_at, edge_zone))
     return [p for p in pieces if p["miles"] > 0]
 
 
-def _piece(line, street, streets_at, edge_zone):
+def _piece(line, street, restricted, streets_at, edge_zone):
     def cross(x, y):
         others = sorted(n for n, r in streets_at[_key(x, y)] if n != street)
         if others:
             return others[0]
-        if any(n == street and r for n, r in streets_at[_key(x, y)]):
-            return "Airspace"               # the street goes on into restricted airspace
+        if any(n == street and r != restricted for n, r in streets_at[_key(x, y)]):
+            return "Airspace"               # the street goes on, into or out of restricted airspace
         return "Edge" if edge_zone.contains(shapely.Point(x, y)) else "END"
 
     (x0, y0), (x1, y1) = line.coords[0], line.coords[-1]
@@ -126,7 +126,7 @@ def _piece(line, street, streets_at, edge_zone):
     first_is_start = (y0 <= y1) if runs_north_south else (x0 <= x1)
     start, end = (a, b) if first_is_start else (b, a)
     middle = line.interpolate(0.5, normalized=True)
-    return {"street": street, "from": start, "to": end,
+    return {"street": street, "from": start, "to": end, "restricted": restricted,
             "mission": f"{short_name(street)}_{short_name(start) if start not in ('END', 'Edge', 'Airspace') else start.upper()}",
             "miles": line.length / METERS_PER_MILE, "geometry": line, "x": middle.x, "y": middle.y}
 
@@ -164,7 +164,11 @@ def split_into_groups(pieces, n):
 
 
 def group_block_group(features, polygon, buffer_m, n):
-    """Corner-to-corner pieces of one block group, each with its group number."""
+    """
+    Corner-to-corner pieces of one block group, each with its group number.
+    Pieces in restricted airspace are grouped like the rest (they are still
+    flown, with FAA authorization) and keep restricted = True.
+    """
     pieces = corner_to_corner(features, polygon, buffer_m)
     for piece, group in zip(pieces, split_into_groups(pieces, n)):
         piece["group"] = group
@@ -175,6 +179,6 @@ def to_feature(piece, **props):
     """A piece as a GeoJSON feature in degrees."""
     return {"type": "Feature", "geometry": mapping(transform(to_degrees, piece["geometry"])),
             "properties": {**props, "group": piece["group"], "group_name": piece.get("group_name", ""),
-                           "street": piece["street"],
+                           "restricted": piece["restricted"], "street": piece["street"],
                            "from": piece["from"], "to": piece["to"], "mission": piece["mission"],
                            "miles": round(piece["miles"], 3)}}

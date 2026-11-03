@@ -2015,7 +2015,10 @@ def street_group_controls(prefix, sample):
     chosen = streets if only == "All" else [f for f in streets if f["properties"]["geoid"] == only]
     n_groups = len({(f["properties"]["geoid"], f["properties"]["group"]) for f in chosen})
     miles = sum(f["properties"].get("miles") or 0 for f in chosen)
-    st.caption(f"{n_groups} groups, {len(chosen)} stretches, {miles:.1f} mi. Click a street for its mission name.")
+    blocked = sum(f["properties"].get("miles") or 0 for f in chosen if f["properties"].get("restricted"))
+    st.caption(f"{n_groups} groups, {len(chosen)} stretches, {miles:.1f} mi."
+               + (f" Dashed: {blocked:.2f} mi in restricted airspace, needing FAA authorization." if blocked else "")
+               + " Click a street for its mission name.")
     return (sample.get("sample", {}).get("saved"), only), chosen
 
 
@@ -2030,6 +2033,8 @@ def add_street_groups_layer(fmap, streets):
     by_group = defaultdict(list)
     for f in streets:
         p = f["properties"]
+        if not p.get("group"):
+            continue
         by_group[(p.get("fly_order"), p["geoid"], p["group"])].append(f)
     for (fly_order, _geoid, group), features in sorted(by_group.items(), key=lambda kv: (kv[0][0] or 0, kv[0][2])):
         color = STREET_GROUP_COLORS[(group - 1) % len(STREET_GROUP_COLORS)]
@@ -2038,12 +2043,16 @@ def add_street_groups_layer(fmap, streets):
             p = f["properties"]
             rows = "".join(f'<tr><td style="padding-right: 8px;"><b>{label}</b></td><td>{escape(str(p.get(field)))}</td></tr>'
                            for field, label in STREET_DETAILS if p.get(field) not in (None, ""))
+            if p.get("restricted"):
+                rows += '<tr><td colspan="2"><b>Restricted airspace:</b> get FAA authorization before flying</td></tr>'
             geom = f["geometry"]
             parts = [geom["coordinates"]] if geom["type"] == "LineString" else geom["coordinates"]
             for part in parts:
                 latlons = [(lat, lon) for lon, lat in part]
                 points += latlons
+                # Dashed: in restricted airspace (still flown, with FAA authorization).
                 folium.PolyLine(latlons, color=color, weight=5, opacity=0.9,
+                                dash_array="8, 8" if p.get("restricted") else None,
                                 popup=folium.Popup(f'<table style="font-size: 12px;">{rows}</table>',
                                                    max_width=320)).add_to(fmap)
         name = next((f["properties"].get("group_name") for f in features if f["properties"].get("group_name")), "")

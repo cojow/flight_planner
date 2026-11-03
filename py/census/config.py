@@ -67,7 +67,7 @@ DEFAULTS = {
     },
     "groups": {
         "per_block_group": 3,           # street groups in each picked block group, about equal in miles
-        "names": {},                    # optional group names: {"<geoid>:<group>": "name"}
+        "names": {},                    # optional names by group number, the same in every block group: {"1": "North"}
     },
 }
 
@@ -140,8 +140,8 @@ def validate(config):
         raise ConfigError("restricted_share must be above 0 and at most 1.")
     if g["per_block_group"] < 1:
         raise ConfigError("Make at least one street group per block group.")
-    if not isinstance(g["names"], dict):
-        raise ConfigError('Group names must be a mapping like {"490490012023:1": "North half"}.')
+    if not isinstance(g["names"], dict) or not all(str(k).isdigit() for k in g["names"]):
+        raise ConfigError('Group names go by group number, like {"1": "North", "2": "South"}.')
 
 
 def fingerprint(config, step):
