@@ -26,7 +26,8 @@ from pathlib import Path
 from . import config as cfg
 
 ORDER = list(cfg.STEPS)
-UPSTREAM = {"areas": [], "choose_k": ["areas"], "cluster": ["areas"], "sample": ["areas", "cluster"]}
+UPSTREAM = {"areas": [], "choose_k": ["areas"], "cluster": ["areas"], "sample": ["areas", "cluster"],
+            "groups": ["areas", "cluster", "sample"]}
 
 
 class StepError(RuntimeError):
@@ -194,4 +195,18 @@ def run_sample(folder):
     return _run(folder, "sample", lambda config, out: pipeline.sample(config, folder, out))
 
 
-RUNNERS = {"areas": run_areas, "choose_k": run_choose_k, "cluster": run_cluster, "sample": run_sample}
+def run_groups(folder):
+    """
+    5. Street groups. Each picked block group's streets cut into corner-to-corner
+    stretches (each named Street1_Street2, like a mission) and split into
+    groups of about equal miles. Reads the streets saved by step 4.
+
+    Files, named with the draw's seed: street_groups (.csv and .geojson),
+    street_group_summary.csv, street_groups_map.png.
+    """
+    from . import pipeline
+    return _run(folder, "groups", lambda config, out: pipeline.groups(config, folder, out))
+
+
+RUNNERS = {"areas": run_areas, "choose_k": run_choose_k, "cluster": run_cluster, "sample": run_sample,
+           "groups": run_groups}

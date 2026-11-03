@@ -196,6 +196,7 @@ In app submitting is not available, you must use another app to do so.
 * **Show Sampled Block Groups**: Outlines the Census block groups picked for the research sample, saved from the [Census Sampling](#census-sampling) app.
 Each is labelled with its GEOID; click a label for its city, cluster, street miles and airspace.
 * **Jump to Block Group**: Moves the Creator map to one of the sampled block groups, so you can plan its flights.
+* **Show Street Groups**: Draws the sample's streets coloured by group (from step 5 of the Census Sampling app), each group labelled with its block group's fly order, group number and any name you gave it in the census app, e.g. `#3 · G2 · North`. Click a street for its mission name (`Street1_Street2`), cross streets and miles. *Street groups for* shows one block group's groups only.
 * **Show Logged Flights**: Draws every flight in the shared flight-log folder so you can see what has already been flown while planning.
 Click a line for its date, height, pitch, overlap, and photo count. 
 The folder, upload, and flight list are under *Flight log folder, upload and list*; setting the folder here also sets it for the tracker.
@@ -348,7 +349,7 @@ It needs a free [Census API key](https://api.census.gov/data/key_signup.html) pa
 
 Each **run** has a name and keeps everything in `data/census/runs/<name>/`.
 Every setting is saved in that folder's `config.json`, so a run can be checked, changed and repeated. 
-The app goes through four steps, and each step shows its settings before you run it:
+The app goes through five steps, and each step shows its settings before you run it:
 
 1. **Areas**: the cities, the ACS year, and how much of a block group must be inside a city for it to count (`min_overlap`, default half). 
 After it runs, you can untick block groups to leave them out by hand. 
@@ -359,13 +360,14 @@ This is designed to help you choose a k value.
 3. **Cluster**: k-means with your k. 
 Saves each block group's cluster, the cluster averages, a chart and a map.
 4. **Sample**: block groups per cluster, the random seed, the airspace rules, the street buffer and the trip start point. 
+5. **Street groups**: how many groups to split each picked block group's streets into (default 3). Streets are cut at every corner, never mid-block, and the groups come out about equal in miles, each in one part of the block group. Every corner-to-corner stretch gets a mission name in the flight standards' `Street1_Street2` form: the street flown, then the cross street at its south or west end (END for a dead end, EDGE where it leaves the block group, AIRSPACE where it enters restricted airspace). After it runs, a table of the groups lets you name each one (e.g. North half, or who flies it); the names go into the files, the map and the saved sample.
 Block groups mostly under FAA airspace with a ceiling below 200 ft high flight can't be picked. 
 Saves the picks in flying order, every street to fly (as a table and GeoJSON for QGIS), and maps.
 
 If you change a setting, the steps that depend on it are marked out of date and must be run again, so outputs made with different settings never mix.
 
 **Using a sample in the flight planner.** 
-Under step 4, give the sample a name and press *Save sample*. 
+Under step 5, give the sample a name and press *Save sample*. It includes the street groups and their names if step 5 has run. 
 It is saved as `census_samples/<name>.geojson`, and the planner's Creator, Editor and Viewer tabs can then show it with *Show Sampled Block Groups*.
 That folder is tracked by git, so a committed sample reaches everyone planning flights.
 

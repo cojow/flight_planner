@@ -24,7 +24,8 @@ from census import acs, config as cfg, export, steps, streets  # noqa: E402
 
 st.set_page_config(page_title="Census sampling", layout="wide")
 
-TITLES = {"areas": "1 Areas", "choose_k": "2 Choose k", "cluster": "3 Cluster", "sample": "4 Sample"}
+TITLES = {"areas": "1 Areas", "choose_k": "2 Choose k", "cluster": "3 Cluster", "sample": "4 Sample",
+          "groups": "5 Street groups"}
 MARKERS = {"not run": "⚪ not run", "current": "🟢 current", "stale": "🟠 stale (settings changed since it ran)"}
 
 # The choices the package accepts.
@@ -281,18 +282,56 @@ def tab_sample(folder, config):
         start_lat=float(start_lat), start_lon=float(start_lon))}
     save_and_run(folder, "sample", changes)
     show_outputs(folder, "sample")
+    if steps.status(folder)["sample"] == "current":
+        st.info("Next: step 5 splits each block group's streets into groups, and saves the sample "
+                "for the flight planner.")
+
+
+def tab_groups(folder, config):
+    g = config["groups"]
+    key = folder.name
+    st.write("Each picked block group's flyable streets, cut at every corner (never mid-block) and split into "
+             "groups of about equal miles, so the flying can be shared out or spread over several days. "
+             "Each stretch is named like a mission: Street1_Street2. Uses the streets saved in step 4.")
+    n = st.number_input("Street groups per block group", 1, 20, int(g["per_block_group"]), step=1,
+                        key=f"{key}:groups_n")
+
+    # Names for the groups, typed into a table of the groups from the last run.
+    names = dict(g["names"])
+    summary_path = steps.outputs(folder, "groups").get("Group summary (table)")
+    if int(n) != int(g["per_block_group"]):
+        if names:
+            st.caption("Changing the number of groups renumbers them, so their names will be cleared.")
+        names = {}
+    elif summary_path and summary_path.exists():
+        summary = read_csv(summary_path)
+        summary["name"] = [names.get(f"{r.geoid}:{r.group}", "") for r in summary.itertuples()]
+        st.markdown("**Group names** - optional; type a name for any group, then Save + run.")
+        edited = st.data_editor(
+            summary[["fly_order", "geoid", "group", "stretches", "miles", "name"]], hide_index=True,
+            disabled=["fly_order", "geoid", "group", "stretches", "miles"],
+            column_config={"name": st.column_config.TextColumn("Name", help="e.g. North half, or who flies it")},
+            key=f"{key}:group_names:{summary_path.stat().st_mtime}")
+        names = {f"{r.geoid}:{r.group}": str(r.name).strip() for r in edited.itertuples()
+                 if isinstance(r.name, str) and r.name.strip()}
+
+    save_and_run(folder, "groups", {"groups": dict(g, per_block_group=int(n), names=names)})
+    show_outputs(folder, "groups")
     save_for_planner(folder)
 
 
 def save_for_planner(folder):
-    """Name the sample and save its block groups where the flight planner (app.py) can show them."""
+    """Name the sample and save its block groups (and street groups) where the flight planner (app.py) can show them."""
     if steps.status(folder)["sample"] != "current":
         return
     st.divider()
     st.markdown("**Save for the flight planner**")
-    st.caption(f"Saves the picked block groups as census_samples/<name>.geojson; the suggested name includes the draw's "
-               "seed so it's clear which draw it is. In the flight planner, "
-               "tick *Show Sampled Block Groups* and pick this name to see them on the map.")
+    st.caption(f"Saves the picked block groups, and their street groups from this step, as "
+               "census_samples/<name>.geojson; the suggested name includes the draw's seed so it's clear which "
+               "draw it is. In the flight planner, tick *Show Sampled Block Groups* and pick this name to see "
+               "them on the map.")
+    if steps.status(folder)["groups"] != "current":
+        st.warning("Run this step first to include the street groups; otherwise only the block groups are saved.")
     key = folder.name
     seed = cfg.load(folder)["sample"]["seed"]
     name = st.text_input("Sample name (letters, digits, - and _)", value=f"{folder.name}_seed{seed}",
@@ -366,7 +405,7 @@ def main():
     st.caption("Cities: " + ", ".join(p["name"] for p in config["areas"]["places"]))
 
     tabs = st.tabs(list(TITLES.values()), key="tab")
-    for tab, show in zip(tabs, (tab_areas, tab_choose_k, tab_cluster, tab_sample)):
+    for tab, show in zip(tabs, (tab_areas, tab_choose_k, tab_cluster, tab_sample, tab_groups)):
         with tab:
             show(folder, config)
 

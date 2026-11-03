@@ -1938,7 +1938,7 @@ def census_sample_controls(prefix):
         return None, None
     info = sample.get("sample", {})
     if info:
-        st.caption(f"{', '.join(info.get('cities', []))}: {len(sample.get('features', []))} block groups, "
+        st.caption(f"{', '.join(info.get('cities', []))}: {len(census_block_groups(sample))} block groups, "
                    f"k = {info.get('k')}, {info.get('per_cluster')} per cluster, seed {info.get('seed')} "
                    f"(saved {info.get('saved')}).")
     return name, sample
@@ -1958,12 +1958,13 @@ def add_census_sample_layer(fmap, sample):
     map, so drawing a flight area there works as usual.
     """
     from html import escape
+    areas = {"type": "FeatureCollection", "features": census_block_groups(sample)}
     folium.GeoJson(
-        sample, name="Sampled Block Groups", interactive=False,
+        areas, name="Sampled Block Groups", interactive=False,
         style_function=lambda x: {'color': CENSUS_SAMPLE_COLOR, 'weight': 3,
                                   'fillColor': CENSUS_SAMPLE_COLOR, 'fillOpacity': 0.08},
     ).add_to(fmap)
-    for feature in sample.get("features", []):
+    for feature in areas["features"]:
         p = feature["properties"]
         if p.get("lat") is None or p.get("lon") is None:
             continue
@@ -1974,6 +1975,85 @@ def add_census_sample_layer(fmap, sample):
                        for field, label_text in CENSUS_SAMPLE_DETAILS if p.get(field) is not None)
         folium.Marker([p["lat"], p["lon"]], icon=DivIcon(html=label),
                       popup=folium.Popup(f'<table style="font-size: 12px;">{rows}</table>', max_width=320)).add_to(fmap)
+
+
+def census_block_groups(sample):
+    """The sample's block-group areas (samples saved before street groups have no "kind")."""
+    return [f for f in sample.get("features", []) if f["properties"].get("kind", "block_group") == "block_group"]
+
+
+def census_street_groups(sample):
+    """The sample's corner-to-corner streets, each with its group, from step 5 of the census app."""
+    return [f for f in sample.get("features", []) if f["properties"].get("kind") == "street"]
+
+
+# Street group colours: bright on the satellite imagery, and clear of the
+# block groups' magenta and the FAA layer's red and green.
+STREET_GROUP_COLORS = ["#ffd60a", "#00e5ff", "#ff8c00", "#b388ff", "#ffffff", "#7cfc00", "#ff4d6d", "#40c4ff"]
+STREET_DETAILS = [('mission', 'Mission'), ('street', 'Street'), ('from', 'From'), ('to', 'To'),
+                  ('group', 'Group'), ('group_name', 'Group name'), ('miles', 'Miles'),
+                  ('geoid', 'Block group'), ('fly_order', 'Fly order')]
+
+
+def street_group_controls(prefix, sample):
+    """
+    Sidebar controls for a sample's street groups, shown under the sampled
+    block groups when the sample has them. Returns (signature, street features
+    to draw); the signature is None when nothing is drawn.
+    """
+    streets = census_street_groups(sample) if sample else []
+    if not streets:
+        return None, []
+    show = st.checkbox("Show Street Groups", value=False, key=f"{prefix}_street_groups_toggle",
+                       help=param_help("Show Street Groups"))
+    if not show:
+        return None, []
+    picks = {f["properties"]["geoid"]: f["properties"].get("fly_order") for f in census_block_groups(sample)}
+    options = ["All"] + sorted(picks, key=lambda g: picks[g] or 0)
+    only = st.selectbox("Street groups for", options, key=f"{prefix}_street_groups_for",
+                        format_func=lambda g: "All block groups" if g == "All" else f"#{picks[g]}  {g}")
+    chosen = streets if only == "All" else [f for f in streets if f["properties"]["geoid"] == only]
+    n_groups = len({(f["properties"]["geoid"], f["properties"]["group"]) for f in chosen})
+    miles = sum(f["properties"].get("miles") or 0 for f in chosen)
+    st.caption(f"{n_groups} groups, {len(chosen)} stretches, {miles:.1f} mi. Click a street for its mission name.")
+    return (sample.get("sample", {}).get("saved"), only), chosen
+
+
+def add_street_groups_layer(fmap, streets):
+    """
+    Streets coloured by group, each group labelled at its middle with the
+    block group's fly order, the group number and any name (e.g. "#3 · G2 · North"). Clicking a street shows its mission name, cross streets and
+    miles; nothing pops up on hover.
+    """
+    from collections import defaultdict
+    from html import escape
+    by_group = defaultdict(list)
+    for f in streets:
+        p = f["properties"]
+        by_group[(p.get("fly_order"), p["geoid"], p["group"])].append(f)
+    for (fly_order, _geoid, group), features in sorted(by_group.items(), key=lambda kv: (kv[0][0] or 0, kv[0][2])):
+        color = STREET_GROUP_COLORS[(group - 1) % len(STREET_GROUP_COLORS)]
+        points = []
+        for f in features:
+            p = f["properties"]
+            rows = "".join(f'<tr><td style="padding-right: 8px;"><b>{label}</b></td><td>{escape(str(p.get(field)))}</td></tr>'
+                           for field, label in STREET_DETAILS if p.get(field) not in (None, ""))
+            geom = f["geometry"]
+            parts = [geom["coordinates"]] if geom["type"] == "LineString" else geom["coordinates"]
+            for part in parts:
+                latlons = [(lat, lon) for lon, lat in part]
+                points += latlons
+                folium.PolyLine(latlons, color=color, weight=5, opacity=0.9,
+                                popup=folium.Popup(f'<table style="font-size: 12px;">{rows}</table>',
+                                                   max_width=320)).add_to(fmap)
+        name = next((f["properties"].get("group_name") for f in features if f["properties"].get("group_name")), "")
+        name = f" &middot; {escape(name)}" if name else ""
+        lat = sum(p[0] for p in points) / len(points)
+        lon = sum(p[1] for p in points) / len(points)
+        label = (f'<div style="font-size: 12px; font-weight: bold; color: {color}; white-space: nowrap; '
+                 f'text-shadow: 0 0 3px black, 0 0 3px black, 0 0 3px black; transform: translate(-50%, -50%);">'
+                 f'#{escape(str(fly_order))} &middot; G{group}{name}</div>')
+        folium.Marker([lat, lon], icon=DivIcon(html=label), interactive=False).add_to(fmap)
 
 
 # Logged flights: every .kmz in the shared flight-log folder (e.g. the Box
@@ -6231,6 +6311,7 @@ if page == 'Creator':
                 st.session_state.locked_creator_center = st.session_state.creator_center
                 st.rerun()
         census_name, census_sample = census_sample_controls("creator")
+        street_groups_sig, street_groups = street_group_controls("creator", census_sample)
         if census_sample:
             picks = {f'#{f["properties"].get("fly_order")}  {f["properties"].get("geoid")}': f["properties"]
                      for f in census_sample.get("features", []) if f["properties"].get("lat") is not None}
@@ -6423,6 +6504,7 @@ if page == 'Creator':
             tuple(st.session_state.measure_points),
             tuple(tuple(p) for p in (st.session_state.corridor_line or ())),
             (census_name, census_sample.get("sample", {}).get("saved")) if census_sample else None,
+            street_groups_sig,
             flights_sig,
         )
         if map_sig != st.session_state.get("creator_map_sig"):
@@ -6460,6 +6542,8 @@ if page == 'Creator':
             add_logged_flights_layer(m, logged_flights, flight_cones)
         if census_sample:
             add_census_sample_layer(m, census_sample)
+        if street_groups:
+            add_street_groups_layer(m, street_groups)
 
         if mapping_mode:
             # Area-drawing tools only; the flight line is computed, not drawn.
@@ -7192,6 +7276,7 @@ elif page == 'Editor':
                     st.session_state.locked_editor_center = st.session_state.editor_center
                     st.rerun()
             _, editor_census_sample = census_sample_controls("editor")
+            _, editor_street_groups = street_group_controls("editor", editor_census_sample)
             _, editor_logged_flights, editor_flight_cones = logged_flights_controls("editor")
 
         top_hud = hud_half.container()
@@ -7229,6 +7314,8 @@ elif page == 'Editor':
                 add_logged_flights_layer(m_edit, editor_logged_flights, editor_flight_cones)
             if editor_census_sample:
                 add_census_sample_layer(m_edit, editor_census_sample)
+            if editor_street_groups:
+                add_street_groups_layer(m_edit, editor_street_groups)
 
             Draw(export=False, draw_options={
                 'polyline': {'shapeOptions': {'color': '#00ffff', 'weight': 5}},
@@ -7537,6 +7624,7 @@ elif page == 'Viewer  |':
                     st.session_state.locked_viewer_center = st.session_state.viewer_center
                     st.rerun()
             _, viewer_census_sample = census_sample_controls("viewer")
+            _, viewer_street_groups = street_group_controls("viewer", viewer_census_sample)
             _, viewer_logged_flights, viewer_flight_cones = logged_flights_controls("viewer")
 
         with map_layer:
@@ -7682,6 +7770,8 @@ elif page == 'Viewer  |':
                                 add_logged_flights_layer(m_view, viewer_logged_flights, viewer_flight_cones)
                             if viewer_census_sample:
                                 add_census_sample_layer(m_view, viewer_census_sample)
+                            if viewer_street_groups:
+                                add_street_groups_layer(m_view, viewer_street_groups)
                     
                         line_coords = [[w['lat'], w['lon']] for w in wp_data]
                         line = folium.PolyLine(line_coords, color=line_color, weight=5).add_to(m_view)

@@ -235,3 +235,36 @@ def street_map(picked, boundaries, street_features, path):
                      f"{row['street_miles']:.1f} mi", fontsize=11)
     fig.suptitle("Streets to fly, in flying order (grey dashed = restricted airspace)", fontsize=13)
     return save(fig, path)
+
+
+def street_groups_map(picked, boundaries, group_features, path):
+    """One panel per picked block group, in flying order, with its streets coloured by group."""
+    picked = picked.sort_values("fly_order")
+    cols = min(3, len(picked))
+    nrows = -(-len(picked) // cols)
+    fig, axes = plt.subplots(nrows, cols, figsize=(5 * cols, 5 * nrows), squeeze=False)
+    for ax in axes.flat:
+        ax.axis("off")
+    for ax, (_, row) in zip(axes.flat, picked.iterrows()):
+        ax.add_collection(LineCollection(rings(boundaries[row["geoid"]]), colors="black", linewidths=1.2))
+        mine = [f for f in group_features if f["properties"]["geoid"] == row["geoid"]]
+        for g in sorted({f["properties"]["group"] for f in mine}):
+            lines, miles, name = [], 0.0, ""
+            for f in mine:
+                if f["properties"]["group"] != g:
+                    continue
+                name = f["properties"].get("group_name") or name
+                geom = shape(f["geometry"])
+                lines += [np.array(part.coords) for part in getattr(geom, "geoms", [geom])]
+                miles += f["properties"]["miles"]
+            ax.add_collection(LineCollection(lines, colors=color(g - 1), linewidths=1.6,
+                                             label=f"Group {g}{f' ({name})' if name else ''}: {miles:.1f} mi"))
+        minx, miny, maxx, maxy = boundaries[row["geoid"]].bounds
+        pad = 0.05 * max(maxx - minx, maxy - miny)
+        ax.set_xlim(minx - pad, maxx + pad)
+        ax.set_ylim(miny - pad, maxy + pad)
+        ax.set_aspect(1 / np.cos(np.radians(LATITUDE)))
+        ax.set_title(f"{int(row['fly_order'])}. {row['geoid']}", fontsize=11)
+        ax.legend(loc="lower left", fontsize=8, frameon=True)
+    fig.suptitle("Streets to fly, by group (each group about the same miles)", fontsize=13)
+    return save(fig, path)

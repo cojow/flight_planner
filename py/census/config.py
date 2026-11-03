@@ -23,6 +23,7 @@ STEPS = {
     "choose_k": {"folder": "2_choose_k", "sections": ["areas", "features", "choose_k"]},
     "cluster":  {"folder": "3_cluster",  "sections": ["areas", "features", "cluster"]},
     "sample":   {"folder": "4_sample",   "sections": ["areas", "features", "cluster", "sample"]},
+    "groups":   {"folder": "5_groups",   "sections": ["areas", "features", "cluster", "sample", "groups"]},
 }
 
 DEFAULTS = {
@@ -63,6 +64,10 @@ DEFAULTS = {
         "street_types": ["S1200", "S1400"],   # Census road codes: secondary roads, local streets
         "start_lat": 40.2338,           # where each trip starts (BYU)
         "start_lon": -111.6585,
+    },
+    "groups": {
+        "per_block_group": 3,           # street groups in each picked block group, about equal in miles
+        "names": {},                    # optional group names: {"<geoid>:<group>": "name"}
     },
 }
 
@@ -116,7 +121,7 @@ def save(folder, config):
 
 def validate(config):
     """Raise ConfigError for the first setting that can't work."""
-    a, f, c, k, s = (config[x] for x in ("areas", "features", "cluster", "choose_k", "sample"))
+    a, f, c, k, s, g = (config[x] for x in ("areas", "features", "cluster", "choose_k", "sample", "groups"))
     if not a["places"]:
         raise ConfigError("Pick at least one city.")
     if not 0 < a["min_overlap"] <= 1:
@@ -133,6 +138,10 @@ def validate(config):
         raise ConfigError(f"Unknown weights setting {s['weights']!r}.")
     if not 0 < s["restricted_share"] <= 1:
         raise ConfigError("restricted_share must be above 0 and at most 1.")
+    if g["per_block_group"] < 1:
+        raise ConfigError("Make at least one street group per block group.")
+    if not isinstance(g["names"], dict):
+        raise ConfigError('Group names must be a mapping like {"490490012023:1": "North half"}.')
 
 
 def fingerprint(config, step):

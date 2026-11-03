@@ -14,7 +14,9 @@ import shapely
 from shapely.geometry import mapping, shape
 
 from . import acs, clustering, geography, plots, sampling, streets
+from . import groups as street_groups
 from .config import STEPS
+from .steps import outputs
 
 
 def _read_table(folder, step, name):
@@ -287,3 +289,54 @@ def _sample_report(df, picked, street_table, k, s, columns, notes):
         weighted = np.average(picked[col], weights=picked["weight"])
         report.write(f"  {col:<26} those {frame[col].mean():>9,.1f}   picks {weighted:>9,.1f}\n")
     return report.getvalue()
+
+
+# --------------------------------------------------------------------------
+# 5. Street groups
+# --------------------------------------------------------------------------
+
+def groups(config, folder, out):
+    n, seed = config["groups"]["per_block_group"], config["sample"]["seed"]
+    names = config["groups"]["names"]
+    sample_files = outputs(folder, "sample")
+    picked = pd.read_csv(sample_files["Picked block groups (table)"], dtype={"geoid": str}).sort_values("fly_order")
+    street_features = json.loads(sample_files["Streets (GeoJSON)"].read_text())["features"]
+    boundaries = _read_boundaries(folder)
+
+    rows, features = [], []
+    for _, bg in picked.iterrows():
+        mine = [f for f in street_features if f["properties"]["geoid"] == bg["geoid"]]
+        for piece in street_groups.group_block_group(mine, boundaries[bg["geoid"]], config["sample"]["buffer_m"], n):
+            piece["group_name"] = names.get(f"{bg['geoid']}:{piece['group']}", "")
+            rows.append({"fly_order": int(bg["fly_order"]), "geoid": bg["geoid"], "city": bg["city"],
+                         "group": piece["group"], "group_name": piece["group_name"],
+                         "mission": piece["mission"], "street": piece["street"],
+                         "from": piece["from"], "to": piece["to"], "miles": piece["miles"]})
+            features.append(street_groups.to_feature(piece, geoid=bg["geoid"], fly_order=int(bg["fly_order"])))
+    if not rows:
+        raise ValueError("The picked block groups have no flyable streets to group.")
+
+    table = pd.DataFrame(rows).sort_values(["fly_order", "group", "street", "from"])
+    summary = (table.groupby(["fly_order", "geoid", "city", "group", "group_name"], as_index=False)
+               .agg(stretches=("mission", "size"), miles=("miles", "sum")))
+    table["miles"] = table["miles"].round(3)
+    summary["miles"] = summary["miles"].round(2)
+
+    files = {
+        "Street groups (table)": out / f"street_groups_seed{seed}.csv",
+        "Group summary (table)": out / f"street_group_summary_seed{seed}.csv",
+        "Street groups (GeoJSON)": out / f"street_groups_seed{seed}.geojson",
+        "Street group maps": out / f"street_groups_map_seed{seed}.png",
+    }
+    table.to_csv(files["Street groups (table)"], index=False)
+    summary.to_csv(files["Group summary (table)"], index=False)
+    files["Street groups (GeoJSON)"].write_text(json.dumps({"type": "FeatureCollection", "features": features}))
+    plots.street_groups_map(picked, boundaries, features, files["Street group maps"])
+
+    report = io.StringIO()
+    report.write(f"Each picked block group's flyable streets in up to {n} groups of about equal miles, "
+                 "cut only at corners (cross streets).\n")
+    report.write("Missions are named Street1_Street2: the street flown, then the cross street at its south or "
+                 "west end (END = dead end, EDGE = leaves the block group, AIRSPACE = enters restricted airspace).\n\n")
+    report.write(summary.to_string(index=False) + "\n")
+    return files, report.getvalue()

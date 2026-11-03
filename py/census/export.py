@@ -2,8 +2,10 @@
 Hand a finished sample to the flight planner (app.py).
 
 A sample is saved under a name as census_samples/<name>.geojson at the top of
-the repository: one feature per picked block group, with its GEOID, city,
-cluster, fly order and street miles. app.py lists that folder and draws the
+the repository: one feature per picked block group (kind "block_group"), with
+its GEOID, city, cluster, fly order and street miles, and, when step 5 has
+run, one per corner-to-corner stretch of street (kind "street") with its
+group, street, cross streets and mission name. app.py lists that folder and draws the
 chosen sample on its maps. The folder is kept in git (unlike data/), so a
 committed sample reaches everyone who plans flights.
 
@@ -60,7 +62,15 @@ def export_sample(folder, name, overwrite=False):
         props = {c: (None if pd.isna(row[c]) else row[c].item() if hasattr(row[c], "item") else row[c])
                  for c in FIELDS if c in row}
         props["census_name"] = names.get(row["geoid"])
-        features.append({"type": "Feature", "geometry": shapes[row["geoid"]], "properties": props})
+        features.append({"type": "Feature", "geometry": shapes[row["geoid"]],
+                         "properties": {"kind": "block_group", **props}})
+
+    # The street groups from step 5, when they match the current settings.
+    grouped = steps.status(folder)["groups"] == "current"
+    if grouped:
+        street_file = steps.outputs(folder, "groups")["Street groups (GeoJSON)"]
+        for f in json.loads(street_file.read_text())["features"]:
+            features.append({**f, "properties": {"kind": "street", **f["properties"]}})
 
     s, a = config["sample"], config["areas"]
     collection = {
@@ -76,6 +86,7 @@ def export_sample(folder, name, overwrite=False):
             "per_cluster": s["per_cluster"],
             "seed": s["seed"],
             "weights": s["weights"],
+            "street_groups": config["groups"]["per_block_group"] if grouped else None,
         },
         "features": features,
     }
