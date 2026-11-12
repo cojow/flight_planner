@@ -81,6 +81,7 @@ This option allows for very complicated flight plans with hundreds of photos.
 DJI Fly is the stripped-back version used in the commercial series which doesn't easily support flight plans. 
 It is limited to 90 photos per flight plan due to each photo having to be a waypoint. 
 *Know which program your drone takes before planning your flight*
+* **Camera**: The camera, and the photo shape, the drone is set to shoot. Overlap, flight-line spacing, ground resolution and photo footprints are all worked out from it, so it must match the drone: on the Mini 4 Pro, the photo aspect ratio (16:9 or 4:3) is set in DJI Fly's camera settings. A 16:9 photo covers about 23% less ground top to bottom than a 4:3 one, so the same overlap needs more photos. The Editor and Viewer ask too, since a mission file doesn't record it.
 * **Sensor Mode**: *Only applies to Multispectral/enterprise drones*. Allows for you to choose between taking RGB, Multispectral, or both kinds of photos per shot. Disabled for DJI Fly flights. 
 
 </td>

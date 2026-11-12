@@ -1132,25 +1132,53 @@ if "locked_editor_center" not in st.session_state:
 if "locked_viewer_center" not in st.session_state:
     st.session_state.locked_viewer_center = [40.246860, -111.648667]
 
-# Mavic 3 Multispectral Sensor Specs
-SENSOR_W = 17.3
-SENSOR_H = 13.0
-FOCAL_L = 12.3
-IMAGE_W = 5280
+# The cameras missions can be planned for: sensor size and focal length in
+# mm, and the size of the photos saved. Photo footprints - and so overlap,
+# flight-line spacing, ground resolution and the shallowest usable mapping
+# pitch - all come from these, so a profile has to describe the photos
+# actually being taken. Every mission used to be planned with the Mavic 3M's
+# 4:3 camera; a Mini 4 Pro saving 16:9 photos covers about 23% less ground on
+# the short side of the frame, so a planned 80% overlap there was about 74%.
+CAMERA_PROFILES = {
+    # 1/1.3-inch sensor (8064x6048 at 1.2 um), 6.72 mm = 24 mm equivalent. A
+    # 16:9 photo is the 4:3 frame with its top and bottom cropped off.
+    "Mini 4 Pro, 16:9 photos": {"sensor_w": 9.6768, "sensor_h": 5.4432, "focal": 6.72,
+                                "image_w": 4032, "image_h": 2268},
+    "Mini 4 Pro, 4:3 photos": {"sensor_w": 9.6768, "sensor_h": 7.2576, "focal": 6.72,
+                               "image_w": 4032, "image_h": 3024},
+    # The Mavic 3 Multispectral's 4/3-inch RGB camera.
+    "Mavic 3M (RGB)": {"sensor_w": 17.3, "sensor_h": 13.0, "focal": 12.3,
+                       "image_w": 5280, "image_h": 3956},
+}
+# Used wherever no camera is passed in. The Mini at 16:9 is what the project
+# flies most.
+DEFAULT_CAMERA = CAMERA_PROFILES["Mini 4 Pro, 16:9 photos"]
 
-# Half of the sensor's vertical field of view (~27.9 deg here). The gimbal
-# tilt is applied about the sensor's height axis, so at any pitch shallower
-# than this the top edge of the frame points at or above the horizon and the
-# footprint has no finite ground projection - its far edge runs off to
-# infinity. Derived from the optics rather than hard-coded so it stays
-# correct if the sensor constants above are ever changed for another camera.
-VERT_HALF_FOV_DEG = math.degrees(math.atan((SENSOR_H / 2.0) / FOCAL_L))
 
-# Shallowest gimbal tilt an area-mapping mission will accept. The bare
-# half-FOV is an asymptote - the footprint diverges as it is approached, so
-# overlap/spacing derived from it become meaningless long before it - so keep
-# a margin that still leaves a finite, usable footprint.
-MIN_MAPPING_PITCH_DEG = VERT_HALF_FOV_DEG + 5.0
+def vert_half_fov_deg(camera):
+    """
+    Half the camera's vertical field of view (~22 deg for the Mini at 16:9).
+    The gimbal tilt is applied about the sensor's height axis, so at any
+    pitch shallower than this the top edge of the frame points at or above
+    the horizon and the footprint has no finite ground projection - its far
+    edge runs off to infinity.
+    """
+    return math.degrees(math.atan((camera["sensor_h"] / 2.0) / camera["focal"]))
+
+
+def min_mapping_pitch_deg(camera):
+    """
+    Shallowest gimbal tilt an area-mapping mission will accept. The bare
+    half-FOV is an asymptote - the footprint diverges as it is approached, so
+    overlap/spacing derived from it become meaningless long before it - so
+    keep a margin that still leaves a finite, usable footprint.
+    """
+    return vert_half_fov_deg(camera) + 5.0
+
+
+def ground_gsd_cm(distance_ft, camera):
+    """Ground size of one pixel, in cm, at this slant distance from the camera."""
+    return (distance_ft * FT_TO_M * camera["sensor_w"] * 100) / (camera["focal"] * camera["image_w"])
 
 # How the camera may be aimed on an area-mapping mission, relative to the
 # direction of travel.
@@ -1159,7 +1187,8 @@ MIN_MAPPING_PITCH_DEG = VERT_HALF_FOV_DEG + 5.0
 #     and every pass runs straight down its strip: the computed path keeps
 #     the shape of the drawn area instead of being pushed sideways. It also
 #     puts the sensor's long axis across-track, widening the swath by
-#     SENSOR_W/SENSOR_H (~33% here) for proportionally fewer flight lines.
+#     the sensor's width/height ratio (~33% at 4:3, ~78% at 16:9) for
+#     proportionally fewer flight lines.
 #   "backwards" - camera looks back along the flight line, so the drone
 #     flies tail-first. Geometrically this is "parallel" mirrored: the
 #     footprint is the same shape and size, so coverage, spacing and overlap
@@ -1240,16 +1269,62 @@ CAM_VAL_MAP = {v: k for k, v in CAM_DISPLAY_MAP.items()}
 HARDWARE_MAP = {
     "DJI Fly (RC2 / Mini / Air Series)": {
         "drone_enum": "67", "drone_sub": "0", 
-        "payload_enum": "43", "payload_sub": "0", 
-        "is_dji_fly": True
+        "payload_enum": "43", "payload_sub": "0",
+        "is_dji_fly": True,
+        "cameras": ["Mini 4 Pro, 16:9 photos", "Mini 4 Pro, 4:3 photos"],
         },
 
     "DJI Pilot 2 (Mavic 3M) (Drone: 0, Payload: 3)": {
-        "drone_enum": "77", "drone_sub": "0", 
-        "payload_enum": "68", "payload_sub": "3", 
-        "is_dji_fly": False
+        "drone_enum": "77", "drone_sub": "0",
+        "payload_enum": "68", "payload_sub": "3",
+        "is_dji_fly": False,
+        "cameras": ["Mavic 3M (RGB)"],
         }
     }
+
+
+def cameras_for(hw_key):
+    """The camera profiles offered for a drone platform, its usual one first."""
+    return HARDWARE_MAP.get(hw_key, {}).get("cameras") or list(CAMERA_PROFILES)
+
+
+def camera_select(key, hw_key=None, on_change=None):
+    """
+    The "Camera" choice, drawn as a selectbox, and the profile it names.
+    on_change re-derives whatever overlap figure depends on the footprint,
+    as a pitch or altitude change does.
+
+    Offers the platform's cameras (all of them when hw_key is None). A value
+    that isn't one of them - a preset from another platform, or the platform
+    just changed - is replaced before the box is drawn, since Streamlit
+    rejects a selectbox value outside its options.
+    """
+    options = cameras_for(hw_key) if hw_key else list(CAMERA_PROFILES)
+    if st.session_state.get(key) not in options:
+        st.session_state[key] = options[0]
+    name = st.selectbox("Camera", options, key=key, on_change=on_change, help=param_help("Camera"))
+    return CAMERA_PROFILES[name]
+
+
+def selected_camera(key, hw_key=None):
+    """
+    The profile a "Camera" choice currently names, for code that runs where
+    the box isn't drawn (the overlap/interval callbacks). Falls back to the
+    platform's usual camera, as camera_select does.
+    """
+    options = cameras_for(hw_key) if hw_key else list(CAMERA_PROFILES)
+    name = st.session_state.get(key)
+    return CAMERA_PROFILES[name if name in options else options[0]]
+
+
+def creator_camera():
+    return selected_camera("cam_profile", st.session_state.get("hw_choice"))
+
+
+def editor_camera():
+    # The Editor's platform box keeps no state of its own; its camera box is
+    # brought back in line with the platform every time it is drawn.
+    return selected_camera("e_cam_profile")
 
 # ==========================================
 # EXTERNAL DATA & ELEVATION HELPERS
@@ -2880,14 +2955,15 @@ def copy_photo_groups(groups, output_folder, group_names=None, progress=None):
 # ==========================================
 # 3D ROTATION MATRIX FOOTPRINT CALCULATOR
 # ==========================================
-def get_photo_footprint(lat, lon, alt_ft, pitch, yaw):
+def get_photo_footprint(lat, lon, alt_ft, pitch, yaw, camera=None):
     """
     Ground footprint of one photo as a list of [lat, lon] corners, or None
     if the camera is too shallow for all four corner rays to reach the
-    ground (see VERT_HALF_FOV_DEG). Callers must skip drawing on None -
+    ground (see vert_half_fov_deg). Callers must skip drawing on None -
     there is no meaningful polygon to show at that tilt.
     """
-    w, h, f = SENSOR_W, SENSOR_H, FOCAL_L
+    camera = camera or DEFAULT_CAMERA
+    w, h, f = camera["sensor_w"], camera["sensor_h"], camera["focal"]
     corners = [(-w/2, h/2, -f), (w/2, h/2, -f), (w/2, -h/2, -f), (-w/2, -h/2, -f)]
     yaw_rad = math.radians(yaw)
     pitch_rad = math.radians(pitch + 90) 
@@ -3021,7 +3097,7 @@ def interpolate_elevations(elevations, fracs):
 # ==========================================
 FT_PER_DEG_LAT = 111320 * M_TO_FT  # ~365,223 ft per degree of latitude
 
-def project_footprint_ft(alt_ft, pitch, yaw_deg):
+def project_footprint_ft(alt_ft, pitch, yaw_deg, camera=None):
     """
     Projects the four camera-sensor corners onto flat ground and returns
     them as (east_ft, north_ft) offsets from the nadir point. This is the
@@ -3030,7 +3106,8 @@ def project_footprint_ft(alt_ft, pitch, yaw_deg):
     overlap derived from it matches what the app actually images. Returns
     None if the camera is too shallow for the rays to reach the ground.
     """
-    w, h, f = SENSOR_W, SENSOR_H, FOCAL_L
+    camera = camera or DEFAULT_CAMERA
+    w, h, f = camera["sensor_w"], camera["sensor_h"], camera["focal"]
     corners = [(-w/2, h/2, -f), (w/2, h/2, -f), (w/2, -h/2, -f), (-w/2, -h/2, -f)]
     yaw_rad = math.radians(yaw_deg)
     pitch_rad = math.radians(pitch + 90)
@@ -3098,7 +3175,7 @@ def _min_section_width_ft(pts, samples=33):
     return 0.0 if narrowest == float('inf') else narrowest
 
 
-def footprint_extents_ft(alt_ft, pitch, side="right", yaw_mode="perpendicular"):
+def footprint_extents_ft(alt_ft, pitch, side="right", yaw_mode="perpendicular", camera=None):
     """
     True ground-footprint dimensions (feet) for the mission's camera
     orientation, derived by projecting the sensor corners:
@@ -3143,7 +3220,7 @@ def footprint_extents_ft(alt_ft, pitch, side="right", yaw_mode="perpendicular"):
         yaw = 270.0  # ...and "backward" is west: "forward" mirrored
     else:
         yaw = 180.0 if side == "right" else 0.0
-    pts = project_footprint_ft(alt_ft, pitch, yaw)
+    pts = project_footprint_ft(alt_ft, pitch, yaw, camera)
     if pts is None:
         return None
     xs = [p[0] for p in pts]
@@ -3161,7 +3238,7 @@ def footprint_extents_ft(alt_ft, pitch, side="right", yaw_mode="perpendicular"):
     along_offset_ft = (max(xs) + min(xs)) / 2.0
     return along_ft, cross_ft, offset_ft, along_offset_ft
 
-def mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct, side="parallel"):
+def mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct, side="parallel", camera=None):
     """
     Camera coverage geometry for area-mapping missions, all in feet. Overlap
     is based on the TRUE projected ground footprint (footprint_extents_ft),
@@ -3177,21 +3254,22 @@ def mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct
       is what lets the computed path keep the drawn area's shape.
     - along_offset_ft: the along-track counterpart, non-zero only for
       "parallel" with tilt (the camera then images ground ahead of the drone)
-    Pitch shallower than MIN_MAPPING_PITCH_DEG is clamped - the ground
+    Pitch shallower than min_mapping_pitch_deg is clamped - the ground
     footprint stretches toward infinity as the camera approaches the
     horizon, so overlap and spacing derived from it stop meaning anything.
     """
+    camera = camera or DEFAULT_CAMERA
     yaw_mode = camera_yaw_mode(side)
-    clamped_pitch = -min(90.0, max(MIN_MAPPING_PITCH_DEG, abs(pitch)))
-    extents = footprint_extents_ft(alt_ft, clamped_pitch, side, yaw_mode)
+    clamped_pitch = -min(90.0, max(min_mapping_pitch_deg(camera), abs(pitch)))
+    extents = footprint_extents_ft(alt_ft, clamped_pitch, side, yaw_mode, camera)
     if extents is None:
-        # Defensive only: MIN_MAPPING_PITCH_DEG is derived to sit above the
+        # Defensive only: min_mapping_pitch_deg is derived to sit above the
         # horizon threshold, so the clamp above should always project. Fall
         # back to nadir, which is valid at every altitude, rather than to
         # another shallow angle - the previous fallback here retried at a
         # pitch that was itself below the threshold, so it returned None
         # again and the unpack below raised TypeError.
-        extents = footprint_extents_ft(alt_ft, -90.0, side, yaw_mode)
+        extents = footprint_extents_ft(alt_ft, -90.0, side, yaw_mode, camera)
     footprint_w_ft, footprint_h_ft, offset_ft, along_offset_ft = extents
     return {
         "footprint_w_ft": footprint_w_ft,
@@ -3383,7 +3461,7 @@ def _decomposed_passes(rot_pts, centers, ymin, ymax, half_strip, runout, side_si
 
 def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap_pct, side_overlap_pct,
                                  side="parallel", runout_intervals=1.0, line_bearing_deg=None,
-                                 decompose=False):
+                                 decompose=False, camera=None):
     """
     Builds a serpentine (lawnmower) flight path whose camera footprints
     fully cover the drawn boundary polygon, honoring altitude, gimbal
@@ -3411,7 +3489,7 @@ def generate_mapping_flight_path(boundary_coords, alt_ft, pitch, frontal_overlap
     if not boundary_coords or len(boundary_coords) < 3:
         return None, None
 
-    geom = mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct, side)
+    geom = mapping_camera_geometry(alt_ft, pitch, frontal_overlap_pct, side_overlap_pct, side, camera)
     fh = geom["footprint_h_ft"]
     offset, spacing = geom["offset_ft"], geom["spacing_ft"]
 
@@ -3928,7 +4006,7 @@ if "e_bounds" not in st.session_state: st.session_state.e_bounds = True
 EDITOR_KEPT_KEYS = [
     "e_name_input", "e_alt_ft", "e_pitch", "e_side", "e_source", "e_tif", "e_bounds",
     "e_trigger_type", "e_t_dist_val", "e_overlap_pct", "e_t_time_val", "e_target_gap_ft",
-    "edit_dir", "editor_faa_toggle",
+    "edit_dir", "editor_faa_toggle", "e_cam_profile",
 ]
 for _key in EDITOR_KEPT_KEYS:
     if _key in st.session_state:
@@ -3975,6 +4053,7 @@ ELEVATION_SOURCES = ["USGS 3DEP (US High-Res)", "Open-Elevation (Global)", "Loca
 CREATOR_DEFAULTS = {
     "mission_type": MISSION_TYPE_LINE,
     "hw_choice": next(iter(HARDWARE_MAP)), "cam_choice": CREATOR_SENSOR_MODES[0],
+    "cam_profile": cameras_for(next(iter(HARDWARE_MAP)))[0],
     "trans_speed_mph": 22.0, "safe_takeoff_ft": 60.0,
     "alt_ft": 50.0, "map_alt_ft": 100.0,
     "c_source": ELEVATION_SOURCES[0], "c_bounds": True,
@@ -4000,11 +4079,15 @@ CREATOR_PRESET_KEYS = list(CREATOR_DEFAULTS) + ["c_tif"]
 # listed here only need to be finite.
 CREATOR_PRESET_CHOICES = {
     "mission_type": MISSION_TYPES, "hw_choice": list(HARDWARE_MAP), "cam_choice": CREATOR_SENSOR_MODES,
-    "c_source": ELEVATION_SOURCES, "side": LINE_CAMERA_SIDES, "map_side": MAPPING_CAMERA_SIDES,
+    "cam_profile": list(CAMERA_PROFILES), "c_source": ELEVATION_SOURCES, "side": LINE_CAMERA_SIDES, "map_side": MAPPING_CAMERA_SIDES,
     "trigger_type": ["distance", "time"],
 }
 CREATOR_PRESET_LIMITS = {
-    "pitch": (-90, 0), "map_pitch": (-90, -int(math.ceil(MIN_MAPPING_PITCH_DEG))),
+    # The loosest mapping-pitch bound of any camera: a preset doesn't know
+    # which camera it will be flown with, and the pitch slider pulls the value
+    # in to the chosen camera's own bound before it is drawn.
+    "pitch": (-90, 0),
+    "map_pitch": (-90, -min(int(math.ceil(min_mapping_pitch_deg(c))) for c in CAMERA_PROFILES.values())),
     "photo_start_wp": (0, None), "t_dist_val": (1.0, None), "overlap_pct": (0.0, 99.9),
     "manual_mph_dist": (2.3, None), "t_val_sec": (0.7, None), "target_gap_ft": (1.0, None),
     "manual_mph_time": (2.3, None), "map_front_ol": (0.0, 95.0), "map_side_ol": (0.0, 95.0),
@@ -4023,8 +4106,9 @@ for _key, _default in CREATOR_DEFAULTS.items():
     if _key not in st.session_state:
         st.session_state[_key] = _default
 # The Save Destination and the FAA map layer aren't preset settings, but
-# they are kept the same way, so a tab switch doesn't reset them either.
-for _key in CREATOR_PRESET_KEYS + ["c_save_option", "creator_faa_toggle"]:
+# they are kept the same way, so a tab switch doesn't reset them either -
+# and so is the Viewer's camera choice, which has nowhere else to live.
+for _key in CREATOR_PRESET_KEYS + ["c_save_option", "creator_faa_toggle", "v_cam_profile"]:
     if _key in st.session_state:
         st.session_state[_key] = st.session_state[_key]
 
@@ -4238,7 +4322,7 @@ def param_help(label):
     return PARAM_HELP.get(label)
 
 
-def finite_center_footprint(pitch, alt, yaw_mode="perpendicular"):
+def finite_center_footprint(pitch, alt, yaw_mode="perpendicular", camera=None):
     """
     Along-track footprint in feet, or None when this tilt has no bounded ground
     footprint at all.
@@ -4247,7 +4331,7 @@ def finite_center_footprint(pitch, alt, yaw_mode="perpendicular"):
     and forward overlap. Derived from the true projected footprint, so overlap
     matches the images at any gimbal angle.
 
-    The frame reaches VERT_HALF_FOV_DEG above the lens axis, so once the tilt is
+    The frame reaches vert_half_fov_deg above the lens axis, so once the tilt is
     shallower than that the top of every image is aimed at or above the horizon
     and the footprint runs to infinity - hence None rather than a number. This
     replaced a version that answered 999999 in that case (a sentinel meant only
@@ -4258,7 +4342,7 @@ def finite_center_footprint(pitch, alt, yaw_mode="perpendicular"):
     """
     if pitch == 0:
         return None
-    extents = footprint_extents_ft(alt, pitch, yaw_mode=yaw_mode)
+    extents = footprint_extents_ft(alt, pitch, yaw_mode=yaw_mode, camera=camera)
     return extents[0] if extents else None
 
 def format_overlap(fw_ft, gap_ft):
@@ -4288,22 +4372,22 @@ def format_overlap(fw_ft, gap_ft):
 def sync_dist_to_overlap():
     # No finite footprint -> overlap is undefined; leave the field alone rather
     # than writing a meaningless 99.9%.
-    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode())
+    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode(), creator_camera())
     if fw:
         st.session_state.overlap_pct = max(0.0, min(((fw - safe_get_float('t_dist_val', 9.0)) / fw) * 100, 99.9))
 
 def sync_overlap_to_dist():
-    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode())
+    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode(), creator_camera())
     if fw:
         st.session_state.t_dist_val = fw * (1 - (safe_get_float('overlap_pct', 70.0) / 100))
 
 def sync_gap_to_overlap():
-    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode())
+    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode(), creator_camera())
     if fw:
         st.session_state.overlap_pct = max(0.0, min(((fw - safe_get_float('target_gap_ft', 26.2)) / fw) * 100, 99.9))
 
 def sync_overlap_to_gap():
-    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode())
+    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode(), creator_camera())
     if fw:
         st.session_state.target_gap_ft = fw * (1 - (safe_get_float('overlap_pct', 70.0) / 100))
 
@@ -4315,22 +4399,22 @@ def sync_geometry():
 
 def e_sync_dist_to_overlap():
     # As on the Creator side: skip entirely when there is no finite footprint.
-    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'))
+    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'), editor_camera())
     if fw:
         st.session_state.e_overlap_pct = max(0.0, min(((fw - safe_get_float('e_t_dist_val', 9.0)) / fw) * 100, 99.9))
 
 def e_sync_overlap_to_dist():
-    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'))
+    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'), editor_camera())
     if fw:
         st.session_state.e_t_dist_val = fw * (1 - (safe_get_float('e_overlap_pct', 70.0) / 100))
 
 def e_sync_gap_to_overlap():
-    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'))
+    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'), editor_camera())
     if fw:
         st.session_state.e_overlap_pct = max(0.0, min(((fw - safe_get_float('e_target_gap_ft', 26.2)) / fw) * 100, 99.9))
 
 def e_sync_overlap_to_gap():
-    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'))
+    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'), editor_camera())
     if fw:
         st.session_state.e_target_gap_ft = fw * (1 - (safe_get_float('e_overlap_pct', 70.0) / 100))
 
@@ -4365,7 +4449,7 @@ def mission_suffix(alt_ft, pitch, overlap_pct, side_overlap_pct=None):
         suffix += f"SO{round(side_overlap_pct)}"
     return suffix
 
-def flown_forward_overlap(pitch, alt_ft, side, gap_m):
+def flown_forward_overlap(pitch, alt_ft, side, gap_m, camera=None):
     """
     The forward overlap a line mission actually flies with, for its filename.
     The Forward Overlap field isn't always the one in force - a time trigger at
@@ -4373,7 +4457,7 @@ def flown_forward_overlap(pitch, alt_ft, side, gap_m):
     it last said - and the flight log reads the OL in the name. 0 when the
     footprint has no far edge or the photos don't touch.
     """
-    fw_ft = finite_center_footprint(pitch, alt_ft, camera_yaw_mode(side))
+    fw_ft = finite_center_footprint(pitch, alt_ft, camera_yaw_mode(side), camera)
     if not fw_ft or fw_ft <= 0 or gap_m <= 0:
         return 0
     return max(0.0, min(99.0, (1 - gap_m * M_TO_FT / fw_ft) * 100))
@@ -6065,6 +6149,9 @@ if page == 'Creator':
         payload_enum = HARDWARE_MAP[hw_choice]["payload_enum"]
         payload_sub_enum = HARDWARE_MAP[hw_choice]["payload_sub"]
         is_dji_fly = HARDWARE_MAP[hw_choice].get("is_dji_fly", False)
+        # Must describe the photos the drone is set to take - the Mini's
+        # photo aspect ratio is a camera setting in DJI Fly.
+        c_camera = camera_select("cam_profile", hw_choice, on_change=sync_geometry)
 
         if is_dji_fly:
             st.warning(f"DJI Fly greatly lags with more than {DJI_FLY_PHOTO_LIMIT} waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
@@ -6150,7 +6237,7 @@ if page == 'Creator':
             # Lower bound comes from the sensor's own FOV, not a magic number:
             # past this the footprint has no finite ground extent, so overlap
             # and line spacing can't be computed (and used to crash).
-            map_pitch_min = -int(math.ceil(MIN_MAPPING_PITCH_DEG))
+            map_pitch_min = -int(math.ceil(min_mapping_pitch_deg(c_camera)))
             # A preset saved while the old (shallower) bound was in force can
             # hold a pitch outside the new range, which Streamlit rejects
             # outright - pull any such value back in before the slider reads it.
@@ -6163,7 +6250,7 @@ if page == 'Creator':
             map_pitch_val = safe_get_float('map_pitch', -90.0)
             pitch_rad = math.radians(abs(map_pitch_val))
             D_ft_c = map_alt / math.sin(pitch_rad) if pitch_rad > 0 else float('inf')
-            gsd_cm = (D_ft_c * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_c != float('inf') else 0
+            gsd_cm = ground_gsd_cm(D_ft_c, c_camera) if D_ft_c != float('inf') else 0
             st.info(f"Est. Ground GSD: {gsd_cm:.2f} cm/px")
 
             # "parallel" aims the camera along each pass, which is the only
@@ -6214,7 +6301,8 @@ if page == 'Creator':
 
             map_geom = mapping_camera_geometry(
                 map_alt, map_pitch_val,
-                safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0), side
+                safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0), side,
+                camera=c_camera,
             )
             st.info(
                 f"Photo every {map_geom['interval_ft']:.0f} ft along track\n\n"
@@ -6234,7 +6322,7 @@ if page == 'Creator':
             pitch_rad = math.radians(abs(current_pitch))
             current_alt = safe_get_float('alt_ft', 50.0)
             D_ft_c = current_alt / math.sin(pitch_rad) if pitch_rad > 0 else float('inf')
-            gsd_cm = (D_ft_c * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_c != float('inf') else 0
+            gsd_cm = ground_gsd_cm(D_ft_c, c_camera) if D_ft_c != float('inf') else 0
             st.info(f"Est. Ground GSD: {gsd_cm:.2f} cm/px")
 
             # Overlap only means something when the frame has a bounded ground
@@ -6243,14 +6331,15 @@ if page == 'Creator':
             # horizon, so the footprint has no far edge - and any overlap
             # figure derived from it is fiction. The field is disabled rather
             # than left to produce one.
-            c_overlap_ok = finite_center_footprint(current_pitch, current_alt, line_yaw_mode()) is not None
+            c_overlap_ok = finite_center_footprint(current_pitch, current_alt, line_yaw_mode(), c_camera) is not None
             if not c_overlap_ok:
                 st.warning(
                     f"At {current_pitch:.0f}° the camera is tilted less than its own "
-                    f"{VERT_HALF_FOV_DEG:.1f}° half field-of-view, so the top of the frame "
+                    f"{vert_half_fov_deg(c_camera):.1f}° half field-of-view, so the top of the frame "
                     "looks at or above the horizon and the photo footprint has no far edge. "
                     "Forward Overlap can't be calculated from that, so it is disabled - set "
-                    "the photo interval directly. Tilt to about -28° or steeper to use overlap."
+                    f"the photo interval directly. Tilt to about -{math.ceil(vert_half_fov_deg(c_camera))}° "
+                    "or steeper to use overlap."
                 )
 
             # A preset saved before "parallel"/"backwards" existed can hold an
@@ -6309,7 +6398,7 @@ if page == 'Creator':
                     manual_mph = st.number_input("Manual Speed (mph)", min_value=2.3, step=1.0, key="manual_mph_time", help=param_help("Manual Speed (mph)"))
                     speed_m = manual_mph * MPH_TO_MS
                     current_gap = speed_m * M_TO_FT * t_val_sec
-                    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode())
+                    fw = finite_center_footprint(safe_get_float('pitch', -60.0), safe_get_float('alt_ft', 50.0), line_yaw_mode(), creator_camera())
                     st.info(f"Current Overlap: {format_overlap(fw, current_gap)}")
 
         st.header("6. Visuals")
@@ -6508,7 +6597,8 @@ if page == 'Creator':
             tuple(tuple(p) for p in (st.session_state.map_boundary or ())),
             (safe_get_float('map_alt_ft', 100.0), safe_get_float('map_pitch', -90.0),
              safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0),
-             side, map_runout, map_bearing, bool(map_decompose)) if mapping_mode else None,
+             side, map_runout, map_bearing, bool(map_decompose),
+             st.session_state.get("cam_profile")) if mapping_mode else None,
             st.session_state.measure_mode,
             tuple(st.session_state.measure_points),
             tuple(tuple(p) for p in (st.session_state.corridor_line or ())),
@@ -6596,7 +6686,7 @@ if page == 'Creator':
                         st.session_state.map_boundary,
                         safe_get_float('map_alt_ft', 100.0), safe_get_float('map_pitch', -90.0),
                         safe_get_float('map_front_ol', 75.0), safe_get_float('map_side_ol', 65.0),
-                        side, map_runout, map_bearing, map_decompose
+                        side, map_runout, map_bearing, map_decompose, camera=c_camera
                     )
                     if preview_path:
                         path_line = folium.PolyLine(preview_path, color="#ff8800", weight=3, tooltip="Computed flight path").add_to(m)
@@ -6743,7 +6833,7 @@ if page == 'Creator':
 
             path_coords, map_info = generate_mapping_flight_path(
                 boundary, map_alt, map_pitch_val, map_front_ol, map_side_ol,
-                side, map_runout, map_bearing, map_decompose
+                side, map_runout, map_bearing, map_decompose, camera=c_camera
             )
 
             if path_coords:
@@ -6983,7 +7073,8 @@ if page == 'Creator':
                     prefixed_name = f"{mission_name}_{platform_prefix}"
                     line_overlap = flown_forward_overlap(
                         cfg["pitch"], cfg["alt_ft"], side,
-                        photo_gap_m(cfg["trigger_type"], cfg["interval_ft"], cfg["interval_sec"], speed_m))
+                        photo_gap_m(cfg["trigger_type"], cfg["interval_ft"], cfg["interval_sec"], speed_m),
+                        c_camera)
                     suffix = mission_suffix(cfg["alt_ft"], cfg["pitch"], line_overlap)
                     final_filename = f"{prefixed_name}{suffix}"
 
@@ -7128,7 +7219,10 @@ elif page == 'Editor':
             e_payload_enum = HARDWARE_MAP[e_hw_choice]["payload_enum"]
             e_payload_sub_enum = HARDWARE_MAP[e_hw_choice]["payload_sub"]
             e_is_dji_fly = HARDWARE_MAP[e_hw_choice].get("is_dji_fly", False)
-            
+            # Not in the mission file, so it can't be read back - it has to
+            # match the photos the drone was set to take.
+            e_camera = camera_select("e_cam_profile", e_hw_choice, on_change=e_sync_geometry)
+
             if e_is_dji_fly:
                 st.warning(f"DJI Fly greatly lags with more than {DJI_FLY_PHOTO_LIMIT} waypoints (photos). To prevent a crash saving will be disabled if you exceed this.")
             
@@ -7178,18 +7272,19 @@ elif page == 'Editor':
             pitch_rad_e = math.radians(abs(current_e_pitch))
             current_e_alt = safe_get_float('e_alt_ft', 50.0)
             D_ft_e = current_e_alt / math.sin(pitch_rad_e) if pitch_rad_e > 0 else float('inf')
-            st.info(f"Est. Ground GSD: {(D_ft_e * FT_TO_M * SENSOR_W * 100) / (FOCAL_L * IMAGE_W) if D_ft_e != float('inf') else 0:.2f} cm/px")
+            st.info(f"Est. Ground GSD: {ground_gsd_cm(D_ft_e, e_camera) if D_ft_e != float('inf') else 0:.2f} cm/px")
 
             # Same rule as the Creator: no bounded footprint, no meaningful
             # overlap figure, so the field is disabled instead of inventing one.
-            e_overlap_ok = finite_center_footprint(current_e_pitch, current_e_alt, line_yaw_mode('e_side')) is not None
+            e_overlap_ok = finite_center_footprint(current_e_pitch, current_e_alt, line_yaw_mode('e_side'), e_camera) is not None
             if not e_overlap_ok:
                 st.warning(
                     f"At {current_e_pitch:.0f}° the camera is tilted less than its own "
-                    f"{VERT_HALF_FOV_DEG:.1f}° half field-of-view, so the top of the frame "
+                    f"{vert_half_fov_deg(e_camera):.1f}° half field-of-view, so the top of the frame "
                     "looks at or above the horizon and the photo footprint has no far edge. "
                     "Forward Overlap can't be calculated from that, so it is disabled - set "
-                    "the photo interval directly. Tilt to about -28° or steeper to use overlap."
+                    f"the photo interval directly. Tilt to about -{math.ceil(vert_half_fov_deg(e_camera))}° "
+                    "or steeper to use overlap."
                 )
             
             e_side = st.selectbox("Camera side of flight path", LINE_CAMERA_SIDES, key="e_side",
@@ -7257,13 +7352,14 @@ elif page == 'Editor':
                     st.info(f"Auto-Calculated Speed: {e_speed_m * MS_TO_MPH:.1f} mph")
                 else:
                     e_speed_m = st.number_input("Manual Speed (mph)", min_value=2.3, value=safe_e_speed, step=1.0, help=param_help("Manual Speed (mph)")) * MPH_TO_MS
-                    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'))
+                    fw = finite_center_footprint(safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), line_yaw_mode('e_side'), editor_camera())
                     st.info(f"Current Overlap: {format_overlap(fw, e_speed_m * M_TO_FT * e_tval_sec)}")
 
             e_flown_overlap = flown_forward_overlap(
                 safe_get_float('e_pitch', -60.0), safe_get_float('e_alt_ft', 50.0), e_side,
                 photo_gap_m(st.session_state.get('e_trigger_type', 'distance'), safe_get_float('e_t_dist_val', 9.0),
-                            safe_get_float('e_t_time_val', 2.0), e_speed_m))
+                            safe_get_float('e_t_time_val', 2.0), e_speed_m),
+                e_camera)
             e_preview_suffix = mission_suffix(safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0),
                                               e_flown_overlap,
                                               meta.get('side_overlap') if meta.get('is_mapping') else None)
@@ -7272,9 +7368,9 @@ elif page == 'Editor':
 
             st.header("4. Visuals")
             show_footprints = st.checkbox("Show Image Footprints", value=True, help=param_help("Show Image Footprints"))
-            if show_footprints and abs(safe_get_float('e_pitch', -60.0)) < VERT_HALF_FOV_DEG:
+            if show_footprints and abs(safe_get_float('e_pitch', -60.0)) < vert_half_fov_deg(e_camera):
                 st.warning(
-                    f"Gimbal pitch is shallower than {VERT_HALF_FOV_DEG:.0f}° (the camera's vertical half-FOV), "
+                    f"Gimbal pitch is shallower than {vert_half_fov_deg(e_camera):.0f}° (the camera's vertical half-FOV), "
                     "so the top of the frame looks above the horizon and the footprint has no finite size on "
                     "the ground. Footprints are hidden at this angle."
                 )
@@ -7401,7 +7497,7 @@ elif page == 'Editor':
                         yaw = e_preview_headings[i] % 360
                     else:
                         yaw = yaws[min(i, len(yaws) - 1)] if yaws else 0.0
-                    footprint = get_photo_footprint(c[0], c[1], safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0), yaw)
+                    footprint = get_photo_footprint(c[0], c[1], safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0), yaw, e_camera)
                     if footprint:
                         folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_edit)
                     folium.CircleMarker(list(c), radius=2.5, color="yellow", fill=True).add_to(m_edit)
@@ -7423,7 +7519,7 @@ elif page == 'Editor':
                                 else:
                                     lat, lon = current_coords[i][0], current_coords[i][1]
 
-                                footprint = get_photo_footprint(lat, lon, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0), yaws[i])
+                                footprint = get_photo_footprint(lat, lon, safe_get_float('e_alt_ft', 50.0), safe_get_float('e_pitch', -60.0), yaws[i], e_camera)
                                 if footprint:
                                     folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_edit)
                                 folium.CircleMarker([lat, lon], radius=2.5, color="yellow", fill=True).add_to(m_edit)
@@ -7625,6 +7721,9 @@ elif page == 'Viewer  |':
                 selected_kmzs = [sel] if sel else []
         
         with st.sidebar:
+            # Footprints and overlap depend on the photos taken, which a
+            # mission file doesn't record - so it is asked, as when planning.
+            v_camera = camera_select("v_cam_profile")
             show_footprints = st.checkbox("Show Image Footprints", value=True, help=param_help("Show Image Footprints"))
             show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="viewer_faa_toggle", help=param_help("Show FAA Airspace Restrictions"))
             if show_faa_airspace:
@@ -7844,7 +7943,7 @@ elif page == 'Viewer  |':
                                     continue
                                 if show_footprints:
                                     yaw = w['target_yaw']
-                                    footprint = get_photo_footprint(w['lat'], w['lon'], w['alt'], meta['pitch'], yaw)
+                                    footprint = get_photo_footprint(w['lat'], w['lon'], w['alt'], meta['pitch'], yaw, v_camera)
                                     if footprint:
                                         folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_view)
                                 folium.CircleMarker([w['lat'], w['lon']], radius=2.5, color="yellow", fill=True).add_to(m_view)
@@ -7867,7 +7966,7 @@ elif page == 'Viewer  |':
                                     
                                             if show_footprints:
                                                 yaw = wp_data[i]['target_yaw']
-                                                footprint = get_photo_footprint(lat, lon, meta['alt']*M_TO_FT, meta['pitch'], yaw)
+                                                footprint = get_photo_footprint(lat, lon, meta['alt']*M_TO_FT, meta['pitch'], yaw, v_camera)
                                                 if footprint:
                                                     folium.Polygon(locations=footprint, color="darkorange", weight=1, fill=True, fill_opacity=0.15).add_to(m_view)
                                         
@@ -7936,7 +8035,7 @@ elif page == 'Viewer  |':
                         else:
                             cam_side = "Unknown"
 
-                        fw_ft = finite_center_footprint(meta['pitch'], meta['alt'] * M_TO_FT, flown_yaw_mode)
+                        fw_ft = finite_center_footprint(meta['pitch'], meta['alt'] * M_TO_FT, flown_yaw_mode, v_camera)
                         overlap_text = format_overlap(fw_ft, interval_ft)
 
                         st.sidebar.write(f"Hardware Platform: {hw_key}")
@@ -7968,10 +8067,10 @@ elif page == 'Viewer  |':
                         st.sidebar.write(f"Calculated Photos: {grand_total_photos}")
                         if meta['finish']:
                             st.sidebar.write(f"On Finish: {meta['finish']}")
-                        if show_footprints and abs(meta['pitch']) < VERT_HALF_FOV_DEG:
+                        if show_footprints and abs(meta['pitch']) < vert_half_fov_deg(v_camera):
                             st.sidebar.warning(
                                 f"This mission's {meta['pitch']}° gimbal pitch is shallower than the camera's "
-                                f"{VERT_HALF_FOV_DEG:.0f}° vertical half-FOV, so its footprints have no finite "
+                                f"{vert_half_fov_deg(v_camera):.0f}° vertical half-FOV, so its footprints have no finite "
                                 "ground size and are hidden."
                             )
                     else:

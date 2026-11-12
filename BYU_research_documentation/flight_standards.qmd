@@ -2,7 +2,7 @@
 title: "Flight Standards"
 subtitle: "Licensure, planning, and naming conventions for BYU drone flights"
 author: "Connor Williams"
-date-modified: 2026-08-18
+date-modified: 2026-11-12
 language:
   title-block-modified: "Last Updated"
 format:
@@ -17,7 +17,7 @@ format:
     number-sections: true
 ---
 
-[To research pages](https://cojow.github.io/flight_planner/BYU_research_documentation/)
+[Link to research pages](https://cojow.github.io/flight_planner/BYU_research_documentation/)
 
 ## Quick Reference
 Here is a quick reference of everything explained below:
@@ -28,6 +28,8 @@ Here is a quick reference of everything explained below:
 - Missions: Street1_Street2
 - Photo Area folders: Photo_GEOID_notablefeature
 - Photo Folders: Photo_Street1_Street2
+    - 200-foot missions -> _nadir
+    - 70-foot missions -> _oblique
 
 **Flights**
 
@@ -36,20 +38,23 @@ Here is a quick reference of everything explained below:
 | 70 | -45 | >75 | Opposite side of the street |
 | 200 | -70 | >75 | Opposite side of the street |
 
-Flights are flown across the street along the area between the traveled way and the parking strip. 
-See @sec-flight-paths for details.
+- Flights are flown across the street along the area between the traveled way and the parking strip. 
+- For trees that get in the way see @sec-heights-and-angles
+- See @sec-flight-paths for details.
 
 **Submit a LAANC If you need to.**
-See @sec-laanc.
+
+- See @sec-laanc.
 
 **Review the checklist before you leave to fly, and before you fly.**
-It can be found in each drone case, and in @sec-checklist.
+
+- It can be found in each drone case, and in @sec-checklist.
 
 **Uploading.**
-Make sure to upload the following to Box:
 
-- Flight Missions
-- Flight Photos
+- Make sure to upload the following to Box:
+  - Flight Missions (KMZ files)
+  - Flight Photos (Nadir and Oblique)
 
 ## Licensure/Certificate {#sec-licensure}
 
@@ -130,7 +135,15 @@ The Flight Planner will add information about the height, gimbal pitch, and phot
 
 Name the photo folder after the mission it's composed of, nadir and oblique flights, with the prefix "photo".
 This should result in a unique name for every folder. 
-This will be done when dividing the flown missions into separate folders (see the `Photo Sorter` section in the README for how to sort the photos and name the folders).
+This will be done when dividing the flown missions into separate folders (see the `Photo Sorter` section in the README for how to sort the photos and name the folders). 
+
+To distinguish between the 70 and 200 feet flights (since they have the same street naming):
+    - 200-foot missions -> end with "_nadir".
+    - 70-foot missions -> end with "_oblique".
+
+> Note: If you have to deviate the mission height and angle to contend with trees, note this at the end of the photo folder. 
+Use H for the new height, and A for the new angle.
+Ex. `200E_500W_oblique_H95_A55`.
 
 Naming the missions is best done in the photo sorter if you know the sequence you did the flights in (ideal), or manually afterwards, sorting for each folder. 
 
@@ -143,7 +156,7 @@ These photo area folders will have the same name as the area mission folders, bu
 
 ### Flight Sets {#sec-flight-sets}
 
-Each road section will get a **flight set**: two flights that will follow the same path. One is at 70 feet and is used for analysing houses. The second is at 200 feet and it used to compute volumes of the house. 
+Each road section will get a **flight set**: two flights that will follow the same path. One is at 70 feet and is used for analysing houses. These are referred to as "oblique flights". The second is at 200 feet and it used to compute volumes of the house. These are referred to as "nadir flights". 
 
 ### Flight Paths {#sec-flight-paths}
 
@@ -211,6 +224,7 @@ This means that there will be double the flight missions per flight set (two for
 One photo will not capture the entire building. 
 Also, we may be more conerned with how many shops/dwelling are within the building, and less concerned about the building as a whole. 
 - We may need to have our own naming conventions for big buildings like this.
+- We are **not** flying **schools** at this time. 
 
 
 Two possible layouts, both at 70 ft height, 40° pitch, and 75% overlap:
@@ -252,7 +266,7 @@ They may have to look at the houses on the same side of the street instead of ac
 #### Empty Lots/Fields {#sec-empty}
 
 - We do not need to run flights covering these areas. We're concerned about buildings only.
-If they aappear between buildings on a street, it will be left up to your engineering judgement to keep have the flight cover them or to split the flight in two. 
+If they appear between buildings on a street, you may use your engineering judgment to have the flight cover them or split the flight in two. 
 
 ### Heights and Angles {#sec-heights-and-angles}
 
@@ -261,7 +275,7 @@ These are the standardized height and angles for each flight.
 200 feet is a good height to collect the tops of houses to create the point clouds, with some slight gimbal adjustments.
 70 feet is a good height to see the front of a house, but the gimbal may need to be adjusted for certain areas. 
 
-Angles are measured with 90° as straight down. DJI Fly shows the same pitch as a negative number, so 63° in this table is −63° in the app.
+Angles are measured with 90° as straight down. DJI Fly shows the same pitch as a negative number, so 45° in this table is −45° in the app.
 
 The following table outlines the pitch needed for each flight height and distance to the building.
 
@@ -274,26 +288,37 @@ These numbers appear to accomplish what we want, but we may adjust them as we fl
 
 | Height (ft) | Angle (°) | Angle (°) in Drone | Overlap | Note |
 |---|---|---|---|
-| 70 | 45 | -45 | >75 | Opposite side of the street |
+| 70 | 45 | -45 | >75 |
+| 95* | 55 | -55 | >75 |
+| 125* | 60? | -60 | >75 |
+
+> **Note**: *These flights are flown when obstacals (i.e. trees) get in the way of the 70 foot flights. 
+See {EMMA's Section that she will write} for how to adjust your missions in the field to fit this. 
 
 **200 ft flights**
 
-| Height (ft) | Angle (°) | Angle (°) in Drone | Overlap | Note |
+| Height (ft) | Angle (°) | Angle (°) in Drone | Overlap | 
 |---|---|---|---|
-| 200 | 70 | -70 | >75 | Opposite side of the street. 65 degrees may be better. |
+| 200 | 70 | -70 | >75 |
 
 > **NOTE**: We still need to verify which overlap will work for what we need. 
 These tables may be added to if we find that wider streets present a problem. 
 
 ### Mission Size Limits {#sec-mission-limits}
 
-Keep photo counts low so processing stays fast; overlap, not photo count, is what decides whether the houses are covered. On DJI Fly, each photo is a waypoint. Controllers start having trouble above 80 waypoints and slow down badly past 99, so split any mission over 80 into two.
+Keep photo counts low so processing stays fast; overlap, not photo count, is what decides whether the houses are covered.
+On DJI Fly, each photo is a waypoint. 
+Controllers start having trouble above 80 waypoints and slow down badly past 99, so split any mission over 80 into two.
 
 ### Restricted Airspace and LAANC
 
-The FAA restricts airspace around places such as airports in order to protect aircraft in those areas. When flying near an airport (within several miles), there are typically restrictions on how high you can fly. The ceiling is usually 400 feet, so we are not impacted by the height restriction, but when our flights fall within the restricted airspace we still need to submit a LAANC.
+The FAA restricts airspace around places such as airports in order to protect aircraft in those areas. 
+When flying near an airport (within several miles), there are typically restrictions on how high you can fly. 
+The ceiling is usually 400 feet, so we are not impacted by the height restriction, but when our flights fall within the restricted airspace we still need to submit a LAANC.
 
-A LAANC (Low Altitude Authorization and Notification Capability) is a automatic approval service that allows drone pilots to fly in restricted airspace (as long as they follow the rules of Part 107). If we fly in Provo (and some parts of Orem), we will need to submit these forms. We could probably get away without doing it, but it's better to be safe then sorry. 
+A LAANC (Low Altitude Authorization and Notification Capability) is a automatic approval service that allows drone pilots to fly in restricted airspace (as long as they follow the rules of Part 107). 
+If we fly in Provo (and some parts of Orem), we will need to submit these forms. 
+We could probably get away without doing it, but it's better to be safe then sorry. 
 
 #### How to submit a LAANC {#sec-laanc}
 You can submit this either right before you fly, or a couple days in advance (like when you create your missions).

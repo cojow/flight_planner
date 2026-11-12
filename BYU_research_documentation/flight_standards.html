@@ -2267,7 +2267,7 @@ vertical-align: -.125em;
     <div>
     <div class="quarto-title-meta-heading">Last Updated</div>
     <div class="quarto-title-meta-contents">
-      <p class="date-modified">August 18, 2026</p>
+      <p class="date-modified">November 12, 2026</p>
     </div>
   </div>
     
@@ -2278,7 +2278,7 @@ vertical-align: -.125em;
 </header>
 
 
-<p><a href="https://cojow.github.io/flight_planner/BYU_research_documentation/">To research pages</a></p>
+<p><a href="https://cojow.github.io/flight_planner/BYU_research_documentation/">Link to research pages</a></p>
 <section id="quick-reference" class="level2" data-number="1">
 <h2 data-number="1" class="anchored" data-anchor-id="quick-reference"><span class="header-section-number">1</span> Quick Reference</h2>
 <p>Here is a quick reference of everything explained below:</p>
@@ -2287,7 +2287,11 @@ vertical-align: -.125em;
 <li>Mission Area folders: Block Group GEOID + notable feature in block group (Park, school, etc)</li>
 <li>Missions: Street1_Street2</li>
 <li>Photo Area folders: Photo_GEOID_notablefeature</li>
-<li>Photo Folders: Photo_Street1_Street2</li>
+<li>Photo Folders: Photo_Street1_Street2
+<ul>
+<li>200-foot missions -&gt; _nadir</li>
+<li>70-foot missions -&gt; _oblique</li>
+</ul></li>
 </ul>
 <p><strong>Flights</strong></p>
 <table class="caption-top table">
@@ -2314,13 +2318,26 @@ vertical-align: -.125em;
 </tr>
 </tbody>
 </table>
-<p>Flights are flown across the street along the area between the traveled way and the parking strip. See <a href="#sec-flight-paths" class="quarto-xref">Section 4.2</a> for details.</p>
-<p><strong>Submit a LAANC If you need to.</strong> See <a href="#sec-laanc" class="quarto-xref">Section 4.5.1</a>.</p>
-<p><strong>Review the checklist before you leave to fly, and before you fly.</strong> It can be found in each drone case, and in <a href="#sec-checklist" class="quarto-xref">Section 5</a>.</p>
-<p><strong>Uploading.</strong> Make sure to upload the following to Box:</p>
 <ul>
-<li>Flight Missions</li>
-<li>Flight Photos</li>
+<li>Flights are flown across the street along the area between the traveled way and the parking strip.</li>
+<li>For trees that get in the way see <a href="#sec-heights-and-angles" class="quarto-xref">Section 4.3</a></li>
+<li>See <a href="#sec-flight-paths" class="quarto-xref">Section 4.2</a> for details.</li>
+</ul>
+<p><strong>Submit a LAANC If you need to.</strong></p>
+<ul>
+<li>See <a href="#sec-laanc" class="quarto-xref">Section 4.5.1</a>.</li>
+</ul>
+<p><strong>Review the checklist before you leave to fly, and before you fly.</strong></p>
+<ul>
+<li>It can be found in each drone case, and in <a href="#sec-checklist" class="quarto-xref">Section 5</a>.</li>
+</ul>
+<p><strong>Uploading.</strong></p>
+<ul>
+<li>Make sure to upload the following to Box:
+<ul>
+<li>Flight Missions (KMZ files)</li>
+<li>Flight Photos (Nadir and Oblique)</li>
+</ul></li>
 </ul>
 </section>
 <section id="sec-licensure" class="level2" data-number="2">
@@ -2460,6 +2477,10 @@ Note
 <section id="sec-naming-photo-folders" class="level3" data-number="3.4">
 <h3 data-number="3.4" class="anchored" data-anchor-id="sec-naming-photo-folders"><span class="header-section-number">3.4</span> Photo Folders</h3>
 <p>Name the photo folder after the mission it’s composed of, nadir and oblique flights, with the prefix “photo”. This should result in a unique name for every folder. This will be done when dividing the flown missions into separate folders (see the <code>Photo Sorter</code> section in the README for how to sort the photos and name the folders).</p>
+<p>To distinguish between the 70 and 200 feet flights (since they have the same street naming): - 200-foot missions -&gt; end with “_nadir”. - 70-foot missions -&gt; end with “_oblique”.</p>
+<blockquote class="blockquote">
+<p>Note: If you have to deviate the mission height and angle to contend with trees, note this at the end of the photo folder. Use H for the new height, and A for the new angle. Ex. <code>200E_500W_oblique_H95_A55</code>.</p>
+</blockquote>
 <p>Naming the missions is best done in the photo sorter if you know the sequence you did the flights in (ideal), or manually afterwards, sorting for each folder.</p>
 </section>
 <section id="sec-naming-photo-area-folders" class="level3" data-number="3.5">
@@ -2471,7 +2492,7 @@ Note
 <h2 data-number="4" class="anchored" data-anchor-id="sec-flight-planning"><span class="header-section-number">4</span> Flight Planning</h2>
 <section id="sec-flight-sets" class="level3" data-number="4.1">
 <h3 data-number="4.1" class="anchored" data-anchor-id="sec-flight-sets"><span class="header-section-number">4.1</span> Flight Sets</h3>
-<p>Each road section will get a <strong>flight set</strong>: two flights that will follow the same path. One is at 70 feet and is used for analysing houses. The second is at 200 feet and it used to compute volumes of the house.</p>
+<p>Each road section will get a <strong>flight set</strong>: two flights that will follow the same path. One is at 70 feet and is used for analysing houses. These are referred to as “oblique flights”. The second is at 200 feet and it used to compute volumes of the house. These are referred to as “nadir flights”.</p>
 </section>
 <section id="sec-flight-paths" class="level3" data-number="4.2">
 <h3 data-number="4.2" class="anchored" data-anchor-id="sec-flight-paths"><span class="header-section-number">4.2</span> Flight Paths</h3>
@@ -2556,7 +2577,7 @@ Note
 <section id="sec-big-buildings" class="level4" data-number="4.2.3">
 <h4 data-number="4.2.3" class="anchored" data-anchor-id="sec-big-buildings"><span class="header-section-number">4.2.3</span> Big Buildings and Parking Lots</h4>
 <p><strong>Where to fly:</strong> In the parking lot rather than on the road, since these buildings usually sit set back quite a ways.</p>
-<p><strong>What to capture:</strong> Only the front of the building matters for image analysis, so the back can be skipped. The 200 ft flight still has to capture the whole building for the point cloud. - We may need to put together a different flight set for these kinds of buildings, since they are much larger than normal buildings. One photo will not capture the entire building. Also, we may be more conerned with how many shops/dwelling are within the building, and less concerned about the building as a whole. - We may need to have our own naming conventions for big buildings like this.</p>
+<p><strong>What to capture:</strong> Only the front of the building matters for image analysis, so the back can be skipped. The 200 ft flight still has to capture the whole building for the point cloud. - We may need to put together a different flight set for these kinds of buildings, since they are much larger than normal buildings. One photo will not capture the entire building. Also, we may be more conerned with how many shops/dwelling are within the building, and less concerned about the building as a whole. - We may need to have our own naming conventions for big buildings like this. - We are <strong>not</strong> flying <strong>schools</strong> at this time.</p>
 <p>Two possible layouts, both at 70 ft height, 40° pitch, and 75% overlap:</p>
 <div class="columns">
 <div class="column" style="width:50%;">
@@ -2590,7 +2611,7 @@ Note
 <section id="sec-empty" class="level4" data-number="4.2.5">
 <h4 data-number="4.2.5" class="anchored" data-anchor-id="sec-empty"><span class="header-section-number">4.2.5</span> Empty Lots/Fields</h4>
 <ul>
-<li>We do not need to run flights covering these areas. We’re concerned about buildings only. If they aappear between buildings on a street, it will be left up to your engineering judgement to keep have the flight cover them or to split the flight in two.</li>
+<li>We do not need to run flights covering these areas. We’re concerned about buildings only. If they appear between buildings on a street, you may use your engineering judgment to have the flight cover them or split the flight in two.</li>
 </ul>
 </section>
 </section>
@@ -2598,7 +2619,7 @@ Note
 <h3 data-number="4.3" class="anchored" data-anchor-id="sec-heights-and-angles"><span class="header-section-number">4.3</span> Heights and Angles</h3>
 <p>These are the standardized height and angles for each flight.</p>
 <p>200 feet is a good height to collect the tops of houses to create the point clouds, with some slight gimbal adjustments. 70 feet is a good height to see the front of a house, but the gimbal may need to be adjusted for certain areas.</p>
-<p>Angles are measured with 90° as straight down. DJI Fly shows the same pitch as a negative number, so 63° in this table is −63° in the app.</p>
+<p>Angles are measured with 90° as straight down. DJI Fly shows the same pitch as a negative number, so 45° in this table is −45° in the app.</p>
 <p>The following table outlines the pitch needed for each flight height and distance to the building.</p>
 <div class="callout callout-style-default callout-note callout-titled">
 <div class="callout-header d-flex align-content-center">
@@ -2630,8 +2651,23 @@ Note
 <td>-45</td>
 <td>&gt;75</td>
 </tr>
+<tr class="even">
+<td>95*</td>
+<td>55</td>
+<td>-55</td>
+<td>&gt;75</td>
+</tr>
+<tr class="odd">
+<td>125*</td>
+<td>60?</td>
+<td>-60</td>
+<td>&gt;75</td>
+</tr>
 </tbody>
 </table>
+<blockquote class="blockquote">
+<p><strong>Note</strong>: *These flights are flown when obstacals (i.e. trees) get in the way of the 70 foot flights. See {EMMA’s Section that she will write} for how to adjust your missions in the field to fit this.</p>
+</blockquote>
 <p><strong>200 ft flights</strong></p>
 <table class="caption-top table">
 <thead>
