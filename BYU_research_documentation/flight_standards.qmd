@@ -39,7 +39,7 @@ Here is a quick reference of everything explained below:
 | 200 | -70 | >75 | Opposite side of the street |
 
 - Flights are flown across the street along the area between the traveled way and the parking strip. 
-- For trees that get in the way see @sec-heights-and-angles
+- For trees or other things that get in the way see @sec-heights-and-angles and @sec-mission-adjust
 - See @sec-flight-paths for details.
 
 **Submit a LAANC If you need to.**
@@ -106,9 +106,12 @@ Missions are named when created in the flight planner. Follow this format when n
 
 *For roads not laid out N-S or E-W, use the most western or southern street, respectively. 
 
-*If a street ends (like in a cul-de-sac), use "END" for Street2. Cul-de-sacs are flown in a separate mission. 
+*If a street ends (like in a cul-de-sac), use "END" for Street2. 
+Cul-de-sacs are flown in a separate mission.
+For the cul-de-sac, use "CDS" for Street1. 
 
 The Flight Planner will add information about the height, gimbal pitch, and photo overlap to the end. 
+This will look like `HXX_AXX_OLXX`.
 
 #### Examples
 
@@ -141,7 +144,7 @@ To distinguish between the 70 and 200 feet flights (since they have the same str
     - 200-foot missions -> end with "_nadir".
     - 70-foot missions -> end with "_oblique".
 
-> Note: If you have to deviate the mission height and angle to contend with trees, note this at the end of the photo folder. 
+> Note: If you have to deviate the mission height and angle to contend with obstacles, note this at the end of the photo folder. 
 Use H for the new height, and A for the new angle.
 Ex. `200E_500W_oblique_H95_A55`.
 
@@ -172,6 +175,7 @@ If you cut a mission in two, give it a direction modifier (e.g. Ash_Cherry_north
 - Do your best to avoid flying on private property.
 - When roads are curved, do your best to follow the curves with the straight lines.
 But don't go overboard with the small line segments, the drone likely won't do well.
+- **Always fly the drone a little bit before you start your missins to make sure it is flying right, and more importantly, that the drone will not run into any obstructions.** 
 
 See the sections below for specific guidance on each road type.
 
@@ -187,9 +191,10 @@ See the sections below for specific guidance on each road type.
 #### Residential/Local Roads {#sec-local-roads}
 
 **What it is:** The most common road type, usually 30 to 40 feet wide.
-- Flying the road across the street from where you are taking the pictures has seen the best results in capturing the fronts of the houses.
+Flying the road across the street from where you are taking the pictures has seen the best results in capturing the fronts of the houses.
 
-**Where to fly:** On the far shoulder, looking across the street at the houses. This has given the best captures of house fronts so far.
+**Where to fly:** On the far shoulder, looking across the street at the houses. 
+This has given the best captures of the front of houses so far.
 
 ![Flight path example](./images/path_examples/fp_ex_res.png)
 
@@ -197,12 +202,14 @@ See the sections below for specific guidance on each road type.
 
 #### Busy/Arterial Roads {#sec-big-roads}
 **What it is:** Less common, but houses and buildings still front onto them. Usually 50 to 60+ feet wide.
-- Do not have the drone fly over it, like we do with local roads.
+
+- We want to avoid flying over the road, as we do with local roads.
 This means that there will be double the flight missions per flight set (two for each side of the road).
 - As stated in the general notes, give split missions directional identifiers (e.g., 900E_900N_east and 900E_900N_west)
 
-**Where to fly:** We will either stay on the same side or across, like local roads. We need to confirm the best angle for either one. 
-
+**Where to fly:** We will either stay on the same side or across, like local roads. 
+We need to confirm the best angle for either one. 
+Which ever one is less work is what we will do. 
 
 ::: {.columns}
 
@@ -217,15 +224,19 @@ This means that there will be double the flight missions per flight set (two for
 :::
 
 #### Big Buildings and Parking Lots {#sec-big-buildings}
+
+> **NOTE**: ACS excludes commercial properties, so we will likely ignore these buildings for this project. 
+
 **Where to fly:** In the parking lot rather than on the road, since these buildings usually sit set back quite a ways.
 
-**What to capture:** Only the front of the building matters for image analysis, so the back can be skipped. The 200 ft flight still has to capture the whole building for the point cloud.
+**What to capture:** Only the front of the building matters for image analysis, so the back can be skipped. 
+The 200 ft flight still has to capture the whole building for the point cloud.
+
 - We may need to put together a different flight set for these kinds of buildings, since they are much larger than normal buildings. 
 One photo will not capture the entire building. 
 Also, we may be more conerned with how many shops/dwelling are within the building, and less concerned about the building as a whole. 
 - We may need to have our own naming conventions for big buildings like this.
 - We are **not** flying **schools** at this time. 
-
 
 Two possible layouts, both at 70 ft height, 40° pitch, and 75% overlap:
 
@@ -256,12 +267,12 @@ Two possible layouts, both at 70 ft height, 40° pitch, and 75% overlap:
 
 #### Cul-de-sac {#sec-cul}
 Cul-de-sacs are their own road section. 
-The round end is hard to follow with straight flight lines, and it is wider than the road leading into it. 
-Split them into two flight sets: one for the approach road, which follows that road's type, and one for the circle, which gets its own gimbal pitch. 
-- Label them as mentioned above, with the street leading into it as 'END' as Street2. 
-- We will confirm the best pitch for the circle in the field.
-They may have to look at the houses on the same side of the street instead of across the street. 
+Split them into two flight sets: one for the approach road, which follows that road's type, and one for the circle. 
 
+- Label them as mentioned above, with the street leading into it as 'END' as Street2, and the Cul-de-sac steet1 named CDS. cul-de-sac str
+- We may need to increase the overlap so that we make sure to get enough photos.
+
+![Flight path example](./images/path_examples/CDS_example.png)
 
 #### Empty Lots/Fields {#sec-empty}
 
@@ -293,7 +304,7 @@ These numbers appear to accomplish what we want, but we may adjust them as we fl
 | 125* | 60? | -60 | >75 |
 
 > **Note**: *These flights are flown when obstacals (i.e. trees) get in the way of the 70 foot flights. 
-See {EMMA's Section that she will write} for how to adjust your missions in the field to fit this. 
+See @sec-mission-adjust for how to adjust your missions in the field to fit this. 
 
 **200 ft flights**
 
@@ -303,6 +314,30 @@ See {EMMA's Section that she will write} for how to adjust your missions in the 
 
 > **NOTE**: We still need to verify which overlap will work for what we need. 
 These tables may be added to if we find that wider streets present a problem. 
+
+#### Adjusting Missions in Field {#sec-mission-adjust}
+If it seems like there might be an obstical that is over 70 feet, complete a test flight to estimate its maximum height. 
+This should be done before every flight where tall things are involved. 
+The following explains how to adjust in field:
+
+>**Note** Do not adjust Heading. 
+>Heading is also in degrees, so it’s easy to mistake for Gimbal Pitch, but it should stay as it is.
+
+1. Open Waypoints/flight plan and select any waypoint from the numbered boxes along the bottom of the screen. Don’t tap a waypoint on the map. 
+
+2. Change the altitude:
+  - Select Altitude.
+  - Turn the dial to the altitude you want (see the table below).
+  - Tap Apply to All (top-right corner of the bottom panel), then tap OK.
+
+3. Change the gimbal pitch:
+  - Select Gimbal Pitch.
+  - Change the setting from Manual to Custom.
+  - Turn the dial to the pitch that matches your altitude (see the table below).
+  - Tap Apply to All, then tap OK.
+4. Select the home button in the top left corner and press Save and Exit. 
+If the changes do not appear, repeat the adjustments and save again. 
+5. The flight plan is ready for the image collection flight.
 
 ### Mission Size Limits {#sec-mission-limits}
 
@@ -462,26 +497,6 @@ These will retain the same name as the folder with the prefix "**photo**" replac
 - Point Clouds and Measurements: This will contain the measurement sheet documents.
 For now they will also contain atleast the point cloud, as well as the individual houses. 
 The folders will retain the same name as the photo folder with the prefix "**photo**" replaced with "**cloud**".
-
-## Methods and Questions {#stats}
-
-### Relevant Questions
-
-- Research Questions
-  - How are they used in collecting socioeconomic/land use data? 
-  - Socioeconomic data in Transportation modeling? What variables are used? NCHR 916
-  - How similar to people who live next to each other in terms of income, etc?
-  - Papers on population synthesis. How accurate is it, more data does what? Ignore computational stuff. 
-  - How will we sample cities and scale them up? (Brewer, Mila papers)
-  - ACS technical memos for how data is collected, models, etc. How they do stuff. 
-  - Ways to measure differences in synthetic populations.
-
-  - We need distribution in a neighborhood, not at house level. 
-
-
-- Other questions that we need to answer
-  - What American Census variables can we collect using a Drone? 
-  Are there variables that we can't directly get, then to find correlations? 
 
 
 ## TODO {#sec-todo}

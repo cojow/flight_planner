@@ -99,3 +99,21 @@ We will generate two synthetic populations in PopulationSim: one from census inp
 Within Utah County, we can compare how the model works in different cities, as long as we keep the other variables as similar as possible.
 
 We will then test the methodology in Ecuador. Ecuador's 2022 Census, its most recent, came after a 12-year gap and had coverage gaps [@inec2022], which makes it a good representative of countries with poor census data. Our team will join [BYU researchers] in [city], Ecuador, and repeat the data collection and estimation steps. We will then apply both the Utah-trained model and a recalibrated model using data collected in Ecuador, and compare the results to the 2022 Census. This will show whether the model transfers well and how much recalibration is required.
+
+## Relevant Questions
+
+- Research Questions
+  - How are they used in collecting socioeconomic/land use data? 
+  - Socioeconomic data in Transportation modeling? What variables are used? NCHR 916
+  - How similar to people who live next to each other in terms of income, etc?
+  - Papers on population synthesis. How accurate is it, more data does what? Ignore computational stuff. 
+  - How will we sample cities and scale them up? (Brewer, Mila papers)
+  - ACS technical memos for how data is collected, models, etc. How they do stuff. 
+  - Ways to measure differences in synthetic populations.
+
+  - We need distribution in a neighborhood, not at house level. 
+
+
+- Other questions that we need to answer
+  - What American Census variables can we collect using a Drone? 
+  Are there variables that we can't directly get, then to find correlations? 
