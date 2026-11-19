@@ -1,0 +1,19 @@
+fly_order,geoid,city,group,group_name,stretches,miles,restricted_miles
+1,490490018032,Provo city,1,Emma,24,1.18,0.69
+1,490490018032,Provo city,2,Samantha,19,1.18,0.0
+1,490490018032,Provo city,3,Elizabeth,28,1.22,0.0
+2,490490027022,Provo city,1,Emma,42,2.36,0.0
+2,490490027022,Provo city,2,Samantha,63,2.35,0.0
+2,490490027022,Provo city,3,Elizabeth,40,2.38,0.0
+3,490490020021,Provo city,1,Emma,12,0.83,0.0
+3,490490020021,Provo city,2,Samantha,16,0.85,0.0
+3,490490020021,Provo city,3,Elizabeth,20,0.8,0.0
+4,490490021013,Provo city,1,Emma,25,1.88,0.0
+4,490490021013,Provo city,2,Samantha,34,1.85,0.0
+4,490490021013,Provo city,3,Elizabeth,26,1.76,0.0
+5,490490014043,Provo city,1,Emma,11,0.83,0.0
+5,490490014043,Provo city,2,Samantha,14,0.84,0.0
+5,490490014043,Provo city,3,Elizabeth,18,0.87,0.0
+6,490490014011,Provo city,1,Emma,44,3.29,0.0
+6,490490014011,Provo city,2,Samantha,35,3.41,0.0
+6,490490014011,Provo city,3,Elizabeth,46,3.37,0.0

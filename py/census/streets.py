@@ -13,6 +13,7 @@ from shapely.ops import transform
 
 from .geo_math import METERS_PER_MILE, to_degrees, to_metres
 from . import geography
+from .sampling import needs_authorization
 from .sources import CensusError
 
 # Census road codes (MTFCC) that can be flown -> what they are. The default is
@@ -78,18 +79,22 @@ def load_roads(bounds, street_types, year, state, counties):
         for name, geom in zip(chosen["FULLNAME"], chosen.geometry):
             geometries.append(transform(to_metres, geom))
             types.append(ROAD_TYPES[code])
-            names.append((name or "").strip())
+            names.append(name.strip() if isinstance(name, str) else "")    # a blank name can come as NaN
     return Roads(geometries, types, names, shapely.STRtree(geometries))
 
 
-def streets_in(geoid, polygon, roads, buffer_m, min_segment_m, low_zone_m=None):
+def streets_in(geoid, polygon, roads, buffer_m, min_segment_m, low_zone_m=None, no_fly_m=None):
     """
     Every street segment inside one block group (plus the buffer_m border):
     (rows for the table, GeoJSON features). low_zone_m is the FAA squares with a
     ceiling under the high flight, in metres: streets are cut at its edge, and
-    the stretches inside it are marked restricted.
+    the stretches inside it are marked restricted. no_fly_m is the national
+    security areas, in metres: never flown, so the streets in them are left
+    out, as if they were outside the block group.
     """
     area = transform(to_metres, polygon).buffer(buffer_m)
+    if no_fly_m is not None:
+        area = area.difference(no_fly_m)
     pieces = []                     # (shape, name, road type), clipped to the block group
     for i in sorted(roads.tree.query(area, predicate="intersects")):
         inside = roads.geometries[i].intersection(area)
@@ -154,14 +159,16 @@ def _lines(geometry):
     return shapely.line_merge(shapely.union_all(parts)) if parts else shapely.LineString()
 
 
-def find_streets(picked, boundaries, cells, settings, areas):
+def find_streets(picked, boundaries, cells, settings, areas, no_fly=None):
     """
     The streets in every picked block group: (table with one row per street per
     block group, GeoJSON features). settings and areas are the run's sample
-    and areas config sections.
+    and areas config sections; no_fly is the national security areas (see
+    sampling.no_fly_zones), whose streets are left out.
     """
-    low_squares = [g for c, g in (cells or []) if c < settings["high_flight_ft"]]
+    low_squares = [g for c, g in (cells or []) if needs_authorization(c, settings["high_flight_ft"])]
     low_zone_m = transform(to_metres, shapely.union_all(low_squares)) if low_squares else None
+    no_fly_m = transform(to_metres, no_fly) if no_fly is not None else None
     minx, miny, maxx, maxy = shapely.union_all([boundaries[g] for g in picked["geoid"]]).bounds
     margin = 0.005                                  # degrees; far more than the buffer
     roads = load_roads((minx - margin, miny - margin, maxx + margin, maxy + margin), settings["street_types"],
@@ -170,7 +177,7 @@ def find_streets(picked, boundaries, cells, settings, areas):
     rows, features = [], []
     for geoid in picked["geoid"]:
         block_rows, block_features = streets_in(geoid, boundaries[geoid], roads, settings["buffer_m"],
-                                                settings["min_segment_m"], low_zone_m)
+                                                settings["min_segment_m"], low_zone_m, no_fly_m)
         rows += block_rows
         features += block_features
 

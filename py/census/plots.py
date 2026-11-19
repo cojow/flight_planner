@@ -269,5 +269,5 @@ def street_groups_map(picked, boundaries, group_features, path):
         ax.set_title(f"{int(row['fly_order'])}. {row['geoid']}", fontsize=11)
         ax.legend(loc="lower left", fontsize=8, frameon=True)
     fig.suptitle("Streets to fly, by group (each group about the same miles; dashed = restricted airspace, "
-                 "needs FAA authorization)", fontsize=13)
+                 "needs LAANC authorization in advance)", fontsize=13)
     return save(fig, path)

@@ -194,10 +194,16 @@ In app submitting is not available, you must use another app to do so.
 
 <img src="images/FAA_viewer.png" alt="" width="100%">
 
+* **Show TFRs and National Security Areas**: Draws two kinds of no-fly area around the map center. *Update Map Center* refreshes them, as for the FAA layer.
+Yellow dashed shapes are Temporary Flight Restrictions (TFRs) from [tfr.faa.gov](https://tfr.faa.gov): VIP visits, wildfires, security events and so on. Hover one for its NOTAM, altitudes and active times, and don't fly in it while it is active. TFRs come and go daily, so check again on the day of the flight.
+Dark red shapes are National Security UAS Flight Restrictions (14 CFR 99.7), such as military bases: no drone flights there at any time, with or without LAANC. *Part time* ones apply while a NOTAM activates them.
+Stadium TFRs (3 NM around big stadiums during games) are not drawn, because the FAA publishes them as one standing NOTAM rather than a shape.
+If the map says it couldn't load them, check [tfr.faa.gov](https://tfr.faa.gov) yourself before flying.
+
 * **Show Sampled Block Groups**: Outlines the Census block groups picked for the research sample, saved from the [Census Sampling](#census-sampling) app.
 Each is labelled with its GEOID; click a label for its city, cluster, street miles and airspace.
 * **Jump to Block Group**: Moves the Creator map to one of the sampled block groups, so you can plan its flights.
-* **Show Street Groups**: Draws the sample's streets coloured by group (from step 5 of the Census Sampling app), each group labelled with its block group's fly order, group number and any name you gave it in the census app, e.g. `#3 · G2 · North`. Click a street for its mission name (`Street1_Street2`), cross streets and miles. Dashed streets are in restricted airspace: get FAA authorization before flying them. *Street groups for* shows one block group's groups only.
+* **Show Street Groups**: Draws the sample's streets coloured by group (from step 5 of the Census Sampling app), each group labelled with its block group's fly order, group number and any name you gave it in the census app, e.g. `#3 · G2 · North`. Click a street for its mission name (`Street1_Street2`), cross streets and miles. Dashed streets are in restricted airspace: fly them only with LAANC authorization requested in advance. *Street groups for* shows one block group's groups only.
 * **Show Logged Flights**: Draws every flight in the shared flight-log folder so you can see what has already been flown while planning.
 Click a line for its date, height, pitch, overlap, and photo count. 
 The folder, upload, and flight list are under *Flight log folder, upload and list*; setting the folder here also sets it for the tracker.
@@ -343,10 +349,18 @@ It is recommended to save and update the thumbnails immediately after transferri
 A separate app picks the Census block groups to fly for the research [methodology](https://cojow.github.io/flight_planner/BYU_research_documentation/methodology.html): choose cities in Utah County, cluster their block groups on Census numbers (median household income and house age by default), and draw a stratified sample of block groups and the streets to fly in them.
 
 ```
-streamlit run census_app.py
+uv run streamlit run census_app.py
 ```
 
-It needs a free [Census API key](https://api.census.gov/data/key_signup.html) pasted into `py/census_api_key.txt` (that file is never committed).
+**[py/census/README.md](py/census/README.md) has the full guide**: setup with [uv](https://docs.astral.sh/uv/) (which installs the exact package versions pinned in `uv.lock`), the command-line equivalent of every step, and how to publish a run so others can reproduce it, or reproduce one yourself, in a few commands:
+
+```
+uv sync --frozen
+uv run census fetch-inputs <run>
+uv run census reproduce <run>
+```
+
+Making a new run needs a free [Census API key](https://api.census.gov/data/key_signup.html) pasted into `py/census_api_key.txt` (that file is never committed). Reproducing a published run doesn't.
 
 Each **run** has a name and keeps everything in `data/census/runs/<name>/`.
 Every setting is saved in that folder's `config.json`, so a run can be checked, changed and repeated. 
@@ -361,11 +375,12 @@ This is designed to help you choose a k value.
 3. **Cluster**: k-means with your k. 
 Saves each block group's cluster, the cluster averages, a chart and a map.
 4. **Sample**: block groups per cluster, the random seed, the airspace rules, the street buffer and the trip start point. 
-5. **Street groups**: how many groups to split each picked block group's streets into (default 3). Streets are cut at every corner, never mid-block, and the groups come out about equal in miles, each in one part of the block group. Every corner-to-corner stretch gets a mission name in the flight standards' `Street1_Street2` form: the street flown, then the cross street at its south or west end (END for a dead end, EDGE where it leaves the block group, AIRSPACE where it enters restricted airspace). Streets in restricted airspace are grouped like the rest, since they are still flown with FAA authorization; they are listed with `restricted = True` and drawn as dashed lines in their group's colour. You can give each group number a name (e.g. North, or who flies it), used for that group in every block group; the names go into the files, the map and the saved sample.
-Block groups mostly under FAA airspace with a ceiling below 200 ft high flight can't be picked. 
+5. **Street groups**: how many groups to split each picked block group's streets into (default 3). Streets are cut at every corner, never mid-block, and the groups come out about equal in miles, each in one part of the block group. Every corner-to-corner stretch gets a mission name in the flight standards' `Street1_Street2` form: the street flown, then the cross street at its south or west end (END for a dead end, EDGE where it leaves the block group, AIRSPACE where it enters restricted airspace). Streets in restricted airspace are grouped like the rest, since they are still flown with LAANC authorization requested in advance; they are listed with `restricted = True` and drawn as dashed lines in their group's colour. You can give each group number a name (e.g. North, or who flies it), used for that group in every block group; the names go into the files, the map and the saved sample.
+By default, block groups mostly under FAA airspace with a ceiling below the 200 ft high flight can't be picked. Setting *Fly restricted airspace?* to *Yes, with LAANC authorization* flies it instead, 0 ft squares included: every block group can be picked, and picks that need it are marked `airspace = approval`. Request LAANC authorization for them ahead of time (see the [census README](py/census/README.md#restricted-airspace)).
+National security areas (military bases and the like, such as Camp Williams) are never flown in either mode: the parts of block groups inside them are off-limits, block groups mostly inside one can't be picked, and their streets aren't listed ([details](py/census/README.md#national-security-areas)).
 Saves the picks in flying order, every street to fly (as a table and GeoJSON for QGIS), and maps.
 
-If you change a setting, the steps that depend on it are marked out of date and must be run again, so outputs made with different settings never mix.
+If you change a setting, or the census code changes, the steps that depend on it are marked out of date and must be run again, so outputs made with different settings never mix.
 
 **Using a sample in the flight planner.** 
 Under step 5, give the sample a name and press *Save sample*. It includes the street groups and their names if step 5 has run. 
@@ -377,7 +392,7 @@ By default (`eligible`) a pick stands for the block groups in its cluster that c
 Block groups under restricted airspace had no chance of being drawn, so the estimates describe the flyable part of the cities, not all of them. 
 `legacy` counts the whole cluster, as `sampling_draft/` did.
 
-Boundaries and roads come from the Census TIGER/Line files of the ACS year, downloaded once into `data/census/tiger/`. The FAA airspace map is read live at the sample step, and the answer used is saved with the run.
+Boundaries and roads come from the Census TIGER/Line files of the ACS year, downloaded once into `data/census/tiger/`. The FAA airspace map and the national security areas are read live at the sample step, and the answers used are saved with the run and in `data/census/faa/` and `data/census/nsufr/`, so a published run can be reproduced with the same airspace.
 
 ## Acknowledgements
 - Luigi Pirelli for providing the photo footprint code base. 

@@ -6,7 +6,8 @@ The pieces that get grouped are stretches of street from one corner to the
 next (from one cross street to the next), never part of a block. Each one is
 named like a mission in the flight standards: Street1_Street2, where Street1
 is the street flown and Street2 the cross street at its south or west end
-("END" for a dead end, "Edge" where the street leaves the block group).
+("END" for a dead end, "Edge" where the street leaves the block group,
+"NoFly" where it enters a national security area).
 
 Groups are made by cutting the block group in two along its longer direction
 so the street miles split in proportion, then cutting each half again, until
@@ -55,14 +56,16 @@ def _key(x, y):
     return (round(x, 3), round(y, 3))
 
 
-def corner_to_corner(features, polygon, buffer_m):
+def corner_to_corner(features, polygon, buffer_m, no_fly=None):
     """
     The flyable streets of one block group cut into corner-to-corner pieces.
 
     features is the block group's street GeoJSON features (with street and
     restricted properties). Stretches in restricted airspace are cut the same
     way and marked restricted, so they can be drawn differently (they need
-    FAA authorization to fly). Returns a list of dicts: street, from, to (the cross
+    LAANC authorization requested ahead of time). no_fly is the national
+    security areas, whose streets the sample step left out: a street cut off
+    at one ends at "NoFly". Returns a list of dicts: street, from, to (the cross
     streets at each end), mission, miles, restricted, geometry (metres), x, y
     (its middle).
     """
@@ -93,6 +96,7 @@ def corner_to_corner(features, polygon, buffer_m):
             by_street[owner].append(edge)
 
     edge_zone = transform(to_metres, polygon).buffer(buffer_m).exterior.buffer(EDGE_M)
+    no_fly_zone = transform(to_metres, no_fly).boundary.buffer(EDGE_M) if no_fly is not None else None
     pieces = []
     for i, own in by_street.items():
         merged = shapely.line_merge(shapely.union_all(own))
@@ -102,20 +106,22 @@ def corner_to_corner(features, polygon, buffer_m):
             for x, y in line.coords[1:]:
                 run.append((x, y))
                 if degree[_key(x, y)] >= 3 and len(run) > 1:
-                    pieces.append(_piece(LineString(run), names[i], restricted[i], streets_at, edge_zone))
+                    pieces.append(_piece(LineString(run), names[i], restricted[i], streets_at, edge_zone, no_fly_zone))
                     run = [(x, y)]
             if len(run) > 1:
-                pieces.append(_piece(LineString(run), names[i], restricted[i], streets_at, edge_zone))
+                pieces.append(_piece(LineString(run), names[i], restricted[i], streets_at, edge_zone, no_fly_zone))
     return [p for p in pieces if p["miles"] > 0]
 
 
-def _piece(line, street, restricted, streets_at, edge_zone):
+def _piece(line, street, restricted, streets_at, edge_zone, no_fly_zone=None):
     def cross(x, y):
         others = sorted(n for n, r in streets_at[_key(x, y)] if n != street)
         if others:
             return others[0]
         if any(n == street and r != restricted for n, r in streets_at[_key(x, y)]):
             return "Airspace"               # the street goes on, into or out of restricted airspace
+        if no_fly_zone is not None and no_fly_zone.contains(shapely.Point(x, y)):
+            return "NoFly"                  # the street goes on, into a national security area
         return "Edge" if edge_zone.contains(shapely.Point(x, y)) else "END"
 
     (x0, y0), (x1, y1) = line.coords[0], line.coords[-1]
@@ -127,7 +133,7 @@ def _piece(line, street, restricted, streets_at, edge_zone):
     start, end = (a, b) if first_is_start else (b, a)
     middle = line.interpolate(0.5, normalized=True)
     return {"street": street, "from": start, "to": end, "restricted": restricted,
-            "mission": f"{short_name(street)}_{short_name(start) if start not in ('END', 'Edge', 'Airspace') else start.upper()}",
+            "mission": f"{short_name(street)}_{short_name(start) if start not in ('END', 'Edge', 'Airspace', 'NoFly') else start.upper()}",
             "miles": line.length / METERS_PER_MILE, "geometry": line, "x": middle.x, "y": middle.y}
 
 
@@ -163,13 +169,13 @@ def split_into_groups(pieces, n):
     return groups
 
 
-def group_block_group(features, polygon, buffer_m, n):
+def group_block_group(features, polygon, buffer_m, n, no_fly=None):
     """
     Corner-to-corner pieces of one block group, each with its group number.
     Pieces in restricted airspace are grouped like the rest (they are still
-    flown, with FAA authorization) and keep restricted = True.
+    flown, with LAANC authorization requested ahead of time) and keep restricted = True.
     """
-    pieces = corner_to_corner(features, polygon, buffer_m)
+    pieces = corner_to_corner(features, polygon, buffer_m, no_fly)
     for piece, group in zip(pieces, split_into_groups(pieces, n)):
         piece["group"] = group
     return pieces

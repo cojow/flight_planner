@@ -24,7 +24,7 @@ import requests
 import shapely
 
 from .config import REPO_ROOT
-from .sources import CensusError
+from .sources import MODE, CensusError, missing_offline, record
 
 TIGER_DIR = REPO_ROOT / "data" / "census" / "tiger"
 TIGER_FILE_URL = "https://www2.census.gov/geo/tiger/TIGER{year}/{layer}/{name}"
@@ -47,7 +47,10 @@ def tiger_file(kind, year, state, county=None):
     name = _file_name(kind, year, state, county)
     path = TIGER_DIR / name
     if path.exists():
+        record(path)
         return path
+    if MODE["offline"]:
+        raise missing_offline(f"The TIGER/Line file {name}")
     url = TIGER_FILE_URL.format(year=year, layer={"place": "PLACE", "bg": "BG", "roads": "ROADS"}[kind], name=name)
     TIGER_DIR.mkdir(parents=True, exist_ok=True)
     # Download to a temporary name and rename, so an interrupted download can't
@@ -68,6 +71,7 @@ def tiger_file(kind, year, state, county=None):
             if expected and partial.stat().st_size != expected:
                 raise requests.RequestException(f"got {partial.stat().st_size} of {expected} bytes")
             os.replace(partial, path)
+            record(path)
             return path
         except requests.RequestException as exc:
             problem = str(exc)
@@ -87,16 +91,23 @@ def sources(year, state, county, kinds=("place", "bg", "roads")):
     return out
 
 
-@functools.lru_cache(maxsize=4)
+# The readers below are cached by file, and the public functions call
+# tiger_file every time, so each step records the files it used even when
+# they were already read earlier in the same process (the GUI).
+
+@functools.lru_cache(maxsize=8)
+def _read(path):
+    return gpd.read_file(path).to_crs(4326)
+
+
 def _places(year, state):
     """Every incorporated city and town in a state (CDPs left out), in lat/lon."""
-    gdf = gpd.read_file(tiger_file("place", year, state))
-    return gdf[gdf["CLASSFP"].str.startswith("C")].to_crs(4326).reset_index(drop=True)
+    gdf = _read(tiger_file("place", year, state))
+    return gdf[gdf["CLASSFP"].str.startswith("C")].reset_index(drop=True)
 
 
-@functools.lru_cache(maxsize=4)
 def _block_groups(year, state):
-    return gpd.read_file(tiger_file("bg", year, state)).to_crs(4326)
+    return _read(tiger_file("bg", year, state))
 
 
 @functools.lru_cache(maxsize=4)
@@ -190,7 +201,6 @@ def block_groups_near(shape, year=2024, state="49"):
     return bgs[bgs.intersects(shape)]
 
 
-@functools.lru_cache(maxsize=8)
 def roads(year, state, county):
     """Every road in a county: GeoDataFrame with FULLNAME, MTFCC, geometry (lat/lon)."""
-    return gpd.read_file(tiger_file("roads", year, state, county)).to_crs(4326)
+    return _read(tiger_file("roads", year, state, county))

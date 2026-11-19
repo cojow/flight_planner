@@ -1,0 +1,518 @@
+fly_order,geoid,city,group,group_name,restricted,mission,street,from,to,miles
+1,490490018032,Provo city,1,Emma,False,100N_AIRSPACE,E 100 North St,Airspace,N 500 East St,0.002
+1,490490018032,Provo city,1,Emma,True,100N_EDGE,E 100 North St,Edge,N 400 East St,0.009
+1,490490018032,Provo city,1,Emma,True,100N_400E,E 100 North St,N 400 East St,Airspace,0.088
+1,490490018032,Provo city,1,Emma,False,200N_AIRSPACE,E 200 North St,Airspace,N 500 East St,0.003
+1,490490018032,Provo city,1,Emma,True,200N_EDGE,E 200 North St,Edge,N 400 East St,0.009
+1,490490018032,Provo city,1,Emma,True,200N_400E,E 200 North St,N 400 East St,Airspace,0.088
+1,490490018032,Provo city,1,Emma,False,200N_500E,E 200 North St,N 500 East St,N 600 East St,0.091
+1,490490018032,Provo city,1,Emma,False,300N_AIRSPACE,E 300 North St,Airspace,N 500 East St,0.003
+1,490490018032,Provo city,1,Emma,True,300N_EDGE,E 300 North St,Edge,N 400 East St,0.009
+1,490490018032,Provo city,1,Emma,True,300N_400E,E 300 North St,N 400 East St,Airspace,0.088
+1,490490018032,Provo city,1,Emma,False,300N_500E,E 300 North St,N 500 East St,N 600 East St,0.091
+1,490490018032,Provo city,1,Emma,False,Center_AIRSPACE,E Center St,Airspace,N 500 East St,0.002
+1,490490018032,Provo city,1,Emma,True,Center_EDGE,E Center St,Edge,N 400 East St,0.009
+1,490490018032,Provo city,1,Emma,True,Center_400E,E Center St,N 400 East St,Airspace,0.089
+1,490490018032,Provo city,1,Emma,True,400E_100N,N 400 East St,E 100 North St,E 200 North St,0.091
+1,490490018032,Provo city,1,Emma,True,400E_200N,N 400 East St,E 200 North St,E 300 North St,0.091
+1,490490018032,Provo city,1,Emma,True,400E_300N,N 400 East St,E 300 North St,Edge,0.009
+1,490490018032,Provo city,1,Emma,True,400E_Center,N 400 East St,E Center St,E 100 North St,0.096
+1,490490018032,Provo city,1,Emma,False,500E_100N,N 500 East St,E 100 North St,E 200 North St,0.092
+1,490490018032,Provo city,1,Emma,False,500E_200N,N 500 East St,E 200 North St,E 300 North St,0.091
+1,490490018032,Provo city,1,Emma,False,500E_300N,N 500 East St,E 300 North St,Edge,0.009
+1,490490018032,Provo city,1,Emma,False,500E_Center,N 500 East St,E Center St,E 100 North St,0.096
+1,490490018032,Provo city,1,Emma,True,400E_EDGE,S 400 East St,Edge,E Center St,0.009
+1,490490018032,Provo city,1,Emma,False,500E_EDGE,S 500 East St,Edge,E Center St,0.009
+1,490490018032,Provo city,2,Samantha,False,100N_500E,E 100 North St,N 500 East St,N 600 East St,0.091
+1,490490018032,Provo city,2,Samantha,False,150N_700E,E 150 North St,N 700 East St,N 750 East St,0.064
+1,490490018032,Provo city,2,Samantha,False,200N_600E,E 200 North St,N 600 East St,N 700 East St,0.088
+1,490490018032,Provo city,2,Samantha,False,300N_600E,E 300 North St,N 600 East St,N 700 East St,0.088
+1,490490018032,Provo city,2,Samantha,False,Center_500E,E Center St,N 500 East St,N 600 East St,0.091
+1,490490018032,Provo city,2,Samantha,False,Center_600E,E Center St,N 600 East St,N 700 East St,0.089
+1,490490018032,Provo city,2,Samantha,False,Center_700E,E Center St,N 700 East St,S 750 East St,0.065
+1,490490018032,Provo city,2,Samantha,False,Center_750E,E Center St,S 750 East St,N 800 East St,0.032
+1,490490018032,Provo city,2,Samantha,False,600E_100N,N 600 East St,E 100 North St,E 200 North St,0.091
+1,490490018032,Provo city,2,Samantha,False,600E_200N,N 600 East St,E 200 North St,E 300 North St,0.07
+1,490490018032,Provo city,2,Samantha,False,600E_300N,N 600 East St,E 300 North St,E 300 North St,0.021
+1,490490018032,Provo city,2,Samantha,False,600E_300N,N 600 East St,E 300 North St,Edge,0.009
+1,490490018032,Provo city,2,Samantha,False,600E_Center,N 600 East St,E Center St,E 100 North St,0.096
+1,490490018032,Provo city,2,Samantha,False,700E_150N,N 700 East St,E 150 North St,E 200 North St,0.061
+1,490490018032,Provo city,2,Samantha,False,700E_200N,N 700 East St,E 200 North St,E 300 North St,0.07
+1,490490018032,Provo city,2,Samantha,False,700E_Center,N 700 East St,E Center St,E 150 North St,0.127
+1,490490018032,Provo city,2,Samantha,False,600E_EDGE,S 600 East St,Edge,E Center St,0.009
+1,490490018032,Provo city,2,Samantha,False,700E_EDGE,S 700 East St,Edge,E Center St,0.009
+1,490490018032,Provo city,2,Samantha,False,750E_EDGE,S 750 East St,Edge,E Center St,0.009
+1,490490018032,Provo city,3,Elizabeth,False,100N_900E,E 100 North St,N 900 East St,Edge,0.009
+1,490490018032,Provo city,3,Elizabeth,False,150N_750E,E 150 North St,N 750 East St,N 800 East St,0.035
+1,490490018032,Provo city,3,Elizabeth,False,150N_800E,E 150 North St,N 800 East St,N 900 East St,0.084
+1,490490018032,Provo city,3,Elizabeth,False,150N_900E,E 150 North St,N 900 East St,Edge,0.009
+1,490490018032,Provo city,3,Elizabeth,False,200N_END,E 200 North St,END,N 800 East St,0.055
+1,490490018032,Provo city,3,Elizabeth,False,200N_800E,E 200 North St,N 800 East St,N 900 East St,0.084
+1,490490018032,Provo city,3,Elizabeth,False,200N_900E,E 200 North St,N 900 East St,Edge,0.009
+1,490490018032,Provo city,3,Elizabeth,False,300N_700E,E 300 North St,N 700 East St,N 750 East St,0.042
+1,490490018032,Provo city,3,Elizabeth,False,300N_750E,E 300 North St,N 750 East St,N 800 East St,0.056
+1,490490018032,Provo city,3,Elizabeth,False,300N_800E,E 300 North St,N 800 East St,N 900 East St,0.084
+1,490490018032,Provo city,3,Elizabeth,False,300N_900E,E 300 North St,N 900 East St,Edge,0.009
+1,490490018032,Provo city,3,Elizabeth,False,Center_800E,E Center St,N 800 East St,S 850 East St,0.029
+1,490490018032,Provo city,3,Elizabeth,False,Center_900E,E Center St,N 900 East St,Edge,0.009
+1,490490018032,Provo city,3,Elizabeth,False,Center_850E,E Center St,S 850 East St,N 900 East St,0.053
+1,490490018032,Provo city,3,Elizabeth,False,700E_300N,N 700 East St,E 300 North St,Edge,0.009
+1,490490018032,Provo city,3,Elizabeth,False,750E_300N,N 750 East St,E 300 North St,Edge,0.009
+1,490490018032,Provo city,3,Elizabeth,False,750E_END,N 750 East St,END,E 150 North St,0.079
+1,490490018032,Provo city,3,Elizabeth,False,800E_150N,N 800 East St,E 150 North St,E 200 North St,0.057
+1,490490018032,Provo city,3,Elizabeth,False,800E_200N,N 800 East St,E 200 North St,E 300 North St,0.066
+1,490490018032,Provo city,3,Elizabeth,False,800E_300N,N 800 East St,E 300 North St,Edge,0.009
+1,490490018032,Provo city,3,Elizabeth,False,800E_Center,N 800 East St,E Center St,E 150 North St,0.137
+1,490490018032,Provo city,3,Elizabeth,False,900E_100N,N 900 East St,E 100 North St,E 150 North St,0.058
+1,490490018032,Provo city,3,Elizabeth,False,900E_150N,N 900 East St,E 150 North St,E 200 North St,0.057
+1,490490018032,Provo city,3,Elizabeth,False,900E_200N,N 900 East St,E 200 North St,E 300 North St,0.065
+1,490490018032,Provo city,3,Elizabeth,False,900E_300N,N 900 East St,E 300 North St,Edge,0.009
+1,490490018032,Provo city,3,Elizabeth,False,900E_Center,N 900 East St,E Center St,E 100 North St,0.08
+1,490490018032,Provo city,3,Elizabeth,False,850E_EDGE,S 850 East St,Edge,E Center St,0.009
+1,490490018032,Provo city,3,Elizabeth,False,900E_EDGE,S 900 East St,Edge,E Center St,0.009
+2,490490027022,Provo city,1,Emma,False,1650S_END,1650 S,END,S Slate Canyon Dr,0.018
+2,490490027022,Provo city,1,Emma,False,1280S_SlateCanyon,E 1280 South St,S Slate Canyon Dr,Edge,0.009
+2,490490027022,Provo city,1,Emma,False,1320S_1400S,E 1320 South St,E 1400 South St,S 1650 East St,0.049
+2,490490027022,Provo city,1,Emma,False,1320S_1400S,E 1320 South St,E 1400 South St,S Slate Canyon Dr,0.03
+2,490490027022,Provo city,1,Emma,False,1320S_1540E,E 1320 South St,S 1540 East St,S 1550 East St,0.005
+2,490490027022,Provo city,1,Emma,False,1320S_1550E,E 1320 South St,S 1550 East St,S 1590 East St,0.034
+2,490490027022,Provo city,1,Emma,False,1320S_1590E,E 1320 South St,S 1590 East St,S 1650 East St,0.066
+2,490490027022,Provo city,1,Emma,False,1350S_1550E,E 1350 South St,S 1550 East St,S 1590 East St,0.033
+2,490490027022,Provo city,1,Emma,False,1370S_1320S,E 1370 South St,E 1320 South St,S 1500 East St,0.039
+2,490490027022,Provo city,1,Emma,False,1370S_1440E,E 1370 South St,S 1440 East St,E 1320 South St,0.037
+2,490490027022,Provo city,1,Emma,False,1400S_1320S,E 1400 South St,E 1320 South St,E 1320 South St,0.054
+2,490490027022,Provo city,1,Emma,False,1440S_1420E,E 1440 South St,S 1420 East St,S 1470 East St,0.057
+2,490490027022,Provo city,1,Emma,False,1440S_1470E,E 1440 South St,S 1470 East St,END,0.029
+2,490490027022,Provo city,1,Emma,False,1440S_State,E 1440 South St,S State St,S 1420 East St,0.068
+2,490490027022,Provo city,1,Emma,False,1640S_EDGE,E 1640 South St,Edge,S State St,0.011
+2,490490027022,Provo city,1,Emma,False,1640S_State,E 1640 South St,S State St,END,0.126
+2,490490027022,Provo city,1,Emma,False,1700S_END,E 1700 South St,END,S Slate Canyon Dr,0.019
+2,490490027022,Provo city,1,Emma,False,Dakota_SlateCanyon,E Dakota Ln,S Slate Canyon Dr,Edge,0.01
+2,490490027022,Provo city,1,Emma,False,Eastbay_EDGE,Eastbay Blvd,Edge,S State St,0.011
+2,490490027022,Provo city,1,Emma,False,Nevada_SlateCanyon,Nevada Ave,S Slate Canyon Dr,Edge,0.009
+2,490490027022,Provo city,1,Emma,False,1420E_1440S,S 1420 East St,E 1440 South St,E 1370 South St,0.05
+2,490490027022,Provo city,1,Emma,False,1470E_1440S,S 1470 East St,E 1440 South St,E 1320 South St,0.055
+2,490490027022,Provo city,1,Emma,False,1500E_1370S,S 1500 East St,E 1370 South St,E 1320 South St,0.048
+2,490490027022,Provo city,1,Emma,False,1550E_1350S,S 1550 East St,E 1350 South St,E 1320 South St,0.031
+2,490490027022,Provo city,1,Emma,False,1590E_1350S,S 1590 East St,E 1350 South St,E 1320 South St,0.031
+2,490490027022,Provo city,1,Emma,False,1650E_1320S,S 1650 East St,E 1320 South St,END,0.051
+2,490490027022,Provo city,1,Emma,False,1710E_END,S 1710 East St,END,END,0.064
+2,490490027022,Provo city,1,Emma,False,1710E_END,S 1710 East St,END,END,0.011
+2,490490027022,Provo city,1,Emma,False,1710E_END,S 1710 East St,END,E 1320 South St,0.039
+2,490490027022,Provo city,1,Emma,False,SlateCanyon_1650S,S Slate Canyon Dr,1650 S,Nevada Ave,0.134
+2,490490027022,Provo city,1,Emma,False,SlateCanyon_1280S,S Slate Canyon Dr,E 1280 South St,Nevada Ave,0.028
+2,490490027022,Provo city,1,Emma,False,SlateCanyon_1320S,S Slate Canyon Dr,E 1320 South St,E 1280 South St,0.136
+2,490490027022,Provo city,1,Emma,False,SlateCanyon_1700S,S Slate Canyon Dr,E 1700 South St,1650 S,0.064
+2,490490027022,Provo city,1,Emma,False,SlateCanyon_Dakota,S Slate Canyon Dr,E Dakota Ln,E 1700 South St,0.087
+2,490490027022,Provo city,1,Emma,False,SlateCanyon_Nevada,S Slate Canyon Dr,Nevada Ave,Edge,0.01
+2,490490027022,Provo city,1,Emma,False,SlateCanyon_Nevada,S Slate Canyon Dr,Nevada Ave,E 1320 South St,0.17
+2,490490027022,Provo city,1,Emma,False,SlateCanyon_State,S Slate Canyon Dr,S State St,E Dakota Ln,0.093
+2,490490027022,Provo city,1,Emma,False,State_1640S,S State St,E 1640 South St,E 1440 South St,0.265
+2,490490027022,Provo city,1,Emma,False,State_Eastbay,S State St,Eastbay Blvd,E 1640 South St,0.201
+2,490490027022,Provo city,1,Emma,False,State_EDGE,S State St,Edge,S Slate Canyon Dr,0.009
+2,490490027022,Provo city,1,Emma,False,State_SlateCanyon,S State St,S Slate Canyon Dr,Eastbay Blvd,0.065
+2,490490027022,Provo city,1,Emma,False,SlateCanyon_EDGE,Slate Canyon Dr,Edge,S Slate Canyon Dr,0.009
+2,490490027022,Provo city,2,Samantha,False,1320S_EDGE,1320 S,Edge,E 1320 South St,0.01
+2,490490027022,Provo city,2,Samantha,False,1120S_END,E 1120 South St,END,S 1410 East St,0.053
+2,490490027022,Provo city,2,Samantha,False,1120S_1410E,E 1120 South St,S 1410 East St,S 1420 East St,0.01
+2,490490027022,Provo city,2,Samantha,False,1120S_1420E,E 1120 South St,S 1420 East St,S 1430 East St,0.016
+2,490490027022,Provo city,2,Samantha,False,1120S_1430E,E 1120 South St,S 1430 East St,S 1440 East St,0.017
+2,490490027022,Provo city,2,Samantha,False,1120S_1440E,E 1120 South St,S 1440 East St,S 1450 East St,0.009
+2,490490027022,Provo city,2,Samantha,False,1120S_1450E,E 1120 South St,S 1450 East St,S 1460 East St,0.013
+2,490490027022,Provo city,2,Samantha,False,1120S_1460E,E 1120 South St,S 1460 East St,S 1470 East St,0.006
+2,490490027022,Provo city,2,Samantha,False,1190S_1470E,E 1190 South St,S 1470 East St,END,0.031
+2,490490027022,Provo city,2,Samantha,False,1200S_1410E,E 1200 South St,S 1410 East St,S 1420 East St,0.031
+2,490490027022,Provo city,2,Samantha,False,1200S_1420E,E 1200 South St,S 1420 East St,S 1430 East St,0.025
+2,490490027022,Provo city,2,Samantha,False,1200S_1430E,E 1200 South St,S 1430 East St,S 1450 East St,0.025
+2,490490027022,Provo city,2,Samantha,False,1200S_1450E,E 1200 South St,S 1450 East St,S 1470 East St,0.019
+2,490490027022,Provo city,2,Samantha,False,1230S_1470E,E 1230 South St,S 1470 East St,END,0.032
+2,490490027022,Provo city,2,Samantha,False,1250S_END,E 1250 South St,END,S 1470 East St,0.027
+2,490490027022,Provo city,2,Samantha,False,1270S_END,E 1270 South St,END,S 1470 East St,0.037
+2,490490027022,Provo city,2,Samantha,False,1280S_1470E,E 1280 South St,S 1470 East St,END,0.029
+2,490490027022,Provo city,2,Samantha,False,1300S_END,E 1300 South St,END,S 1470 East St,0.032
+2,490490027022,Provo city,2,Samantha,False,1300S_1470E,E 1300 South St,S 1470 East St,END,0.03
+2,490490027022,Provo city,2,Samantha,False,1320S_1320S,E 1320 South St,1320 S,S 1370 East St,0.074
+2,490490027022,Provo city,2,Samantha,False,1320S_1370S,E 1320 South St,E 1370 South St,S 1470 East St,0.049
+2,490490027022,Provo city,2,Samantha,False,1320S_1370E,E 1320 South St,S 1370 East St,S 1400 East St,0.036
+2,490490027022,Provo city,2,Samantha,False,1320S_1400E,E 1320 South St,S 1400 East St,S 1410 East St,0.004
+2,490490027022,Provo city,2,Samantha,False,1320S_1410E,E 1320 South St,S 1410 East St,S 1430 East St,0.02
+2,490490027022,Provo city,2,Samantha,False,1320S_1430E,E 1320 South St,S 1430 East St,S 1440 East St,0.012
+2,490490027022,Provo city,2,Samantha,False,1320S_1440E,E 1320 South St,S 1440 East St,S 1470 East St,0.039
+2,490490027022,Provo city,2,Samantha,False,1320S_1470E,E 1320 South St,S 1470 East St,S 1500 East St,0.038
+2,490490027022,Provo city,2,Samantha,False,1320S_1500E,E 1320 South St,S 1500 East St,S 1510 East St,0.005
+2,490490027022,Provo city,2,Samantha,False,1320S_1510E,E 1320 South St,S 1510 East St,S 1540 East St,0.028
+2,490490027022,Provo city,2,Samantha,False,1370S_1370E,E 1370 South St,S 1370 East St,S 1400 East St,0.033
+2,490490027022,Provo city,2,Samantha,False,1370S_1400E,E 1370 South St,S 1400 East St,S 1420 East St,0.02
+2,490490027022,Provo city,2,Samantha,False,Nevada_Nevada,Nevada Ave,S Nevada Cir,E 950 South St,0.336
+2,490490027022,Provo city,2,Samantha,False,Nevada_Nevada,Nevada Ave,S Nevada Cir,S Slate Canyon Dr,0.062
+2,490490027022,Provo city,2,Samantha,False,1370E_1370S,S 1370 East St,E 1370 South St,E 1320 South St,0.048
+2,490490027022,Provo city,2,Samantha,False,1400E_1370S,S 1400 East St,E 1370 South St,E 1320 South St,0.048
+2,490490027022,Provo city,2,Samantha,False,1410E_1200S,S 1410 East St,E 1200 South St,END,0.061
+2,490490027022,Provo city,2,Samantha,False,1410E_1320S,S 1410 East St,E 1320 South St,E 1200 South St,0.108
+2,490490027022,Provo city,2,Samantha,False,1410E_END,S 1410 East St,END,E 1120 South St,0.025
+2,490490027022,Provo city,2,Samantha,False,1420E_1200S,S 1420 East St,E 1200 South St,END,0.047
+2,490490027022,Provo city,2,Samantha,False,1430E_1200S,S 1430 East St,E 1200 South St,END,0.037
+2,490490027022,Provo city,2,Samantha,False,1430E_1320S,S 1430 East St,E 1320 South St,END,0.04
+2,490490027022,Provo city,2,Samantha,False,1430E_END,S 1430 East St,END,E 1120 South St,0.031
+2,490490027022,Provo city,2,Samantha,False,1440E_1120S,S 1440 East St,E 1120 South St,END,0.031
+2,490490027022,Provo city,2,Samantha,False,1440E_1370S,S 1440 East St,E 1370 South St,E 1320 South St,0.052
+2,490490027022,Provo city,2,Samantha,False,1440E_END,S 1440 East St,END,E 1200 South St,0.038
+2,490490027022,Provo city,2,Samantha,False,1450E_1200S,S 1450 East St,E 1200 South St,END,0.027
+2,490490027022,Provo city,2,Samantha,False,1450E_END,S 1450 East St,END,E 1120 South St,0.03
+2,490490027022,Provo city,2,Samantha,False,1460E_1120S,S 1460 East St,E 1120 South St,END,0.031
+2,490490027022,Provo city,2,Samantha,False,1460E_END,S 1460 East St,END,E 1200 South St,0.026
+2,490490027022,Provo city,2,Samantha,False,1470E_1190S,S 1470 East St,E 1190 South St,S 1480 East St,0.075
+2,490490027022,Provo city,2,Samantha,False,1470E_1200S,S 1470 East St,E 1200 South St,E 1190 South St,0.004
+2,490490027022,Provo city,2,Samantha,False,1470E_1230S,S 1470 East St,E 1230 South St,E 1200 South St,0.027
+2,490490027022,Provo city,2,Samantha,False,1470E_1250S,S 1470 East St,E 1250 South St,E 1230 South St,0.014
+2,490490027022,Provo city,2,Samantha,False,1470E_1270S,S 1470 East St,E 1270 South St,E 1250 South St,0.015
+2,490490027022,Provo city,2,Samantha,False,1470E_1280S,S 1470 East St,E 1280 South St,E 1270 South St,0.005
+2,490490027022,Provo city,2,Samantha,False,1470E_1300S,S 1470 East St,E 1300 South St,E 1280 South St,0.027
+2,490490027022,Provo city,2,Samantha,False,1470E_1320S,S 1470 East St,E 1320 South St,E 1300 South St,0.024
+2,490490027022,Provo city,2,Samantha,False,1470E_1480E,S 1470 East St,S 1480 East St,E 1120 South St,0.003
+2,490490027022,Provo city,2,Samantha,False,1480E_1470E,S 1480 East St,S 1470 East St,END,0.049
+2,490490027022,Provo city,2,Samantha,False,1510E_1320S,S 1510 East St,E 1320 South St,END,0.031
+2,490490027022,Provo city,2,Samantha,False,1540E_1320S,S 1540 East St,E 1320 South St,END,0.028
+2,490490027022,Provo city,2,Samantha,False,Nevada_END,S Nevada Cir,END,Nevada Ave,0.038
+2,490490027022,Provo city,2,Samantha,False,State_1440S,S State St,E 1440 South St,1320 S,0.123
+2,490490027022,Provo city,3,Elizabeth,False,CinnamonRidge_CinnamonRidge,Cinnamon Ridge Cir,Cinnamon Ridge Ln,END,0.075
+2,490490027022,Provo city,3,Elizabeth,False,CinnamonRidge_CinnamonRidge,Cinnamon Ridge Dr,Cinnamon Ridge Ln,S 1420 East St,0.054
+2,490490027022,Provo city,3,Elizabeth,False,CinnamonRidge_1420E,Cinnamon Ridge Dr,S 1420 East St,Cinnamon Ridge Way,0.133
+2,490490027022,Provo city,3,Elizabeth,False,CinnamonRidge_CinnamonRidge,Cinnamon Ridge Ln,Cinnamon Ridge Cir,Cinnamon Ridge Way,0.061
+2,490490027022,Provo city,3,Elizabeth,False,CinnamonRidge_CinnamonRidge,Cinnamon Ridge Ln,Cinnamon Ridge Cir,Cinnamon Ridge Dr,0.057
+2,490490027022,Provo city,3,Elizabeth,False,CinnamonRidge_CinnamonRidge,Cinnamon Ridge Way,Cinnamon Ridge Ln,Cinnamon Ridge Dr,0.12
+2,490490027022,Provo city,3,Elizabeth,False,1050S_1420E,E 1050 South St,S 1420 East St,END,0.03
+2,490490027022,Provo city,3,Elizabeth,False,1080S_State,E 1080 South St,S State St,W 1120 East St,0.018
+2,490490027022,Provo city,3,Elizabeth,False,1080S_1120E,E 1080 South St,W 1120 East St,W 1140 East St,0.052
+2,490490027022,Provo city,3,Elizabeth,False,1080S_1140E,E 1080 South St,W 1140 East St,END,0.023
+2,490490027022,Provo city,3,Elizabeth,False,1120S_State,E 1120 South St,S State St,END,0.171
+2,490490027022,Provo city,3,Elizabeth,False,1140S_EDGE,E 1140 South St,Edge,S State St,0.009
+2,490490027022,Provo city,3,Elizabeth,False,900S_EDGE,E 900 South St,Edge,S State St,0.009
+2,490490027022,Provo city,3,Elizabeth,False,900S_Idaho,E 900 South St,Idaho Ave,S 1300 East St,0.106
+2,490490027022,Provo city,3,Elizabeth,False,900S_1300E,E 900 South St,S 1300 East St,Nevada Ave,0.107
+2,490490027022,Provo city,3,Elizabeth,False,900S_State,E 900 South St,S State St,Idaho Ave,0.114
+2,490490027022,Provo city,3,Elizabeth,False,920S_Nevada,E 920 South St,Nevada Ave,Edge,0.009
+2,490490027022,Provo city,3,Elizabeth,False,930S_State,E 930 South St,S State St,END,0.097
+2,490490027022,Provo city,3,Elizabeth,False,950S_Nevada,E 950 South St,Nevada Ave,Edge,0.009
+2,490490027022,Provo city,3,Elizabeth,False,960S_1230E,E 960 South St,S 1230 East St,Cinnamon Ridge Ln,0.043
+2,490490027022,Provo city,3,Elizabeth,False,960S_State,E 960 South St,S State St,W 1140 East St,0.093
+2,490490027022,Provo city,3,Elizabeth,False,960S_1140E,E 960 South St,W 1140 East St,S 1230 East St,0.023
+2,490490027022,Provo city,3,Elizabeth,False,Idaho_900S,Idaho Ave,E 900 South St,Edge,0.009
+2,490490027022,Provo city,3,Elizabeth,False,Nevada_900S,Nevada Ave,E 900 South St,E 920 South St,0.044
+2,490490027022,Provo city,3,Elizabeth,False,Nevada_920S,Nevada Ave,E 920 South St,E 950 South St,0.051
+2,490490027022,Provo city,3,Elizabeth,False,1230E_960S,S 1230 East St,E 960 South St,END,0.07
+2,490490027022,Provo city,3,Elizabeth,False,1300E_END,S 1300 East St,END,E 900 South St,0.04
+2,490490027022,Provo city,3,Elizabeth,False,1350E_900S,S 1350 East St,E 900 South St,Edge,0.009
+2,490490027022,Provo city,3,Elizabeth,False,1400E_CinnamonRidge,S 1400 East St,Cinnamon Ridge Dr,END,0.035
+2,490490027022,Provo city,3,Elizabeth,False,1420E_1050S,S 1420 East St,E 1050 South St,Cinnamon Ridge Dr,0.031
+2,490490027022,Provo city,3,Elizabeth,False,1420E_1120S,S 1420 East St,E 1120 South St,E 1050 South St,0.065
+2,490490027022,Provo city,3,Elizabeth,False,State_1320S,S State St,1320 S,E 1140 South St,0.214
+2,490490027022,Provo city,3,Elizabeth,False,State_1080S,S State St,E 1080 South St,E 960 South St,0.059
+2,490490027022,Provo city,3,Elizabeth,False,State_1120S,S State St,E 1120 South St,E 1080 South St,0.083
+2,490490027022,Provo city,3,Elizabeth,False,State_1140S,S State St,E 1140 South St,E 1120 South St,0.005
+2,490490027022,Provo city,3,Elizabeth,False,State_900S,S State St,E 900 South St,Edge,0.009
+2,490490027022,Provo city,3,Elizabeth,False,State_930S,S State St,E 930 South St,E 900 South St,0.053
+2,490490027022,Provo city,3,Elizabeth,False,State_960S,S State St,E 960 South St,E 930 South St,0.08
+2,490490027022,Provo city,3,Elizabeth,False,1120E_1080S,W 1120 East St,E 1080 South St,END,0.048
+2,490490027022,Provo city,3,Elizabeth,False,1140E_1080S,W 1140 East St,E 1080 South St,E 960 South St,0.057
+3,490490020021,Provo city,1,Emma,False,850W_500N,N 850 West St,W 500 North St,W 700 North St,0.202
+3,490490020021,Provo city,1,Emma,False,850W_700N,N 850 West St,W 700 North St,N 970 West St,0.07
+3,490490020021,Provo city,1,Emma,False,900W_EDGE,N 900 West St,Edge,W 500 North St,0.009
+3,490490020021,Provo city,1,Emma,False,970W_500N,N 970 West St,W 500 North St,W 800 North St,0.254
+3,490490020021,Provo city,1,Emma,False,970W_800N,N 970 West St,W 800 North St,N 850 West St,0.082
+3,490490020021,Provo city,1,Emma,False,500N_850W,W 500 North St,N 850 West St,Edge,0.009
+3,490490020021,Provo city,1,Emma,False,500N_900W,W 500 North St,N 900 West St,N 850 West St,0.035
+3,490490020021,Provo city,1,Emma,False,500N_970W,W 500 North St,N 970 West St,N 900 West St,0.064
+3,490490020021,Provo city,1,Emma,False,700N_END,W 700 North St,END,N 850 West St,0.021
+3,490490020021,Provo city,1,Emma,False,700N_850W,W 700 North St,N 850 West St,Edge,0.009
+3,490490020021,Provo city,1,Emma,False,800N_1050W,W 800 North St,N 1050 West St,N 970 West St,0.066
+3,490490020021,Provo city,1,Emma,False,800N_850W,W 800 North St,N 850 West St,Edge,0.009
+3,490490020021,Provo city,2,Samantha,False,1025W_500N,1025 W,W 500 North St,END,0.058
+3,490490020021,Provo city,2,Samantha,False,1020W_EDGE,N 1020 West St,Edge,W 500 North St,0.009
+3,490490020021,Provo city,2,Samantha,False,1050W_590N,N 1050 West St,W 590 North St,W 650 North St,0.085
+3,490490020021,Provo city,2,Samantha,False,1050W_650N,N 1050 West St,W 650 North St,W 800 North St,0.064
+3,490490020021,Provo city,2,Samantha,False,1080W_500N,N 1080 West St,W 500 North St,W 590 North St,0.085
+3,490490020021,Provo city,2,Samantha,False,1100W_END,N 1100 West St,END,W 650 North St,0.038
+3,490490020021,Provo city,2,Samantha,False,1150W_END,N 1150 West St,END,W 650 North St,0.037
+3,490490020021,Provo city,2,Samantha,False,500N_1025W,W 500 North St,1025 W,N 1020 West St,0.019
+3,490490020021,Provo city,2,Samantha,False,500N_1020W,W 500 North St,N 1020 West St,N 970 West St,0.032
+3,490490020021,Provo city,2,Samantha,False,500N_1080W,W 500 North St,N 1080 West St,1025 W,0.048
+3,490490020021,Provo city,2,Samantha,False,500N_1220W,W 500 North St,N 1220 West St,N 1080 West St,0.147
+3,490490020021,Provo city,2,Samantha,False,590N_END,W 590 North St,END,N 1080 West St,0.061
+3,490490020021,Provo city,2,Samantha,False,590N_1080W,W 590 North St,N 1080 West St,N 1050 West St,0.028
+3,490490020021,Provo city,2,Samantha,False,650N_END,W 650 North St,END,N 1150 West St,0.024
+3,490490020021,Provo city,2,Samantha,False,650N_1100W,W 650 North St,N 1100 West St,N 1050 West St,0.05
+3,490490020021,Provo city,2,Samantha,False,650N_1150W,W 650 North St,N 1150 West St,N 1100 West St,0.066
+3,490490020021,Provo city,3,Elizabeth,False,Independence_END,Independence Ave,END,Edge,0.009
+3,490490020021,Provo city,3,Elizabeth,False,Independence_EDGE,Independence Ave,Edge,W 500 North St,0.01
+3,490490020021,Provo city,3,Elizabeth,False,Independence_500N,Independence Ave,W 500 North St,END,0.032
+3,490490020021,Provo city,3,Elizabeth,False,1220W_EDGE,N 1220 West St,Edge,W 500 North St,0.009
+3,490490020021,Provo city,3,Elizabeth,False,1260W_500N,N 1260 West St,W 500 North St,W 580 North St,0.079
+3,490490020021,Provo city,3,Elizabeth,False,1260W_580N,N 1260 West St,W 580 North St,END,0.028
+3,490490020021,Provo city,3,Elizabeth,False,1280W_EDGE,N 1280 West St,Edge,W 500 North St,0.009
+3,490490020021,Provo city,3,Elizabeth,False,1300W_500N,N 1300 West St,W 500 North St,W 570 North St,0.057
+3,490490020021,Provo city,3,Elizabeth,False,1300W_570N,N 1300 West St,W 570 North St,END,0.063
+3,490490020021,Provo city,3,Elizabeth,False,1350W_570N,N 1350 West St,W 570 North St,END,0.017
+3,490490020021,Provo city,3,Elizabeth,False,1375W_EDGE,N 1375 West St,Edge,W 500 North St,0.009
+3,490490020021,Provo city,3,Elizabeth,False,500N_END,W 500 North St,END,N 1375 West St,0.133
+3,490490020021,Provo city,3,Elizabeth,False,500N_Independence,W 500 North St,Independence Ave,END,0.089
+3,490490020021,Provo city,3,Elizabeth,False,500N_1260W,W 500 North St,N 1260 West St,N 1220 West St,0.033
+3,490490020021,Provo city,3,Elizabeth,False,500N_1280W,W 500 North St,N 1280 West St,N 1260 West St,0.02
+3,490490020021,Provo city,3,Elizabeth,False,500N_1300W,W 500 North St,N 1300 West St,N 1280 West St,0.04
+3,490490020021,Provo city,3,Elizabeth,False,500N_1375W,W 500 North St,N 1375 West St,N 1300 West St,0.016
+3,490490020021,Provo city,3,Elizabeth,False,570N_END,W 570 North St,END,N 1350 West St,0.052
+3,490490020021,Provo city,3,Elizabeth,False,570N_1350W,W 570 North St,N 1350 West St,N 1300 West St,0.05
+3,490490020021,Provo city,3,Elizabeth,False,580N_1260W,W 580 North St,N 1260 West St,END,0.047
+4,490490021013,Provo city,1,Emma,False,Columbia_EDGE,Columbia Ln,Edge,N Grandview Ln,0.01
+4,490490021013,Provo city,1,Emma,False,Columbia_1160W,Columbia Ln,N 1160 West St,N 1120 West St,0.105
+4,490490021013,Provo city,1,Emma,False,Columbia_950W,Columbia Ln,N 950 West St,N 1120 West St,0.066
+4,490490021013,Provo city,1,Emma,False,Columbia_Grandview,Columbia Ln,N Grandview Ln,N 950 West St,0.177
+4,490490021013,Provo city,1,Emma,False,1050W_1700N,N 1050 West St,W 1700 North St,N 1140 West St,0.087
+4,490490021013,Provo city,1,Emma,False,1120W_Columbia,N 1120 West St,Columbia Ln,Edge,0.009
+4,490490021013,Provo city,1,Emma,False,1140W_1700N,N 1140 West St,W 1700 North St,N 1050 West St,0.092
+4,490490021013,Provo city,1,Emma,False,1160W_Columbia,N 1160 West St,Columbia Ln,Edge,0.01
+4,490490021013,Provo city,1,Emma,False,1160W_EDGE,N 1160 West St,Edge,W 1460 North St,0.009
+4,490490021013,Provo city,1,Emma,False,1220W_EDGE,N 1220 West St,Edge,N 1250 West St,0.009
+4,490490021013,Provo city,1,Emma,False,1250W_1220W,N 1250 West St,N 1220 West St,W 1600 North St,0.136
+4,490490021013,Provo city,1,Emma,False,1250W_1600N,N 1250 West St,W 1600 North St,W 1700 North St,0.08
+4,490490021013,Provo city,1,Emma,False,1350W_1460N,N 1350 West St,W 1460 North St,W 1600 North St,0.132
+4,490490021013,Provo city,1,Emma,False,950W_Columbia,N 950 West St,Columbia Ln,Edge,0.01
+4,490490021013,Provo city,1,Emma,False,Grandview_Columbia,N Grandview Ln,Columbia Ln,Edge,0.01
+4,490490021013,Provo city,1,Emma,False,Jordan_EDGE,N Jordan Ave,Edge,W 1460 North St,0.009
+4,490490021013,Provo city,1,Emma,False,Jordan_1460N,N Jordan Ave,W 1460 North St,END,0.178
+4,490490021013,Provo city,1,Emma,False,1460N_1160W,W 1460 North St,N 1160 West St,N Jordan Ave,0.084
+4,490490021013,Provo city,1,Emma,False,1460N_1220W,W 1460 North St,N 1220 West St,N 1160 West St,0.093
+4,490490021013,Provo city,1,Emma,False,1460N_1350W,W 1460 North St,N 1350 West St,N 1220 West St,0.074
+4,490490021013,Provo city,1,Emma,False,1460N_1400W,W 1460 North St,N 1400 West St,N 1350 West St,0.068
+4,490490021013,Provo city,1,Emma,False,1700N_1050W,W 1700 North St,N 1050 West St,Columbia Ln,0.11
+4,490490021013,Provo city,1,Emma,False,1700N_1140W,W 1700 North St,N 1140 West St,N 1050 West St,0.08
+4,490490021013,Provo city,1,Emma,False,1700N_1250W,W 1700 North St,N 1250 West St,N 1140 West St,0.044
+4,490490021013,Provo city,1,Emma,False,Grandview_Jordan,W Grandview Ln,N Jordan Ave,Columbia Ln,0.199
+4,490490021013,Provo city,2,Samantha,False,Unnamed_Columbia,(unnamed),Columbia Ln,Edge,0.009
+4,490490021013,Provo city,2,Samantha,False,Unnamed_Columbia,(unnamed),S Columbia Ln,Edge,0.011
+4,490490021013,Provo city,2,Samantha,False,Cobblestone_Nottingham,Cobblestone Dr,Nottingham Ct,Columbia Ln,0.088
+4,490490021013,Provo city,2,Samantha,False,Cobblestone_1700N,Cobblestone Dr,W 1700 North St,Nottingham Ct,0.173
+4,490490021013,Provo city,2,Samantha,False,Columbia_Unnamed,Columbia Ln,(unnamed),Cobblestone Dr,0.087
+4,490490021013,Provo city,2,Samantha,False,Columbia_Cobblestone,Columbia Ln,Cobblestone Dr,N 1160 West St,0.025
+4,490490021013,Provo city,2,Samantha,False,2000S_EDGE,E 2000 South St,Edge,S 424 East St,0.047
+4,490490021013,Provo city,2,Samantha,False,2000S_424E,E 2000 South St,S 424 East St,S 520 East St,0.111
+4,490490021013,Provo city,2,Samantha,False,2000S_520E,E 2000 South St,S 520 East St,S Columbia Ln,0.111
+4,490490021013,Provo city,2,Samantha,False,1290W_1870N,N 1290 West St,W 1870 North St,W 1950 North St,0.029
+4,490490021013,Provo city,2,Samantha,False,1350W_END,N 1350 West St,END,W 1870 North St,0.029
+4,490490021013,Provo city,2,Samantha,False,1350W_1870N,N 1350 West St,W 1870 North St,W 1940 North St,0.048
+4,490490021013,Provo city,2,Samantha,False,1350W_1940N,N 1350 West St,W 1940 North St,W 1980 North St,0.051
+4,490490021013,Provo city,2,Samantha,False,1420W_1825N,N 1420 West St,W 1825 North St,W 1970 North St,0.107
+4,490490021013,Provo city,2,Samantha,False,1420W_1970N,N 1420 West St,W 1970 North St,W 1980 North St,0.02
+4,490490021013,Provo city,2,Samantha,False,1500W_1825N,N 1500 West St,W 1825 North St,W 1970 North St,0.138
+4,490490021013,Provo city,2,Samantha,False,Nottingham_END,Nottingham Ct,END,Cobblestone Dr,0.051
+4,490490021013,Provo city,2,Samantha,False,424E_2000S,S 424 East St,E 2000 South St,Edge,0.009
+4,490490021013,Provo city,2,Samantha,False,520E_2000S,S 520 East St,E 2000 South St,Edge,0.009
+4,490490021013,Provo city,2,Samantha,False,Columbia_Unnamed,S Columbia Ln,(unnamed),E 2000 South St,0.051
+4,490490021013,Provo city,2,Samantha,False,Columbia_Unnamed,S Columbia Ln,(unnamed),W 1950 North St,0.006
+4,490490021013,Provo city,2,Samantha,False,Columbia_2000S,S Columbia Ln,E 2000 South St,Edge,0.01
+4,490490021013,Provo city,2,Samantha,False,Columbia_1950N,S Columbia Ln,W 1950 North St,(unnamed),0.034
+4,490490021013,Provo city,2,Samantha,False,1825N_1420W,W 1825 North St,N 1420 West St,END,0.048
+4,490490021013,Provo city,2,Samantha,False,1870N_1290W,W 1870 North St,N 1290 West St,END,0.086
+4,490490021013,Provo city,2,Samantha,False,1870N_1350W,W 1870 North St,N 1350 West St,N 1290 West St,0.054
+4,490490021013,Provo city,2,Samantha,False,1940N_END,W 1940 North St,END,N 1350 West St,0.044
+4,490490021013,Provo city,2,Samantha,False,1950N_1290W,W 1950 North St,N 1290 West St,W 1980 North St,0.042
+4,490490021013,Provo city,2,Samantha,False,1950N_1980N,W 1950 North St,W 1980 North St,S Columbia Ln,0.033
+4,490490021013,Provo city,2,Samantha,False,1970N_END,W 1970 North St,END,N 1420 West St,0.027
+4,490490021013,Provo city,2,Samantha,False,1970N_EDGE,W 1970 North St,Edge,N 1500 West St,0.015
+4,490490021013,Provo city,2,Samantha,False,1970N_1500W,W 1970 North St,N 1500 West St,END,0.057
+4,490490021013,Provo city,2,Samantha,False,1980N_1350W,W 1980 North St,N 1350 West St,W 1950 North St,0.103
+4,490490021013,Provo city,2,Samantha,False,1980N_1420W,W 1980 North St,N 1420 West St,N 1350 West St,0.089
+4,490490021013,Provo city,3,Elizabeth,False,1350W_1600N,N 1350 West St,W 1600 North St,W 1700 North St,0.074
+4,490490021013,Provo city,3,Elizabeth,False,1350W_1700N,N 1350 West St,W 1700 North St,END,0.129
+4,490490021013,Provo city,3,Elizabeth,False,1400W_EDGE,N 1400 West St,Edge,W 1460 North St,0.01
+4,490490021013,Provo city,3,Elizabeth,False,1400W_1460N,N 1400 West St,W 1460 North St,W 1700 North St,0.206
+4,490490021013,Provo city,3,Elizabeth,False,1400W_1700N,N 1400 West St,W 1700 North St,W 1800 North St,0.081
+4,490490021013,Provo city,3,Elizabeth,False,1450W_1500N,N 1450 West St,W 1500 North St,W 1700 North St,0.154
+4,490490021013,Provo city,3,Elizabeth,False,1450W_1700N,N 1450 West St,W 1700 North St,W 1800 North St,0.062
+4,490490021013,Provo city,3,Elizabeth,False,1500W_EDGE,N 1500 West St,Edge,W 1460 North St,0.009
+4,490490021013,Provo city,3,Elizabeth,False,1500W_1460N,N 1500 West St,W 1460 North St,W 1500 North St,0.055
+4,490490021013,Provo city,3,Elizabeth,False,1500W_1460N,N 1500 West St,W 1460 North St,W 1825 North St,0.094
+4,490490021013,Provo city,3,Elizabeth,False,1500W_1500N,N 1500 West St,W 1500 North St,W 1460 North St,0.155
+4,490490021013,Provo city,3,Elizabeth,False,1460N_EDGE,W 1460 North St,Edge,N 1500 West St,0.009
+4,490490021013,Provo city,3,Elizabeth,False,1460N_EDGE,W 1460 North St,Edge,N 1500 West St,0.009
+4,490490021013,Provo city,3,Elizabeth,False,1460N_1500W,W 1460 North St,N 1500 West St,N 1400 West St,0.104
+4,490490021013,Provo city,3,Elizabeth,False,1500N_END,W 1500 North St,END,N 1450 West St,0.001
+4,490490021013,Provo city,3,Elizabeth,False,1500N_1500W,W 1500 North St,N 1500 West St,END,0.049
+4,490490021013,Provo city,3,Elizabeth,False,1600N_1350W,W 1600 North St,N 1350 West St,N 1250 West St,0.097
+4,490490021013,Provo city,3,Elizabeth,False,1700N_Cobblestone,W 1700 North St,Cobblestone Dr,N 1250 West St,0.035
+4,490490021013,Provo city,3,Elizabeth,False,1700N_1350W,W 1700 North St,N 1350 West St,Cobblestone Dr,0.082
+4,490490021013,Provo city,3,Elizabeth,False,1700N_1400W,W 1700 North St,N 1400 West St,N 1350 West St,0.061
+4,490490021013,Provo city,3,Elizabeth,False,1700N_1450W,W 1700 North St,N 1450 West St,N 1400 West St,0.059
+4,490490021013,Provo city,3,Elizabeth,False,1700N_1500W,W 1700 North St,N 1500 West St,N 1450 West St,0.058
+4,490490021013,Provo city,3,Elizabeth,False,1800N_1450W,W 1800 North St,N 1450 West St,N 1400 West St,0.061
+4,490490021013,Provo city,3,Elizabeth,False,1825N_END,W 1825 North St,END,N 1420 West St,0.028
+4,490490021013,Provo city,3,Elizabeth,False,1825N_EDGE,W 1825 North St,Edge,N 1500 West St,0.015
+4,490490021013,Provo city,3,Elizabeth,False,1825N_1500W,W 1825 North St,N 1500 West St,END,0.061
+5,490490014043,Provo city,1,Emma,False,Columbia_EDGE,Columbia Ln,Edge,N Grandview Ln,0.009
+5,490490014043,Provo city,1,Emma,False,Columbia_Grandview,Columbia Ln,N Grandview Ln,N 950 West St,0.177
+5,490490014043,Provo city,1,Emma,False,Hickory_Willowbrook,Hickory Ln,Willowbrook Dr,Willowbrook Cir,0.035
+5,490490014043,Provo city,1,Emma,False,Hickory_Woodland,Hickory Ln,Woodland Dr,Willowbrook Dr,0.035
+5,490490014043,Provo city,1,Emma,False,Grandview_Columbia,N Grandview Ln,Columbia Ln,N State St,0.168
+5,490490014043,Provo city,1,Emma,False,State_EDGE,N State St,Edge,N Grandview Ln,0.01
+5,490490014043,Provo city,1,Emma,False,State_Grandview,N State St,N Grandview Ln,N 950 West St,0.208
+5,490490014043,Provo city,1,Emma,False,Grandview_EDGE,W Grandview Ln,Edge,Columbia Ln,0.009
+5,490490014043,Provo city,1,Emma,False,Grandview_Grandview,W Grandview Ln,N Grandview Ln,Edge,0.01
+5,490490014043,Provo city,1,Emma,False,Willowbrook_Woodland,Willowbrook Dr,Woodland Dr,Hickory Ln,0.086
+5,490490014043,Provo city,1,Emma,False,Woodland_Hickory,Woodland Dr,Hickory Ln,Willowbrook Dr,0.087
+5,490490014043,Provo city,2,Samantha,False,Columbia_1160W,Columbia Ln,N 1160 West St,N 1120 West St,0.105
+5,490490014043,Provo city,2,Samantha,False,Columbia_950W,Columbia Ln,N 950 West St,N 1120 West St,0.066
+5,490490014043,Provo city,2,Samantha,False,1120W_Columbia,N 1120 West St,Columbia Ln,END,0.151
+5,490490014043,Provo city,2,Samantha,False,1120W_END,N 1120 West St,END,N State St,0.034
+5,490490014043,Provo city,2,Samantha,False,950W_Columbia,N 950 West St,Columbia Ln,Woodland Dr,0.032
+5,490490014043,Provo city,2,Samantha,False,950W_Willowbrook,N 950 West St,Willowbrook Dr,N State St,0.072
+5,490490014043,Provo city,2,Samantha,False,950W_Woodland,N 950 West St,Woodland Dr,Willowbrook Dr,0.057
+5,490490014043,Provo city,2,Samantha,False,State_950W,N State St,N 950 West St,N 1120 West St,0.084
+5,490490014043,Provo city,2,Samantha,False,1700N_EDGE,W 1700 North St,Edge,Columbia Ln,0.009
+5,490490014043,Provo city,2,Samantha,False,1850N_950W,W 1850 North St,N 950 West St,Edge,0.009
+5,490490014043,Provo city,2,Samantha,False,Willowbrook_Willowbrook,Willowbrook Cir,Willowbrook Dr,Hickory Ln,0.089
+5,490490014043,Provo city,2,Samantha,False,Willowbrook_Hickory,Willowbrook Dr,Hickory Ln,Willowbrook Cir,0.075
+5,490490014043,Provo city,2,Samantha,False,Willowbrook_950W,Willowbrook Dr,N 950 West St,Willowbrook Cir,0.012
+5,490490014043,Provo city,2,Samantha,False,Woodland_950W,Woodland Dr,N 950 West St,Hickory Ln,0.045
+5,490490014043,Provo city,3,Elizabeth,False,Unnamed_Columbia,(unnamed),Columbia Ln,END,0.044
+5,490490014043,Provo city,3,Elizabeth,False,Unnamed_END,(unnamed),END,N Cove Point Ln,0.028
+5,490490014043,Provo city,3,Elizabeth,False,Unnamed_END,(unnamed),END,END,0.09
+5,490490014043,Provo city,3,Elizabeth,False,Unnamed_Columbia,(unnamed),S Columbia Ln,Edge,0.042
+5,490490014043,Provo city,3,Elizabeth,False,Cobblestone_EDGE,Cobblestone Dr,Edge,Columbia Ln,0.01
+5,490490014043,Provo city,3,Elizabeth,False,Columbia_Unnamed,Columbia Ln,(unnamed),Cobblestone Dr,0.087
+5,490490014043,Provo city,3,Elizabeth,False,Columbia_Cobblestone,Columbia Ln,Cobblestone Dr,N 1160 West St,0.025
+5,490490014043,Provo city,3,Elizabeth,False,2000S_EDGE,E 2000 South St,Edge,S Columbia Ln,0.009
+5,490490014043,Provo city,3,Elizabeth,False,1120W_END,N 1120 West St,END,END,0.071
+5,490490014043,Provo city,3,Elizabeth,False,1160W_Columbia,N 1160 West St,Columbia Ln,END,0.073
+5,490490014043,Provo city,3,Elizabeth,False,CovePoint_Unnamed,N Cove Point Ln,(unnamed),N State St,0.114
+5,490490014043,Provo city,3,Elizabeth,False,State_1120W,N State St,N 1120 West St,N Cove Point Ln,0.124
+5,490490014043,Provo city,3,Elizabeth,False,State_CovePoint,N State St,N Cove Point Ln,Edge,0.041
+5,490490014043,Provo city,3,Elizabeth,False,Columbia_Unnamed,S Columbia Ln,(unnamed),E 2000 South St,0.051
+5,490490014043,Provo city,3,Elizabeth,False,Columbia_Unnamed,S Columbia Ln,(unnamed),W 1950 North St,0.006
+5,490490014043,Provo city,3,Elizabeth,False,Columbia_2000S,S Columbia Ln,E 2000 South St,Edge,0.009
+5,490490014043,Provo city,3,Elizabeth,False,Columbia_1950N,S Columbia Ln,W 1950 North St,(unnamed),0.034
+5,490490014043,Provo city,3,Elizabeth,False,1950N_EDGE,W 1950 North St,Edge,S Columbia Ln,0.009
+6,490490014011,Provo city,1,Emma,False,Unnamed_University,(unnamed),N University Ave,Edge,0.009
+6,490490014011,Provo city,1,Emma,False,250W_300W,250 West St,N 300 West St,W 3960 North St,0.189
+6,490490014011,Provo city,1,Emma,False,250W_3960N,250 West St,W 3960 North St,W 4020 North St,0.03
+6,490490014011,Provo city,1,Emma,False,250W_4020N,250 West St,W 4020 North St,W 4100 North St,0.067
+6,490490014011,Provo city,1,Emma,False,3700N_University,E 3700 North St,N University Ave,Edge,0.009
+6,490490014011,Provo city,1,Emma,False,800S_EDGE,E 800 South St,Edge,W 3700 North St,0.02
+6,490490014011,Provo city,1,Emma,False,HiddenHaven_3700N,Hidden Haven Ln,W 3700 North St,N 450 West St,0.132
+6,490490014011,Provo city,1,Emma,False,250W_EDGE,N 250 West St,Edge,W 3700 North St,0.009
+6,490490014011,Provo city,1,Emma,False,300W_250W,N 300 West St,250 West St,W 3900 North St,0.086
+6,490490014011,Provo city,1,Emma,False,300W_3700N,N 300 West St,W 3700 North St,250 West St,0.097
+6,490490014011,Provo city,1,Emma,False,300W_3900N,N 300 West St,W 3900 North St,W 3950 North St,0.058
+6,490490014011,Provo city,1,Emma,False,300W_3950N,N 300 West St,W 3950 North St,W 4020 North St,0.055
+6,490490014011,Provo city,1,Emma,False,300W_4020N,N 300 West St,W 4020 North St,END,0.012
+6,490490014011,Provo city,1,Emma,False,370W_END,N 370 West St,END,W 3900 North St,0.034
+6,490490014011,Provo city,1,Emma,False,380W_4020N,N 380 West St,W 4020 North St,W 4100 North St,0.067
+6,490490014011,Provo city,1,Emma,False,400W_EDGE,N 400 West St,Edge,W 3700 North St,0.009
+6,490490014011,Provo city,1,Emma,False,450W_HiddenHaven,N 450 West St,Hidden Haven Ln,W 3900 North St,0.063
+6,490490014011,Provo city,1,Emma,False,450W_Riverwood,N 450 West St,Riverwood Dr,W 4020 North St,0.08
+6,490490014011,Provo city,1,Emma,False,450W_3900N,N 450 West St,W 3900 North St,Riverwood Dr,0.038
+6,490490014011,Provo city,1,Emma,False,450W_4020N,N 450 West St,W 4020 North St,END,0.018
+6,490490014011,Provo city,1,Emma,False,50W_EDGE,N 50 West St,Edge,N Edgewood Dr,0.009
+6,490490014011,Provo city,1,Emma,False,Edgewood_50W,N Edgewood Dr,N 50 West St,W 3960 North St,0.256
+6,490490014011,Provo city,1,Emma,False,University_3700N,N University Ave,E 3700 North St,(unnamed),0.289
+6,490490014011,Provo city,1,Emma,False,University_EDGE,N University Ave,Edge,E 3700 North St,0.009
+6,490490014011,Provo city,1,Emma,False,Riverwood_Riverwood,Riverwood Cir,Riverwood Dr,END,0.032
+6,490490014011,Provo city,1,Emma,False,Riverwood_Riverwood,Riverwood Dr,Riverwood Cir,N 450 West St,0.145
+6,490490014011,Provo city,1,Emma,False,Riverwood_3700N,Riverwood Dr,W 3700 North St,Riverwood Cir,0.153
+6,490490014011,Provo city,1,Emma,False,3700N_800S,W 3700 North St,E 800 South St,Riverwood Dr,0.037
+6,490490014011,Provo city,1,Emma,False,3700N_HiddenHaven,W 3700 North St,Hidden Haven Ln,N 400 West St,0.094
+6,490490014011,Provo city,1,Emma,False,3700N_250W,W 3700 North St,N 250 West St,N 50 West St,0.158
+6,490490014011,Provo city,1,Emma,False,3700N_300W,W 3700 North St,N 300 West St,N 250 West St,0.036
+6,490490014011,Provo city,1,Emma,False,3700N_400W,W 3700 North St,N 400 West St,N 300 West St,0.099
+6,490490014011,Provo city,1,Emma,False,3700N_50W,W 3700 North St,N 50 West St,E 3700 North St,0.046
+6,490490014011,Provo city,1,Emma,False,3700N_Riverwood,W 3700 North St,Riverwood Dr,Hidden Haven Ln,0.048
+6,490490014011,Provo city,1,Emma,False,3800N_HiddenHaven,W 3800 North St,Hidden Haven Ln,250 West St,0.154
+6,490490014011,Provo city,1,Emma,False,3900N_370W,W 3900 North St,N 370 West St,N 300 West St,0.068
+6,490490014011,Provo city,1,Emma,False,3900N_450W,W 3900 North St,N 450 West St,N 370 West St,0.069
+6,490490014011,Provo city,1,Emma,False,3950N_END,W 3950 North St,END,N 300 West St,0.057
+6,490490014011,Provo city,1,Emma,False,3960N_250W,W 3960 North St,250 West St,N Edgewood Dr,0.157
+6,490490014011,Provo city,1,Emma,False,4020N_300W,W 4020 North St,N 300 West St,250 West St,0.057
+6,490490014011,Provo city,1,Emma,False,4020N_380W,W 4020 North St,N 380 West St,N 300 West St,0.061
+6,490490014011,Provo city,1,Emma,False,4020N_450W,W 4020 North St,N 450 West St,N 380 West St,0.061
+6,490490014011,Provo city,1,Emma,False,4100N_300W,W 4100 North St,N 300 West St,250 West St,0.059
+6,490490014011,Provo city,1,Emma,False,4100N_380W,W 4100 North St,N 380 West St,N 300 West St,0.06
+6,490490014011,Provo city,2,Samantha,False,Unnamed_380W,(unnamed),N 380 West St,END,0.012
+6,490490014011,Provo city,2,Samantha,False,250W_4100N,250 West St,W 4100 North St,W 4130 North St,0.03
+6,490490014011,Provo city,2,Samantha,False,250W_4130N,250 West St,W 4130 North St,END,0.024
+6,490490014011,Provo city,2,Samantha,False,4200N_University,4200 North St,N University Ave,Edge,0.01
+6,490490014011,Provo city,2,Samantha,False,Amhurst_EDGE,Amhurst Rd,Edge,Carterville Rd,0.18
+6,490490014011,Provo city,2,Samantha,False,Carterville_EDGE,Carterville Rd,Edge,River Ridge Ln,0.002
+6,490490014011,Provo city,2,Samantha,False,Carterville_RiverRidge,Carterville Rd,River Ridge Ln,Amhurst Rd,0.21
+6,490490014011,Provo city,2,Samantha,False,300W_4100N,N 300 West St,W 4100 North St,END,0.035
+6,490490014011,Provo city,2,Samantha,False,380W_4100N,N 380 West St,W 4100 North St,W 4150 North St,0.033
+6,490490014011,Provo city,2,Samantha,False,380W_4150N,N 380 West St,W 4150 North St,(unnamed),0.017
+6,490490014011,Provo city,2,Samantha,False,Cove_END,N Cove Dr,END,W 4130 North St,0.034
+6,490490014011,Provo city,2,Samantha,False,Edgewood_4200N,N Edgewood Cir,W 4200 North St,END,0.106
+6,490490014011,Provo city,2,Samantha,False,Edgewood_3960N,N Edgewood Dr,W 3960 North St,W 4200 North St,0.169
+6,490490014011,Provo city,2,Samantha,False,StoneXing_4200N,N Stone Xing,W 4200 North St,Stone Gate Ln,0.203
+6,490490014011,Provo city,2,Samantha,False,University_Unnamed,N University Ave,(unnamed),4200 North St,0.134
+6,490490014011,Provo city,2,Samantha,False,University_4200N,N University Ave,4200 North St,Stone Gate Ln,0.221
+6,490490014011,Provo city,2,Samantha,False,Vintage_Sheffield,N Vintage Dr,Sheffield Dr,W Vintage Dr,0.127
+6,490490014011,Provo city,2,Samantha,False,Vintage_Sheffield,N Vintage Dr,Sheffield Dr,Vintage Cir,0.086
+6,490490014011,Provo city,2,Samantha,False,Vintage_Vintage,N Vintage Dr,Vintage Cir,Sheffield Dr,0.065
+6,490490014011,Provo city,2,Samantha,False,RiverRidge_Carterville,River Ridge Ln,Carterville Rd,Edge,0.029
+6,490490014011,Provo city,2,Samantha,False,Sheffield_Vintage,Sheffield Dr,N Vintage Dr,N Vintage Dr,0.317
+6,490490014011,Provo city,2,Samantha,False,SheffieldXing_END,Sheffield Xing,END,Stone Gate Ln,0.018
+6,490490014011,Provo city,2,Samantha,False,Stafford_Vintage,Stafford Ct,Vintage Cir,END,0.118
+6,490490014011,Provo city,2,Samantha,False,StoneBrook_StoneGate,Stone Brook Ln,Stone Gate Ln,Stone Creek Ln,0.123
+6,490490014011,Provo city,2,Samantha,False,StoneCreek_StoneBrook,Stone Creek Ln,Stone Brook Ln,Stone Gate Ln,0.213
+6,490490014011,Provo city,2,Samantha,False,StoneGate_SheffieldXing,Stone Gate Ln,Sheffield Xing,Stone Creek Ln,0.15
+6,490490014011,Provo city,2,Samantha,False,StoneGate_StoneBrook,Stone Gate Ln,Stone Brook Ln,Sheffield Xing,0.164
+6,490490014011,Provo city,2,Samantha,False,Vintage_END,Vintage Cir,END,Stafford Ct,0.099
+6,490490014011,Provo city,2,Samantha,False,Vintage_Stafford,Vintage Cir,Stafford Ct,N Vintage Dr,0.052
+6,490490014011,Provo city,2,Samantha,False,4130N_250W,W 4130 North St,250 West St,N Cove Dr,0.05
+6,490490014011,Provo city,2,Samantha,False,4150N_END,W 4150 North St,END,N 380 West St,0.093
+6,490490014011,Provo city,2,Samantha,False,4200N_Edgewood,W 4200 North St,N Edgewood Cir,4200 North St,0.044
+6,490490014011,Provo city,2,Samantha,False,4200N_Edgewood,W 4200 North St,N Edgewood Dr,N Edgewood Cir,0.013
+6,490490014011,Provo city,2,Samantha,False,4200N_StoneXing,W 4200 North St,N Stone Xing,N Edgewood Dr,0.065
+6,490490014011,Provo city,2,Samantha,False,StoneBrook_StoneBrook,W Stone Brook Ln,Stone Brook Ln,N Stone Xing,0.16
+6,490490014011,Provo city,3,Elizabeth,False,Unnamed_END,(unnamed),END,N 25 West St,0.298
+6,490490014011,Provo city,3,Elizabeth,False,Unnamed_25W,(unnamed),N 25 West St,W 4500 North St,0.042
+6,490490014011,Provo city,3,Elizabeth,False,Unnamed_4800N,(unnamed),W 4800 North St,Edge,0.01
+6,490490014011,Provo city,3,Elizabeth,False,Center_EDGE,E Center St,Edge,W 4800 North St,0.049
+6,490490014011,Provo city,3,Elizabeth,False,Edgewood_4800N,Edgewood Dr,W 4800 North St,Edge,0.009
+6,490490014011,Provo city,3,Elizabeth,False,Foothill_University,Foothill Dr,N University Ave,Edge,0.009
+6,490490014011,Provo city,3,Elizabeth,False,100W_4500N,N 100 West St,W 4500 North St,END,0.025
+6,490490014011,Provo city,3,Elizabeth,False,150W_4500N,N 150 West St,W 4500 North St,END,0.03
+6,490490014011,Provo city,3,Elizabeth,False,25W_4440N,N 25 West St,W 4440 North St,(unnamed),0.051
+6,490490014011,Provo city,3,Elizabeth,False,300W_4620N,N 300 West St,W 4620 North St,W 4800 North St,0.146
+6,490490014011,Provo city,3,Elizabeth,False,300W_4800N,N 300 West St,W 4800 North St,Edge,0.009
+6,490490014011,Provo city,3,Elizabeth,False,420W_4770N,N 420 West St,W 4770 North St,W 4800 North St,0.044
+6,490490014011,Provo city,3,Elizabeth,False,450W_4620N,N 450 West St,W 4620 North St,W 4630 North St,0.026
+6,490490014011,Provo city,3,Elizabeth,False,450W_4630N,N 450 West St,W 4630 North St,W 4770 North St,0.052
+6,490490014011,Provo city,3,Elizabeth,False,450W_Vintage,N 450 West St,W Vintage Dr,W 4620 North St,0.032
+6,490490014011,Provo city,3,Elizabeth,False,50W_StoneGate,N 50 West St,Stone Gate Ln,W 4440 North St,0.038
+6,490490014011,Provo city,3,Elizabeth,False,50W_4500N,N 50 West St,W 4500 North St,W 4600 North St,0.073
+6,490490014011,Provo city,3,Elizabeth,False,University_Foothill,N University Ave,Foothill Dr,Edge,0.009
+6,490490014011,Provo city,3,Elizabeth,False,University_StoneGate,N University Ave,Stone Gate Ln,W 4750 North St,0.298
+6,490490014011,Provo city,3,Elizabeth,False,University_4750N,N University Ave,W 4750 North St,Foothill Dr,0.086
+6,490490014011,Provo city,3,Elizabeth,False,Northgate_4500N,Northgate Dr,W 4500 North St,W 4600 North St,0.097
+6,490490014011,Provo city,3,Elizabeth,False,StoneGate_50W,Stone Gate Ln,N 50 West St,N University Ave,0.052
+6,490490014011,Provo city,3,Elizabeth,False,StoneGate_StoneXing,Stone Gate Ln,N Stone Xing,N 50 West St,0.083
+6,490490014011,Provo city,3,Elizabeth,False,StoneGate_StoneCreek,Stone Gate Ln,Stone Creek Ln,N Stone Xing,0.073
+6,490490014011,Provo city,3,Elizabeth,False,4420N_StoneXing,W 4420 North St,N Stone Xing,END,0.07
+6,490490014011,Provo city,3,Elizabeth,False,4440N_50W,W 4440 North St,N 50 West St,N 25 West St,0.038
+6,490490014011,Provo city,3,Elizabeth,False,4500N_100W,W 4500 North St,N 100 West St,N 50 West St,0.051
+6,490490014011,Provo city,3,Elizabeth,False,4500N_150W,W 4500 North St,N 150 West St,N 100 West St,0.056
+6,490490014011,Provo city,3,Elizabeth,False,4500N_50W,W 4500 North St,N 50 West St,(unnamed),0.026
+6,490490014011,Provo city,3,Elizabeth,False,4500N_Northgate,W 4500 North St,Northgate Dr,N 150 West St,0.07
+6,490490014011,Provo city,3,Elizabeth,False,4600N_Northgate,W 4600 North St,Northgate Dr,N 50 West St,0.131
+6,490490014011,Provo city,3,Elizabeth,False,4620N_450W,W 4620 North St,N 450 West St,N 300 West St,0.119
+6,490490014011,Provo city,3,Elizabeth,False,4630N_END,W 4630 North St,END,N 450 West St,0.08
+6,490490014011,Provo city,3,Elizabeth,False,4650N_END,W 4650 North St,END,END,0.037
+6,490490014011,Provo city,3,Elizabeth,False,4650N_END,W 4650 North St,END,END,0.03
+6,490490014011,Provo city,3,Elizabeth,False,4650N_300W,W 4650 North St,N 300 West St,END,0.024
+6,490490014011,Provo city,3,Elizabeth,False,4650N_450W,W 4650 North St,N 450 West St,END,0.101
+6,490490014011,Provo city,3,Elizabeth,False,4750N_END,W 4750 North St,END,N University Ave,0.213
+6,490490014011,Provo city,3,Elizabeth,False,4770N_END,W 4770 North St,END,N 450 West St,0.047
+6,490490014011,Provo city,3,Elizabeth,False,4770N_450W,W 4770 North St,N 450 West St,N 420 West St,0.03
+6,490490014011,Provo city,3,Elizabeth,False,4800N_Unnamed,W 4800 North St,(unnamed),Foothill Dr,0.055
+6,490490014011,Provo city,3,Elizabeth,False,4800N_Center,W 4800 North St,E Center St,N 420 West St,0.08
+6,490490014011,Provo city,3,Elizabeth,False,4800N_Edgewood,W 4800 North St,Edgewood Dr,(unnamed),0.097
+6,490490014011,Provo city,3,Elizabeth,False,4800N_300W,W 4800 North St,N 300 West St,Edgewood Dr,0.163
+6,490490014011,Provo city,3,Elizabeth,False,4800N_420W,W 4800 North St,N 420 West St,N 300 West St,0.11
+6,490490014011,Provo city,3,Elizabeth,False,Vintage_Vintage,W Vintage Dr,N Vintage Dr,N 450 West St,0.099

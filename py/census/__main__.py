@@ -1,5 +1,7 @@
 """
-The command line. Run from the py/ folder (or with py/ on PYTHONPATH):
+The command line: `uv run census ...` from anywhere in the repository (or
+`python -m census ...` from the py/ folder). See README.md here for the full
+workflow.
 
     python -m census places                              # cities in Utah County
     python -m census new provo_orem --cities Provo Orem  # make a run with default settings
@@ -9,6 +11,13 @@ The command line. Run from the py/ folder (or with py/ on PYTHONPATH):
     python -m census run provo_orem cluster sample       # just these steps
     python -m census compare provo_orem                  # optional: the cities vs the rest of the county
     python -m census export provo_orem fall_2026         # save the picks for the flight planner (app.py)
+
+Reproducibility (publish.py):
+
+    python -m census publish provo_orem                  # census_runs/provo_orem/ + an inputs archive to upload
+    python -m census fetch-inputs provo_orem             # anyone: download and check the archived inputs
+    python -m census reproduce provo_orem                # rerun every step offline from them, then verify
+    python -m census verify provo_orem                   # compare a run's results with the published ones
 
 Runs live in data/census/runs/<name>/; config.json there holds every setting
 and can also be edited by hand.
@@ -59,12 +68,40 @@ def main(argv=None):
     p.add_argument("name")
     p.add_argument("sample")
     p.add_argument("--overwrite", action="store_true")
+    p = sub.add_parser("publish", help="publish a run so others can reproduce it (census_runs/<name>/)")
+    p.add_argument("name")
+    p.add_argument("--url", help="where the inputs archive was uploaded")
+    p.add_argument("--overwrite", action="store_true", help="replace an earlier publish of this run")
+    p = sub.add_parser("fetch-inputs", help="get a published run's raw inputs into data/census/")
+    p.add_argument("name")
+    p.add_argument("--from", dest="from_zip", metavar="ZIP", help="use this archive instead of downloading it")
+    p = sub.add_parser("reproduce", help="rerun a published run offline from its inputs, then verify")
+    p.add_argument("name")
+    p.add_argument("--as", dest="as_name", metavar="RUN", help="run it under another run name")
+    p = sub.add_parser("verify", help="compare a run's results with a published run's")
+    p.add_argument("name", help="the published run")
+    p.add_argument("--run", help="the run to check (default: the same name)")
     args = ap.parse_args(argv)
 
     try:
         if args.command == "places":
             print(geography.county_places(args.state, args.county, args.year).to_string(index=False))
             return 0
+
+        if args.command in ("publish", "fetch-inputs", "reproduce", "verify"):
+            from . import publish
+            if args.command == "publish":
+                print(publish.publish(args.name, args.url, args.overwrite))
+                return 0
+            if args.command == "fetch-inputs":
+                print(publish.fetch_inputs(args.name, args.from_zip))
+                return 0
+            if args.command == "reproduce":
+                ok, report = publish.reproduce(args.name, args.as_name)
+            else:
+                ok, report = publish.verify(args.name, args.run)
+            print(report)
+            return 0 if ok else 2
 
         folder = cfg.run_dir(args.name)
         if args.command == "new":

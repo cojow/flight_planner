@@ -1,0 +1,221 @@
+geoid,street,road_type,restricted,miles,segments,aliases,city,cluster,pick,fly_order
+490490018032,E 100 North St,local street,False,0.103,1,E 100 N,Provo city,2,1,1
+490490018032,E 100 North St,local street,True,0.098,1,E 100 N,Provo city,2,1,1
+490490018032,E 150 North St,local street,False,0.192,1,E 150 N,Provo city,2,1,1
+490490018032,E 200 North St,local street,False,0.33,1,E 200 N,Provo city,2,1,1
+490490018032,E 200 North St,local street,True,0.097,1,E 200 N,Provo city,2,1,1
+490490018032,E 300 North St,local street,False,0.372,1,E 300 N,Provo city,2,1,1
+490490018032,E 300 North St,local street,True,0.097,1,E 300 N,Provo city,2,1,1
+490490018032,E Center St,local street,False,0.369,1,,Provo city,2,1,1
+490490018032,E Center St,local street,True,0.099,1,,Provo city,2,1,1
+490490018032,N 400 East St,local street,True,0.287,2,N 400 E,Provo city,2,1,1
+490490018032,N 500 East St,local street,False,0.288,2,N 500 E,Provo city,2,1,1
+490490018032,N 600 East St,local street,False,0.288,1,N 600 E,Provo city,2,1,1
+490490018032,N 700 East St,local street,False,0.267,1,N 700 E,Provo city,2,1,1
+490490018032,N 750 East St,local street,False,0.089,2,N 750 E; Park Ave,Provo city,2,1,1
+490490018032,N 800 East St,local street,False,0.268,1,N 800 E,Provo city,2,1,1
+490490018032,N 900 East St,local street,False,0.268,1,N 900 E,Provo city,2,1,1
+490490018032,S 400 East St,local street,True,0.009,1,S 400 E,Provo city,2,1,1
+490490018032,S 500 East St,local street,False,0.009,1,S 500 E,Provo city,2,1,1
+490490018032,S 600 East St,local street,False,0.009,1,S 600 E,Provo city,2,1,1
+490490018032,S 700 East St,local street,False,0.009,1,S 700 E,Provo city,2,1,1
+490490018032,S 750 East St,local street,False,0.009,1,S 750 E,Provo city,2,1,1
+490490018032,S 850 East St,local street,False,0.009,1,S 850 E,Provo city,2,1,1
+490490018032,S 900 East St,local street,False,0.009,1,S 900 E,Provo city,2,1,1
+490490027022,1320 S,local street,False,0.01,1,,Provo city,3,1,2
+490490027022,1650 S,local street,False,0.018,1,,Provo city,3,1,2
+490490027022,Cinnamon Ridge Cir,local street,False,0.075,1,,Provo city,3,1,2
+490490027022,Cinnamon Ridge Dr,local street,False,0.188,1,,Provo city,3,1,2
+490490027022,Cinnamon Ridge Ln,local street,False,0.118,1,,Provo city,3,1,2
+490490027022,Cinnamon Ridge Way,local street,False,0.12,1,,Provo city,3,1,2
+490490027022,E 1050 South St,local street,False,0.03,1,E 1050 S,Provo city,3,1,2
+490490027022,E 1080 South St,local street,False,0.092,1,E 1080 S,Provo city,3,1,2
+490490027022,E 1120 South St,local street,False,0.295,2,E 1120 S,Provo city,3,1,2
+490490027022,E 1140 South St,local street,False,0.009,1,E 1140 S,Provo city,3,1,2
+490490027022,E 1190 South St,local street,False,0.031,1,E 1190 S,Provo city,3,1,2
+490490027022,E 1200 South St,local street,False,0.1,1,E 1200 S,Provo city,3,1,2
+490490027022,E 1230 South St,local street,False,0.032,1,E 1230 S,Provo city,3,1,2
+490490027022,E 1250 South St,local street,False,0.027,1,E 1250 S,Provo city,3,1,2
+490490027022,E 1270 South St,local street,False,0.037,1,E 1270 S,Provo city,3,1,2
+490490027022,E 1280 South St,local street,False,0.038,2,1280 S; E 1280 S,Provo city,3,1,2
+490490027022,E 1300 South St,local street,False,0.062,1,E 1300 S,Provo city,3,1,2
+490490027022,E 1320 South St,local street,False,0.491,3,E 1320 S; E 1400 S; S 1470 E,Provo city,3,1,2
+490490027022,E 1350 South St,local street,False,0.033,1,E 1350 S,Provo city,3,1,2
+490490027022,E 1370 South St,local street,False,0.129,1,E 1370 S,Provo city,3,1,2
+490490027022,E 1400 South St,local street,False,0.054,1,E 1400 S,Provo city,3,1,2
+490490027022,E 1440 South St,local street,False,0.153,3,E 1440 S; S 1420 E; S 1420 East St,Provo city,3,1,2
+490490027022,E 1640 South St,local street,False,0.137,2,E 1640 S,Provo city,3,1,2
+490490027022,E 1700 South St,local street,False,0.019,1,E 1700 S,Provo city,3,1,2
+490490027022,E 900 South St,local street,False,0.336,1,E 900 S,Provo city,3,1,2
+490490027022,E 920 South St,local street,False,0.009,1,E 920 S,Provo city,3,1,2
+490490027022,E 930 South St,local street,False,0.097,1,E 930 S,Provo city,3,1,2
+490490027022,E 950 South St,local street,False,0.009,1,E 950 S,Provo city,3,1,2
+490490027022,E 960 South St,local street,False,0.158,2,E 960 S,Provo city,3,1,2
+490490027022,E Dakota Ln,local street,False,0.01,1,,Provo city,3,1,2
+490490027022,Eastbay Blvd,local street,False,0.011,1,E Bay Blvd,Provo city,3,1,2
+490490027022,Idaho Ave,local street,False,0.009,1,S 1150 E,Provo city,3,1,2
+490490027022,Nevada Ave,local street,False,0.502,1,,Provo city,3,1,2
+490490027022,S 1230 East St,local street,False,0.07,1,S 1230 E,Provo city,3,1,2
+490490027022,S 1300 East St,local street,False,0.04,1,S 1300 E,Provo city,3,1,2
+490490027022,S 1350 East St,local street,False,0.009,1,S 1350 E,Provo city,3,1,2
+490490027022,S 1370 East St,local street,False,0.048,1,S 1370 E,Provo city,3,1,2
+490490027022,S 1400 East St,local street,False,0.084,1,S 1400 E,Provo city,3,1,2
+490490027022,S 1410 East St,local street,False,0.195,1,S 1410 E,Provo city,3,1,2
+490490027022,S 1420 East St,local street,False,0.193,2,S 1420 E,Provo city,3,1,2
+490490027022,S 1430 East St,local street,False,0.109,1,S 1430 E,Provo city,3,1,2
+490490027022,S 1440 East St,local street,False,0.121,1,S 1440 E,Provo city,3,1,2
+490490027022,S 1450 East St,local street,False,0.057,1,S 1450 E,Provo city,3,1,2
+490490027022,S 1460 East St,local street,False,0.058,1,S 1460 E,Provo city,3,1,2
+490490027022,S 1470 East St,local street,False,0.248,2,S 1470 E,Provo city,3,1,2
+490490027022,S 1480 East St,local street,False,0.049,1,S 1480 E,Provo city,3,1,2
+490490027022,S 1500 East St,local street,False,0.048,1,S 1500 E,Provo city,3,1,2
+490490027022,S 1510 East St,local street,False,0.031,1,S 1510 E,Provo city,3,1,2
+490490027022,S 1540 East St,local street,False,0.028,1,S 1540 E,Provo city,3,1,2
+490490027022,S 1550 East St,local street,False,0.031,1,S 1550 E,Provo city,3,1,2
+490490027022,S 1590 East St,local street,False,0.031,1,S 1590 E,Provo city,3,1,2
+490490027022,S 1650 East St,local street,False,0.051,1,S 1650 E,Provo city,3,1,2
+490490027022,S 1710 East St,local street,False,0.113,1,S 1710 E,Provo city,3,1,2
+490490027022,S Nevada Cir,local street,False,0.038,1,E 1200 S,Provo city,3,1,2
+490490027022,S Slate Canyon Dr,local street,False,0.722,1,,Provo city,3,1,2
+490490027022,S State St,secondary road,False,1.168,1,US Hwy 89,Provo city,3,1,2
+490490027022,Slate Canyon Dr,local street,False,0.009,1,1860 S,Provo city,3,1,2
+490490027022,W 1120 East St,local street,False,0.048,1,W 1120 E,Provo city,3,1,2
+490490027022,W 1140 East St,local street,False,0.057,1,W 1140 E,Provo city,3,1,2
+490490020021,1025 W,local street,False,0.058,1,,Provo city,1,1,3
+490490020021,Independence Ave,local street,False,0.051,2,N 1890 W,Provo city,1,1,3
+490490020021,N 1020 West St,local street,False,0.009,1,N 1020 W,Provo city,1,1,3
+490490020021,N 1050 West St,local street,False,0.149,1,N 1050 W,Provo city,1,1,3
+490490020021,N 1080 West St,local street,False,0.085,1,N 1080 W,Provo city,1,1,3
+490490020021,N 1100 West St,local street,False,0.038,1,N 1100 W,Provo city,1,1,3
+490490020021,N 1150 West St,local street,False,0.037,1,N 1150 W,Provo city,1,1,3
+490490020021,N 1220 West St,local street,False,0.009,1,N 1220 W,Provo city,1,1,3
+490490020021,N 1260 West St,local street,False,0.106,1,N 1260 W,Provo city,1,1,3
+490490020021,N 1280 West St,local street,False,0.009,1,N 1280 W,Provo city,1,1,3
+490490020021,N 1300 West St,local street,False,0.121,1,N 1300 W,Provo city,1,1,3
+490490020021,N 1350 West St,local street,False,0.017,1,N 1350 W,Provo city,1,1,3
+490490020021,N 1375 West St,local street,False,0.009,1,N 1375 W,Provo city,1,1,3
+490490020021,N 850 West St,local street,False,0.272,2,N 850 W; N 890 W,Provo city,1,1,3
+490490020021,N 900 West St,local street,False,0.009,1,N 900 W,Provo city,1,1,3
+490490020021,N 970 West St,local street,False,0.336,2,N 970 W; W 800 N,Provo city,1,1,3
+490490020021,W 500 North St,local street,False,0.684,2,W 500 N,Provo city,1,1,3
+490490020021,W 570 North St,local street,False,0.102,1,W 570 N,Provo city,1,1,3
+490490020021,W 580 North St,local street,False,0.047,1,W 580 N,Provo city,1,1,3
+490490020021,W 590 North St,local street,False,0.089,1,W 590 N,Provo city,1,1,3
+490490020021,W 650 North St,local street,False,0.14,1,W 650 N,Provo city,1,1,3
+490490020021,W 700 North St,local street,False,0.03,1,W 700 N,Provo city,1,1,3
+490490020021,W 800 North St,local street,False,0.075,1,W 800 N,Provo city,1,1,3
+490490021013,(unnamed),local street,False,0.02,1,,Provo city,4,1,4
+490490021013,Cobblestone Dr,local street,False,0.261,1,,Provo city,4,1,4
+490490021013,Columbia Ln,local street,False,0.47,1,,Provo city,4,1,4
+490490021013,E 2000 South St,local street,False,0.269,1,E 2000 S,Provo city,4,1,4
+490490021013,N 1050 West St,local street,False,0.087,1,N 1050 W,Provo city,4,1,4
+490490021013,N 1120 West St,local street,False,0.009,1,N 1120 W,Provo city,4,1,4
+490490021013,N 1140 West St,local street,False,0.092,1,N 1140 W,Provo city,4,1,4
+490490021013,N 1160 West St,local street,False,0.019,1,N 1160 W,Provo city,4,1,4
+490490021013,N 1220 West St,local street,False,0.009,1,N 1220 W,Provo city,4,1,4
+490490021013,N 1250 West St,local street,False,0.216,1,N 1250 W,Provo city,4,1,4
+490490021013,N 1290 West St,local street,False,0.029,1,N 1290 W,Provo city,4,1,4
+490490021013,N 1350 West St,local street,False,0.464,2,N 1350 W,Provo city,4,1,4
+490490021013,N 1400 West St,local street,False,0.298,1,N 1400 W,Provo city,4,1,4
+490490021013,N 1420 West St,local street,False,0.126,1,N 1420 W,Provo city,4,1,4
+490490021013,N 1450 West St,local street,False,0.216,1,N 1450 W,Provo city,4,1,4
+490490021013,N 1500 West St,local street,False,0.451,1,N 1500 W,Provo city,4,1,4
+490490021013,N 950 West St,local street,False,0.01,1,N 950 W,Provo city,4,1,4
+490490021013,N Grandview Ln,local street,False,0.01,1,W Grandview Ln,Provo city,4,1,4
+490490021013,N Jordan Ave,local street,False,0.187,1,Jordan Ave,Provo city,4,1,4
+490490021013,Nottingham Ct,local street,False,0.051,1,,Provo city,4,1,4
+490490021013,S 424 East St,local street,False,0.009,1,S 424 E,Provo city,4,1,4
+490490021013,S 520 East St,local street,False,0.009,1,S 520 E,Provo city,4,1,4
+490490021013,S Columbia Ln,local street,False,0.101,1,,Provo city,4,1,4
+490490021013,W 1460 North St,local street,False,0.442,2,W 1460 N; W 1730 N,Provo city,4,1,4
+490490021013,W 1500 North St,local street,False,0.051,2,N 1450 W; N 1450 West St; W 1500 N,Provo city,4,1,4
+490490021013,W 1600 North St,local street,False,0.097,1,W 1600 N,Provo city,4,1,4
+490490021013,W 1700 North St,local street,False,0.528,1,W 1700 N,Provo city,4,1,4
+490490021013,W 1800 North St,local street,False,0.061,1,Green Ave; W 1800 N,Provo city,4,1,4
+490490021013,W 1825 North St,local street,False,0.153,2,W 1825 N,Provo city,4,1,4
+490490021013,W 1870 North St,local street,False,0.14,1,W 1870 N,Provo city,4,1,4
+490490021013,W 1940 North St,local street,False,0.044,1,W 1940 N,Provo city,4,1,4
+490490021013,W 1950 North St,local street,False,0.075,1,W 1950 N,Provo city,4,1,4
+490490021013,W 1970 North St,local street,False,0.098,2,W 1970 N,Provo city,4,1,4
+490490021013,W 1980 North St,local street,False,0.193,1,W 1980 N,Provo city,4,1,4
+490490021013,W Grandview Ln,local street,False,0.199,1,,Provo city,4,1,4
+490490014043,(unnamed),local street,False,0.204,1,,Provo city,5,1,5
+490490014043,Cobblestone Dr,local street,False,0.01,1,,Provo city,5,1,5
+490490014043,Columbia Ln,local street,False,0.469,1,,Provo city,5,1,5
+490490014043,E 2000 South St,local street,False,0.009,1,E 2000 S,Provo city,5,1,5
+490490014043,Hickory Ln,local street,False,0.07,1,,Provo city,5,1,5
+490490014043,N 1120 West St,local street,False,0.255,1,N 1120 W,Provo city,5,1,5
+490490014043,N 1160 West St,local street,False,0.073,1,N 1160 W,Provo city,5,1,5
+490490014043,N 950 West St,local street,False,0.161,1,N 950 W,Provo city,5,1,5
+490490014043,N Cove Point Ln,local street,False,0.114,1,,Provo city,5,1,5
+490490014043,N Grandview Ln,local street,False,0.168,1,W Grandview Ln,Provo city,5,1,5
+490490014043,N State St,secondary road,False,0.468,1,US Hwy 89,Provo city,5,1,5
+490490014043,S Columbia Ln,local street,False,0.1,1,,Provo city,5,1,5
+490490014043,W 1700 North St,local street,False,0.009,1,W 1700 N,Provo city,5,1,5
+490490014043,W 1850 North St,local street,False,0.009,1,W 1850 N,Provo city,5,1,5
+490490014043,W 1950 North St,local street,False,0.009,1,W 1950 N,Provo city,5,1,5
+490490014043,W Grandview Ln,local street,False,0.019,2,W 1720 N,Provo city,5,1,5
+490490014043,Willowbrook Cir,local street,False,0.089,1,,Provo city,5,1,5
+490490014043,Willowbrook Dr,local street,False,0.174,1,,Provo city,5,1,5
+490490014043,Woodland Dr,local street,False,0.132,1,,Provo city,5,1,5
+490490014011,(unnamed),local street,False,0.371,1,,Provo city,0,1,6
+490490014011,250 West St,local street,False,0.341,1,N 250 W; N Cove Dr,Provo city,0,1,6
+490490014011,4200 North St,local street,False,0.01,1,,Provo city,0,1,6
+490490014011,Amhurst Rd,local street,False,0.18,1,,Provo city,0,1,6
+490490014011,Carterville Rd,local street,False,0.212,1,,Provo city,0,1,6
+490490014011,E 3700 North St,local street,False,0.009,1,E 3700 N,Provo city,0,1,6
+490490014011,E 800 South St,local street,False,0.02,1,E 800 S,Provo city,0,1,6
+490490014011,E Center St,local street,False,0.049,1,,Provo city,0,1,6
+490490014011,Edgewood Dr,local street,False,0.009,1,,Provo city,0,1,6
+490490014011,Foothill Dr,local street,False,0.009,1,,Provo city,0,1,6
+490490014011,Hidden Haven Ln,local street,False,0.132,1,,Provo city,0,1,6
+490490014011,N 100 West St,local street,False,0.025,1,N 100 W,Provo city,0,1,6
+490490014011,N 150 West St,local street,False,0.03,1,N 150 W,Provo city,0,1,6
+490490014011,N 25 West St,local street,False,0.051,1,N 25 W,Provo city,0,1,6
+490490014011,N 250 West St,local street,False,0.009,1,N 250 W,Provo city,0,1,6
+490490014011,N 300 West St,local street,False,0.498,1,N 300 W,Provo city,0,1,6
+490490014011,N 370 West St,local street,False,0.034,1,N 370 W,Provo city,0,1,6
+490490014011,N 380 West St,local street,False,0.117,1,N 380 W,Provo city,0,1,6
+490490014011,N 400 West St,local street,False,0.009,1,N 400 W,Provo city,0,1,6
+490490014011,N 420 West St,local street,False,0.044,1,N 420 W,Provo city,0,1,6
+490490014011,N 450 West St,local street,False,0.308,2,N 450 W; W 450 N,Provo city,0,1,6
+490490014011,N 50 West St,local street,False,0.12,2,N 50 W,Provo city,0,1,6
+490490014011,N Cove Dr,local street,False,0.034,1,190 W; N 190 W,Provo city,0,1,6
+490490014011,N Edgewood Cir,local street,False,0.106,1,,Provo city,0,1,6
+490490014011,N Edgewood Dr,local street,False,0.425,1,Edgewood Dr,Provo city,0,1,6
+490490014011,N Stone Xing,local street,False,0.203,1,Stone Xing,Provo city,0,1,6
+490490014011,N University Ave,secondary road,False,1.047,1,US Hwy 189,Provo city,0,1,6
+490490014011,N Vintage Dr,local street,False,0.278,1,Vintage Dr,Provo city,0,1,6
+490490014011,Northgate Dr,local street,False,0.097,1,,Provo city,0,1,6
+490490014011,River Ridge Ln,local street,False,0.029,1,,Provo city,0,1,6
+490490014011,Riverwood Cir,local street,False,0.032,1,,Provo city,0,1,6
+490490014011,Riverwood Dr,local street,False,0.298,1,,Provo city,0,1,6
+490490014011,Sheffield Dr,local street,False,0.317,1,,Provo city,0,1,6
+490490014011,Sheffield Xing,local street,False,0.018,1,,Provo city,0,1,6
+490490014011,Stafford Ct,local street,False,0.118,1,,Provo city,0,1,6
+490490014011,Stone Brook Ln,local street,False,0.123,1,,Provo city,0,1,6
+490490014011,Stone Creek Ln,local street,False,0.213,1,,Provo city,0,1,6
+490490014011,Stone Gate Ln,local street,False,0.523,1,,Provo city,0,1,6
+490490014011,Vintage Cir,local street,False,0.152,1,,Provo city,0,1,6
+490490014011,W 3700 North St,local street,False,0.518,1,W 3700 N,Provo city,0,1,6
+490490014011,W 3800 North St,local street,False,0.154,1,W 3800 N,Provo city,0,1,6
+490490014011,W 3900 North St,local street,False,0.137,1,W 3900 N,Provo city,0,1,6
+490490014011,W 3950 North St,local street,False,0.057,1,W 3950 N,Provo city,0,1,6
+490490014011,W 3960 North St,local street,False,0.157,1,W 3960 N,Provo city,0,1,6
+490490014011,W 4020 North St,local street,False,0.178,1,W 4020 N,Provo city,0,1,6
+490490014011,W 4100 North St,local street,False,0.119,1,W 4100 N,Provo city,0,1,6
+490490014011,W 4130 North St,local street,False,0.05,1,4130 N; W 4130 N,Provo city,0,1,6
+490490014011,W 4150 North St,local street,False,0.093,1,W 4150 N,Provo city,0,1,6
+490490014011,W 4200 North St,local street,False,0.121,2,W 4200 N,Provo city,0,1,6
+490490014011,W 4420 North St,local street,False,0.07,1,W 4420 N,Provo city,0,1,6
+490490014011,W 4440 North St,local street,False,0.038,1,W 4440 N,Provo city,0,1,6
+490490014011,W 4500 North St,local street,False,0.203,1,W 4500 N,Provo city,0,1,6
+490490014011,W 4600 North St,local street,False,0.131,1,W 4600 N,Provo city,0,1,6
+490490014011,W 4620 North St,local street,False,0.119,1,W 4620 N,Provo city,0,1,6
+490490014011,W 4630 North St,local street,False,0.08,1,W 4630 N,Provo city,0,1,6
+490490014011,W 4650 North St,local street,False,0.193,2,W 4650 N,Provo city,0,1,6
+490490014011,W 4750 North St,local street,False,0.213,1,W 4750 N,Provo city,0,1,6
+490490014011,W 4770 North St,local street,False,0.077,1,W 4770 N,Provo city,0,1,6
+490490014011,W 4800 North St,local street,False,0.506,1,W 4800 N,Provo city,0,1,6
+490490014011,W Stone Brook Ln,local street,False,0.16,1,Stone Brook Ln,Provo city,0,1,6
+490490014011,W Vintage Dr,local street,False,0.099,1,Vintage Dr,Provo city,0,1,6

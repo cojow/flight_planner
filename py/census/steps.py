@@ -8,7 +8,8 @@ Every step:
   - refuses to run if a step it depends on hasn't run, or ran with different
     settings (StepError says which),
   - writes its files to its own subfolder, plus inputs.json recording the
-    settings fingerprint, the time and the package versions,
+    settings fingerprint, the code version, the time, the package versions
+    and every raw input file it read (with its SHA-256),
   - returns a StepResult: the files it wrote and a plain-text report.
 
     folder = config.run_dir("provo_orem")
@@ -136,13 +137,15 @@ def _start(folder, step):
 
 def _run(folder, step, work):
     """Start a step, do its work, record it. Data problems come back as StepError."""
-    from .sources import CensusError
+    from . import sources
     config, out = _start(folder, step)
+    sources.start_recording()
     try:
         files, report = work(config, out)
-    except (CensusError, ValueError) as exc:
+    except (sources.CensusError, ValueError) as exc:
         raise StepError(str(exc)) from exc
-    return _finish(folder, step, config, files, report)
+    return _finish(folder, step, config, files, report,
+                   {"code": cfg.code_version(), "inputs": sources.recorded()})
 
 
 def run_areas(folder):
@@ -188,8 +191,8 @@ def run_sample(folder):
 
     Files, each named with the draw's seed (e.g. sample_block_groups_seed2026.csv):
     sample_block_groups, sample_streets (.csv and .geojson), sample_block_groups.png,
-    sample_map.png, sample_streets_map.png. Also faa_facility_map.geojson (the
-    airspace the draw used) and sources.json.
+    sample_map.png, sample_streets_map.png. Also faa_facility_map.geojson and
+    national_security_areas.geojson (the airspace the draw used) and sources.json.
     """
     from . import pipeline
     return _run(folder, "sample", lambda config, out: pipeline.sample(config, folder, out))

@@ -26,7 +26,7 @@ st.set_page_config(page_title="Census sampling", layout="wide")
 
 TITLES = {"areas": "1 Areas", "choose_k": "2 Choose k", "cluster": "3 Cluster", "sample": "4 Sample",
           "groups": "5 Street groups"}
-MARKERS = {"not run": "⚪ not run", "current": "🟢 current", "stale": "🟠 stale (settings changed since it ran)"}
+MARKERS = {"not run": "⚪ not run", "current": "🟢 current", "stale": "🟠 stale (settings or code changed since it ran)"}
 
 # The choices the package accepts.
 ROAD_TYPES = streets.ROAD_TYPES     # Census road code -> what it is
@@ -251,9 +251,24 @@ def tab_sample(folder, config):
     c1, c2 = st.columns(2)
     high_flight_ft = c1.number_input("High (nadir) flight height, ft", 1, 400, int(s["high_flight_ft"]),
                                      step=10, key=f"{key}:high")
-    restricted_share = c2.number_input(
-        "Not eligible when this share is under a ceiling below that height",
-        0.01, 1.0, float(s["restricted_share"]), step=0.05, key=f"{key}:share")
+    choices = list(cfg.FLY_RESTRICTED)
+    short = {"no": "No (default)", "laanc": "Yes, with LAANC authorization"}
+    fly_restricted = c2.selectbox(
+        "Fly restricted airspace?", choices,
+        index=choices.index(s["fly_restricted"]) if s["fly_restricted"] in choices else 0,
+        format_func=lambda c: short.get(c, c), key=f"{key}:fly_restricted",
+        help="Restricted airspace = FAA facility map squares with a ceiling under the high flight height.\n\n"
+             + "\n\n".join(f"**{short[c]}**: {text.split(': ', 1)[1]}." for c, text in cfg.FLY_RESTRICTED.items())
+             + "\n\nLAANC only approves up to a square's ceiling instantly; above it (0 ft squares included) "
+               "request authorization ahead of time (further coordination). Picks that need it are marked "
+               "airspace = approval, and their streets in those squares are drawn dashed.\n\n"
+               "National security areas (military bases and the like) are never flown, whatever this says: "
+               "the parts of block groups inside them are always off-limits, and their streets aren't listed.")
+    restricted_share = c1.number_input(
+        "Not eligible when this share is under airspace that isn't flown",
+        0.01, 1.0, float(s["restricted_share"]), step=0.05, key=f"{key}:share",
+        help="Airspace that isn't flown: national security areas always, and FAA squares with a ceiling under "
+             "the high flight unless restricted airspace is flown.")
 
     c1, c2 = st.columns(2)
     buffer_m = c1.number_input("Count streets this close outside the edge, m", 0, 500, int(s["buffer_m"]),
@@ -277,7 +292,8 @@ def tab_sample(folder, config):
 
     changes = {"sample": dict(
         s, per_cluster=int(per_cluster), seed=int(seed), weights=weights,
-        high_flight_ft=int(high_flight_ft), restricted_share=float(restricted_share),
+        high_flight_ft=int(high_flight_ft), fly_restricted=fly_restricted,
+        restricted_share=float(restricted_share),
         buffer_m=int(buffer_m), min_segment_m=int(min_segment_m), street_types=street_types,
         start_lat=float(start_lat), start_lon=float(start_lon))}
     save_and_run(folder, "sample", changes)
@@ -393,6 +409,8 @@ def main():
     for step, title in TITLES.items():
         st.sidebar.write(f"{title}: {MARKERS[states[step]]}")
     st.sidebar.caption(f"Folder: {folder}")
+    st.sidebar.caption(f"To let others reproduce this run, publish it from a terminal: "
+                       f"`uv run census publish {run}` (see py/census/README.md).")
     st.caption("Cities: " + ", ".join(p["name"] for p in config["areas"]["places"]))
 
     tabs = st.tabs(list(TITLES.values()), key="tab")

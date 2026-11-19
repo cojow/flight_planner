@@ -1,0 +1,60 @@
+{
+  "areas": {
+    "state": "49",
+    "county": "049",
+    "year": 2024,
+    "places": [
+      {
+        "geoid": "4962470",
+        "name": "Provo"
+      }
+    ],
+    "min_overlap": 0.5,
+    "exclude": []
+  },
+  "features": {
+    "columns": [
+      "median_household_income",
+      "median_age_years_all"
+    ],
+    "seed": 0,
+    "n_init": 10
+  },
+  "choose_k": {
+    "k_min": 2,
+    "k_max": 8,
+    "preview": [
+      3,
+      4,
+      5
+    ]
+  },
+  "cluster": {
+    "k": 6
+  },
+  "sample": {
+    "per_cluster": 1,
+    "seed": 2026,
+    "weights": "eligible",
+    "high_flight_ft": 200,
+    "fly_restricted": "no",
+    "restricted_share": 0.25,
+    "buffer_m": 15,
+    "min_segment_m": 10,
+    "street_types": [
+      "S1200",
+      "S1400"
+    ],
+    "start_lat": 40.2338,
+    "start_lon": -111.6585
+  },
+  "groups": {
+    "per_block_group": 3,
+    "names": {
+      "1": "Emma",
+      "2": "Samantha",
+      "3": "Elizabeth"
+    }
+  },
+  "name": "streets_to_fly_seed2026"
+}

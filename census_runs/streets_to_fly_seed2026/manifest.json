@@ -1,0 +1,71 @@
+{
+  "run": "streets_to_fly_seed2026",
+  "published": "2026-11-18 11:32",
+  "code": "7811f9294f65fadf",
+  "versions": {
+    "python": "3.12.2",
+    "pandas": "2.3.3",
+    "numpy": "2.5.5",
+    "scikit-learn": "1.9.1",
+    "shapely": "2.2.0",
+    "matplotlib": "3.11.2",
+    "requests": "2.34.2"
+  },
+  "faa": {
+    "snapshot": "faa/421665466e6da17d.geojson",
+    "fetched": "2026-11-18 11:32"
+  },
+  "national_security": {
+    "snapshot": "nsufr/7d09e532fc380630.geojson",
+    "fetched": "2026-11-18 11:32"
+  },
+  "archive": {
+    "file": "streets_to_fly_seed2026_inputs.zip",
+    "sha256": "3d9160893a0006584a40f83f77cf8e4ce24e5b0c4c964af8ad6802423b844033",
+    "bytes": 17131830,
+    "url": ""
+  },
+  "inputs": {
+    "cache/867781b68e7bb4da1cfa.json": {
+      "sha256": "a6522603b26aade5a246df10761423e87ef5622f51ce7897453456985b60be78",
+      "bytes": 129322
+    },
+    "faa/421665466e6da17d.geojson": {
+      "sha256": "421665466e6da17d0e8ff5a3dd11b366c0d48a5ca294d4da05de7e6685953e97",
+      "bytes": 53002
+    },
+    "nsufr/7d09e532fc380630.geojson": {
+      "sha256": "7d09e532fc380630caac6b4b1b5174a7a9f7a308f6544bcb79eefb97b1e12306",
+      "bytes": 45
+    },
+    "tiger/tl_2024_49049_roads.zip": {
+      "sha256": "3f4d819b2a50a3c0cfcbc1c603248834e36a06d6a1fdb34802a862c151a6dbae",
+      "bytes": 6959855
+    },
+    "tiger/tl_2024_49_bg.zip": {
+      "sha256": "2770ae77529841faf36064b7a0ac39423a35ca85a7cb8215805edb8aebebaf79",
+      "bytes": 8577438
+    },
+    "tiger/tl_2024_49_place.zip": {
+      "sha256": "b1404bfbd5e80d505b270f3e20aa79b4cead51168c0d944e465e60585ddc8de6",
+      "bytes": 1640516
+    }
+  },
+  "results": {
+    "1_areas/block_groups.csv": "01f1e285b1a591f0c489db1448bedc099dfe8e8820796394e059b2c2c90ab505",
+    "1_areas/block_groups.geojson": "a3b9a5e7a3b4df940a22d47d270a3ac7e21f226661fdf19834d547e48d519a33",
+    "1_areas/county_block_groups.csv": "6ae2a4227b2f8ca922835ff75bafade716589200d02b1000374578da16fca4b5",
+    "2_choose_k/k_scores.csv": "e6aff4954c24db65760ab16cbc461e8f5ff41be8d1b3298a7f653f2af75080ba",
+    "2_choose_k/preview_summary.csv": "3335ed8365c34c65609c9d2b2f86f99f900360e31fb9fe361960eb3cc59d9bcf",
+    "3_cluster/clusters.csv": "7b79699b36e79f6d1cf9b2a104648a45f452bbe3de15adf88f8e6bf5ad370eed",
+    "3_cluster/cluster_summary.csv": "2f052278888f3173bc171d7ae47dca4b6f163e2dae6de3d8eb205d1dd82f907e",
+    "4_sample/sample_block_groups_seed2026.csv": "a94bc2b8676f0581e06024557ce87d9b736cd5650d92afc74c8b8d93faee64c2",
+    "4_sample/sample_streets_seed2026.csv": "7bc13979529f4a84561c8d55a5f8efa403c8720f0c1fc8f45a0dfca816feb1e4",
+    "4_sample/sample_streets_seed2026.geojson": "dd0787721ec7658fadb5b097e11b93b6a5d788eeda4ee38258ede3e3f6170433",
+    "4_sample/faa_facility_map.geojson": "421665466e6da17d0e8ff5a3dd11b366c0d48a5ca294d4da05de7e6685953e97",
+    "4_sample/national_security_areas.geojson": "7d09e532fc380630caac6b4b1b5174a7a9f7a308f6544bcb79eefb97b1e12306",
+    "5_groups/street_groups_seed2026.csv": "181767bc369f543fdd33c8c54ba22d8a1c93688e2d66505b7ab06f80a2f935c4",
+    "5_groups/street_group_summary_seed2026.csv": "a40e4285307ed212b1094f1b28d98a3459f523d88a97c9e83317fff5e6b3560a",
+    "5_groups/street_groups_seed2026.geojson": "4cec92aec3dab74962ee399c2ede729ab857910e4acb0cb87bc1798d03c57ddb"
+  }
+}

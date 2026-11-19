@@ -1965,6 +1965,134 @@ def fetch_uasfm_data(center_lat, center_lon, radius_deg=0.05):
     except Exception:
         return None
 
+
+# Temporary flight restrictions, from the FAA's TFR site (tfr.faa.gov). Its
+# map reads the shapes from this GeoServer layer: the active TFRs only, one
+# shape per NOTAM. The altitudes and times are in each NOTAM's XML. Neither
+# is a documented API, and the FAA has moved these endpoints before, so a
+# failure is shown on the map rather than looking like "no TFRs".
+TFR_WFS_URL = "https://tfr.faa.gov/geoserver/TFR/ows"
+TFR_DETAIL_URL = "https://tfr.faa.gov/download/detail_{}.xml"
+# 14 CFR 99.7 national security UAS flight restrictions, on the same FAA
+# ArcGIS server as the facility map. No drone may fly in these without the
+# proponent's approval: full time ones always, part time ones while a NOTAM
+# activates them.
+NSUFR_URLS = {
+    "Full time": "https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/DoD_Mar_13/FeatureServer/0/query",
+    "Part time (active by NOTAM)": "https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Part_Time_National_Security_UAS_Flight_Restrictions/FeatureServer/0/query",
+}
+TFR_COLOR = "#ffd400"       # yellow: clear of the facility map's red/green and the samples' magenta
+NSUFR_COLOR = "#8b0000"     # dark red, drawn heavier: never flown
+
+
+def _read_url(url):
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECONDS) as response:
+        return response.read()
+
+
+def _tfr_altitude(area, end):
+    """One end ("Lower" or "Upper") of a TFR area, e.g. "400 ft AGL"."""
+    value = area.findtext(f"valDistVer{end}")
+    if value is None:
+        return "?"
+    code = area.findtext(f"codeDistVer{end}")
+    if code == "STD":
+        return f"FL{value}"
+    if value == "0" and end == "Lower":
+        return "surface"
+    unit = (area.findtext(f"uomDistVer{end}") or "FT").lower()
+    return f"{value} {unit} {'AGL' if code == 'HEI' else 'MSL'}"
+
+
+@st.cache_data(ttl=3600)
+def _fetch_tfr_detail(notam_id):
+    root = ET.fromstring(_read_url(TFR_DETAIL_URL.format(notam_id.replace("/", "_"))).decode("utf-8-sig"))
+    notam = root.find(".//Not")
+    start, end = notam.findtext("dateEffective"), notam.findtext("dateExpire")
+    zone = notam.findtext("codeTimeZone") or ""
+    times = (f"{start.replace('T', ' ')[:16] if start else 'now'} to "
+             f"{end.replace('T', ' ')[:16] if end else 'further notice'} {zone}").strip()
+    areas = [f"{a.findtext('txtName') or 'Area'}: {_tfr_altitude(a, 'Lower')} to {_tfr_altitude(a, 'Upper')}"
+             for a in root.iter("aseTFRArea")]
+    return {"Times": times, "Altitudes": "; ".join(areas) or "see tfr.faa.gov"}
+
+
+@st.cache_data(ttl=900)
+def _fetch_tfr_data(center_lat, center_lon, radius_deg):
+    params = {
+        "service": "WFS", "version": "1.1.0", "request": "GetFeature", "typeName": "TFR:V_TFR_LOC",
+        "outputFormat": "application/json", "srsname": "EPSG:4326",
+        "bbox": f"{center_lon - radius_deg},{center_lat - radius_deg},{center_lon + radius_deg},{center_lat + radius_deg},EPSG:4326",
+    }
+    data = json.loads(_read_url(f"{TFR_WFS_URL}?{urllib.parse.urlencode(params)}").decode("utf-8"))
+    for f in data.get("features", []):
+        p = f["properties"]
+        p["NOTAM"] = (p.get("NOTAM_KEY") or "").split("-")[0]
+        try:
+            p.update(_fetch_tfr_detail(p["NOTAM"]))
+        except Exception:
+            # The shape alone still says "don't fly here"; the details are on the site.
+            p.update({"Times": "see tfr.faa.gov", "Altitudes": "see tfr.faa.gov"})
+    return data
+
+
+@st.cache_data(ttl=3600)
+def _fetch_nsufr_data(center_lat, center_lon, radius_deg):
+    features = []
+    for schedule, url in NSUFR_URLS.items():
+        params = {
+            "where": "1=1", "geometry": f"{center_lon - radius_deg},{center_lat - radius_deg},{center_lon + radius_deg},{center_lat + radius_deg}",
+            "geometryType": "esriGeometryEnvelope", "inSR": "4326", "spatialRel": "esriSpatialRelIntersects",
+            "outFields": "Facility,Base,Floor,Ceiling,POC", "outSR": "4326", "f": "geojson",
+        }
+        data = json.loads(_read_url(f"{url}?{urllib.parse.urlencode(params)}").decode("utf-8"))
+        if "error" in data:
+            raise RuntimeError(f"National security restrictions service error: {data['error']}")
+        for f in data.get("features", []):
+            f["properties"]["Schedule"] = schedule
+            features.append(f)
+    return {"type": "FeatureCollection", "features": features}
+
+
+def add_tfr_layers(fmap, center, radius_deg=0.05):
+    """
+    Draws the TFRs and national security UAS flight restrictions around
+    `center`, or a note on the map saying there are none, or that they
+    couldn't be loaded.
+    """
+    loaded = []
+    for fetch in (_fetch_tfr_data, _fetch_nsufr_data):
+        try:
+            loaded.append(fetch(center[0], center[1], radius_deg))
+        except Exception:
+            loaded.append(None)
+    tfrs, nsufr = loaded
+    if tfrs and tfrs.get("features"):
+        folium.GeoJson(
+            tfrs, name="TFRs",
+            style_function=lambda x: {'fillColor': TFR_COLOR, 'color': TFR_COLOR, 'weight': 3, 'dashArray': '8 6', 'fillOpacity': 0.2},
+            tooltip=folium.GeoJsonTooltip(fields=['TITLE', 'LEGAL', 'NOTAM', 'Altitudes', 'Times'],
+                                          aliases=['TFR:', 'Type:', 'NOTAM:', 'Altitudes:', 'Active:'])
+        ).add_to(fmap)
+    if nsufr and nsufr.get("features"):
+        folium.GeoJson(
+            nsufr, name="National Security UAS Flight Restrictions",
+            style_function=lambda x: {'fillColor': NSUFR_COLOR, 'color': NSUFR_COLOR, 'weight': 3, 'fillOpacity': 0.35},
+            tooltip=folium.GeoJsonTooltip(fields=['Facility', 'Schedule', 'Floor', 'Ceiling', 'POC'],
+                                          aliases=['No drones (national security):', 'Restricted:', 'Floor:', 'Ceiling:', 'Contact:'])
+        ).add_to(fmap)
+    if tfrs is None or nsufr is None:
+        failed = " and ".join(n for n, d in (("TFRs", tfrs), ("national security areas", nsufr)) if d is None)
+        note = f"Couldn't load {failed}: check tfr.faa.gov before flying"
+        color = "#c00000"
+    elif not tfrs.get("features") and not nsufr.get("features"):
+        note, color = "No TFRs or national security areas here", "grey"
+    else:
+        return
+    # Pushed down a line so it doesn't sit on the facility map's own note.
+    folium.Marker(center, icon=DivIcon(html=f'<div style="font-size: 10px; color: {color}; width: 200px; margin-top: 16px;">{note}</div>')).add_to(fmap)
+
 # Block groups picked by the Census Sampling app (census_app.py), saved there
 # under a name as census_samples/<name>.geojson: one feature per block group,
 # with its GEOID, city, cluster, fly order and street miles.
@@ -2092,7 +2220,7 @@ def street_group_controls(prefix, sample):
     miles = sum(f["properties"].get("miles") or 0 for f in chosen)
     blocked = sum(f["properties"].get("miles") or 0 for f in chosen if f["properties"].get("restricted"))
     st.caption(f"{n_groups} groups, {len(chosen)} stretches, {miles:.1f} mi."
-               + (f" Dashed: {blocked:.2f} mi in restricted airspace, needing FAA authorization." if blocked else "")
+               + (f" Dashed: {blocked:.2f} mi in restricted airspace, needing LAANC authorization requested in advance." if blocked else "")
                + " Click a street for its mission name.")
     return (sample.get("sample", {}).get("saved"), only), chosen
 
@@ -2119,7 +2247,7 @@ def add_street_groups_layer(fmap, streets):
             rows = "".join(f'<tr><td style="padding-right: 8px;"><b>{label}</b></td><td>{escape(str(p.get(field)))}</td></tr>'
                            for field, label in STREET_DETAILS if p.get(field) not in (None, ""))
             if p.get("restricted"):
-                rows += '<tr><td colspan="2"><b>Restricted airspace:</b> get FAA authorization before flying</td></tr>'
+                rows += '<tr><td colspan="2"><b>Restricted airspace:</b> fly only with LAANC authorization requested in advance</td></tr>'
             geom = f["geometry"]
             parts = [geom["coordinates"]] if geom["type"] == "LineString" else geom["coordinates"]
             for part in parts:
@@ -4006,7 +4134,7 @@ if "e_bounds" not in st.session_state: st.session_state.e_bounds = True
 EDITOR_KEPT_KEYS = [
     "e_name_input", "e_alt_ft", "e_pitch", "e_side", "e_source", "e_tif", "e_bounds",
     "e_trigger_type", "e_t_dist_val", "e_overlap_pct", "e_t_time_val", "e_target_gap_ft",
-    "edit_dir", "editor_faa_toggle", "e_cam_profile",
+    "edit_dir", "editor_faa_toggle", "editor_tfr_toggle", "e_cam_profile",
 ]
 for _key in EDITOR_KEPT_KEYS:
     if _key in st.session_state:
@@ -4108,7 +4236,7 @@ for _key, _default in CREATOR_DEFAULTS.items():
 # The Save Destination and the FAA map layer aren't preset settings, but
 # they are kept the same way, so a tab switch doesn't reset them either -
 # and so is the Viewer's camera choice, which has nowhere else to live.
-for _key in CREATOR_PRESET_KEYS + ["c_save_option", "creator_faa_toggle", "v_cam_profile"]:
+for _key in CREATOR_PRESET_KEYS + ["c_save_option", "creator_faa_toggle", "creator_tfr_toggle", "v_cam_profile"]:
     if _key in st.session_state:
         st.session_state[_key] = st.session_state[_key]
 
@@ -6403,7 +6531,8 @@ if page == 'Creator':
 
         st.header("6. Visuals")
         show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="creator_faa_toggle", help=param_help("Show FAA Airspace Restrictions"))
-        if show_faa_airspace:
+        show_tfrs = st.checkbox("Show TFRs and National Security Areas", value=False, key="creator_tfr_toggle", help=param_help("Show TFRs and National Security Areas"))
+        if show_faa_airspace or show_tfrs:
             st.write("#### Update restrictions of map center")
             if st.button("Update Map Center", key="btn_update_creator"):
                 st.session_state.locked_creator_center = st.session_state.creator_center
@@ -6592,7 +6721,8 @@ if page == 'Creator':
         map_sig = (
             mapping_mode,
             bool(show_faa_airspace),
-            tuple(st.session_state.locked_creator_center) if show_faa_airspace else None,
+            bool(show_tfrs),
+            tuple(st.session_state.locked_creator_center) if (show_faa_airspace or show_tfrs) else None,
             c_tif_path if (c_elev_source == "Local GeoTIFF" and c_show_bounds) else None,
             tuple(tuple(p) for p in (st.session_state.map_boundary or ())),
             (safe_get_float('map_alt_ft', 100.0), safe_get_float('map_pitch', -90.0),
@@ -6636,6 +6766,9 @@ if page == 'Creator':
                 ).add_to(m)
             elif uasfm_data:
                 folium.Marker(st.session_state.locked_creator_center, icon=DivIcon(html='<div style="font-size: 12px; color: grey;">No FAA restrictions at this location</div>')).add_to(m)
+
+        if show_tfrs:
+            add_tfr_layers(m, st.session_state.locked_creator_center)
 
         if logged_flights:
             add_logged_flights_layer(m, logged_flights, flight_cones)
@@ -7375,7 +7508,8 @@ elif page == 'Editor':
                     "the ground. Footprints are hidden at this angle."
                 )
             show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="editor_faa_toggle", help=param_help("Show FAA Airspace Restrictions"))
-            if show_faa_airspace:
+            show_tfrs = st.checkbox("Show TFRs and National Security Areas", value=False, key="editor_tfr_toggle", help=param_help("Show TFRs and National Security Areas"))
+            if show_faa_airspace or show_tfrs:
                 st.write("#### Update restrictions of map center")
                 if st.button("Update Map Center", key="btn_update_editor"):
                     st.session_state.locked_editor_center = st.session_state.editor_center
@@ -7414,6 +7548,9 @@ elif page == 'Editor':
                     ).add_to(m_edit)
                 elif uasfm_data:
                     folium.Marker(st.session_state.locked_editor_center, icon=DivIcon(html='<div style="font-size: 10px; color: grey; width: 150px;">No FAA restrictions at this location</div>')).add_to(m_edit)
+
+            if show_tfrs:
+                add_tfr_layers(m_edit, st.session_state.locked_editor_center)
 
             if editor_logged_flights:
                 add_logged_flights_layer(m_edit, editor_logged_flights, editor_flight_cones)
@@ -7726,7 +7863,8 @@ elif page == 'Viewer  |':
             v_camera = camera_select("v_cam_profile")
             show_footprints = st.checkbox("Show Image Footprints", value=True, help=param_help("Show Image Footprints"))
             show_faa_airspace = st.checkbox("Show FAA Airspace Restrictions", value=False, key="viewer_faa_toggle", help=param_help("Show FAA Airspace Restrictions"))
-            if show_faa_airspace:
+            show_tfrs = st.checkbox("Show TFRs and National Security Areas", value=False, key="viewer_tfr_toggle", help=param_help("Show TFRs and National Security Areas"))
+            if show_faa_airspace or show_tfrs:
                 st.write("#### Update restrictions of map center")
                 if st.button("Update Map Center", key="btn_update_viewer"):
                     st.session_state.locked_viewer_center = st.session_state.viewer_center
@@ -7873,6 +8011,9 @@ elif page == 'Viewer  |':
                                         ).add_to(m_view)
                                 elif uasfm_data:
                                     folium.Marker(st.session_state.locked_viewer_center, icon=DivIcon(html='<div style="font-size: 10px; color: grey; width: 150px;">No FAA restrictions at this location</div>')).add_to(m_view)
+
+                            if show_tfrs:
+                                add_tfr_layers(m_view, st.session_state.locked_viewer_center)
 
                             if viewer_logged_flights:
                                 add_logged_flights_layer(m_view, viewer_logged_flights, viewer_flight_cones)

@@ -7,6 +7,7 @@ Each function takes the run's config and the step's output folder, and returns
 """
 import io
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -15,7 +16,7 @@ from shapely.geometry import mapping, shape
 
 from . import acs, clustering, geography, plots, sampling, streets
 from . import groups as street_groups
-from .config import STEPS
+from .config import FLY_RESTRICTED, STEPS
 from .steps import outputs
 
 
@@ -197,13 +198,16 @@ def sample(config, folder, out):
     k = config["cluster"]["k"]
 
     notes = []
-    cells = sampling.faa_cells(shapely.union_all([boundaries[g] for g in df["geoid"]]).bounds,
-                               save_to=out / "faa_facility_map.geojson")
-    status =[sampling.airspace_status(boundaries[g], cells, s["high_flight_ft"], s["restricted_share"])
+    bounds = shapely.union_all([boundaries[g] for g in df["geoid"]]).bounds
+    cells = sampling.faa_cells(bounds, save_to=out / "faa_facility_map.geojson")
+    no_fly = sampling.no_fly_zones(bounds, save_to=out / "national_security_areas.geojson")
+    status = [sampling.airspace_status(boundaries[g], cells, s["high_flight_ft"], s["restricted_share"],
+                                       s["fly_restricted"], no_fly)
               for g in df["geoid"]]
-    df["airspace"] = [x for x, _, _ in status]
-    df["faa_ceiling_ft"] = [c for _, c, _ in status]
-    df["share_restricted"] = [r for _, _, r in status]
+    df["airspace"] = [x for x, _, _, _ in status]
+    df["faa_ceiling_ft"] = [c for _, c, _, _ in status]
+    df["share_restricted"] = [r for _, _, r, _ in status]
+    df["share_no_fly"] = [n for _, _, _, n in status]
 
     notes += sampling.draw(df, s["per_cluster"], s["seed"], s["weights"])
     picked = df[df["sampled"]].copy()
@@ -211,8 +215,8 @@ def sample(config, folder, out):
         raise ValueError("No block group can be drawn: every one is under restricted airspace. "
                          "Check the airspace settings or choose other cities.")
 
-    street_table, street_features = streets.find_streets(picked, boundaries, cells, s, config["areas"])
-    flyable = street_table[~street_table["restricted"]]
+    street_table, street_features = streets.find_streets(picked, boundaries, cells, s, config["areas"], no_fly)
+    flyable = _flown(street_table, s)
     miles = flyable.groupby("geoid")["miles"].agg(street_miles="sum", streets="size")
     picked = picked.merge(miles, left_on="geoid", right_index=True, how="left").fillna(
         {"street_miles": 0, "streets": 0})
@@ -232,16 +236,18 @@ def sample(config, folder, out):
         "Map": out / f"sample_map_seed{s['seed']}.png",
         "Street maps": out / f"sample_streets_map_seed{s['seed']}.png",
         "FAA airspace used (GeoJSON)": out / "faa_facility_map.geojson",
+        "National security areas used (GeoJSON)": out / "national_security_areas.geojson",
         "Sources (JSON)": out / "sources.json",
     }
     a = config["areas"]
     files["Sources (JSON)"].write_text(json.dumps(
         {"tiger": {name: v for c in streets.road_counties(picked, boundaries, a)
                    for name, v in geography.sources(a["year"], a["state"], c, ("roads",)).items()},
-         "faa": {"url": sampling.FAA_URL, "fetched": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")}},
+         "faa": _snapshot_source(sampling.FAA_URL, "faa_file"),
+         "national_security": _snapshot_source(sampling.NO_FLY_URLS, "no_fly_file")},
         indent=2) + "\n")
     keep = ["fly_order", "pick", "geoid", "city", "cluster", "airspace", "faa_ceiling_ft",
-            "share_restricted", "streets", "street_miles", *columns, "housing_units", "weight", "lat", "lon"]
+            "share_restricted", "share_no_fly", "streets", "street_miles", *columns, "housing_units", "weight", "lat", "lon"]
     keep = list(dict.fromkeys(keep))
     picked[keep].sort_values("fly_order").to_csv(files["Picked block groups (table)"], index=False)
     street_table.sort_values(["fly_order", "street"]).to_csv(files["Streets (table)"], index=False)
@@ -251,6 +257,19 @@ def sample(config, folder, out):
     plots.street_map(picked, boundaries, street_features, files["Street maps"])
 
     return files, _sample_report(df, picked, street_table, k, s, columns, notes)
+
+
+def _flown(street_table, s):
+    """The streets that count: all of them when restricted airspace is flown, else those outside it."""
+    return street_table if s["fly_restricted"] == "laanc" else street_table[~street_table["restricted"]]
+
+
+def _snapshot_source(url, mode_key):
+    """Where an FAA map came from: fetched live just now, or a saved snapshot (a reproduction)."""
+    if sampling.MODE[mode_key]:
+        return {"url": url, "snapshot": Path(sampling.MODE[mode_key]).name,
+                "fetched": "earlier (a saved snapshot, read offline)"}
+    return {"url": url, "fetched": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")}
 
 
 def _sample_report(df, picked, street_table, k, s, columns, notes):
@@ -268,22 +287,44 @@ def _sample_report(df, picked, street_table, k, s, columns, notes):
     for _, r in picked.sort_values("fly_order").iterrows():
         report.write(f"  {r['fly_order']}. {r['geoid']}  {r['city']:<11} cluster {r['cluster']}  "
                      f"pick {r['pick']}  {r['street_miles']:>5.1f} street miles  airspace: {r['airspace']}\n")
-    flyable = street_table[~street_table["restricted"]]
+    flyable = _flown(street_table, s)
     total = flyable["miles"].sum()
     report.write(f"\nStreets to fly: {len(flyable)} (street, block group) rows, {total:,.1f} miles of street. "
                  f"Flown twice (high and low) that is {2 * total:,.1f} miles of flight.\n")
     restricted = street_table[street_table["restricted"]]
-    report.write(f"Not counted: {len(restricted)} stretches ({restricted['miles'].sum():,.2f} miles) inside FAA "
-                 f"squares with a ceiling under {s['high_flight_ft']} ft (restricted = True). "
-                 "Skip them without FAA authorization.\n")
+    if s["fly_restricted"] == "no":
+        report.write(f"Not counted: {len(restricted)} stretches ({restricted['miles'].sum():,.2f} miles) inside FAA "
+                     f"squares with a ceiling under {s['high_flight_ft']} ft (restricted = True). "
+                     "Skip them without LAANC authorization requested ahead of time.\n")
+    else:
+        report.write(f"Counted, with authorization: {len(restricted)} stretches ({restricted['miles'].sum():,.2f} miles) "
+                     f"inside FAA squares with a ceiling under {s['high_flight_ft']} ft (restricted = True, drawn "
+                     "dashed). Fly them only within a LAANC authorization requested ahead of time.\n")
+        report.write(f"\nFly restricted airspace (FAA squares with a ceiling under {s['high_flight_ft']} ft): "
+                     f"{FLY_RESTRICTED[s['fly_restricted']]}.\n")
+        # By ceiling, not status: a pick partly in a national security area is
+        # "partial" but may need authorization for the rest all the same.
+        approval = picked[picked["faa_ceiling_ft"] < s["high_flight_ft"]]
+        if len(approval):
+            report.write(f"{len(approval)} picked block group(s) have FAA squares with a ceiling under "
+                         f"{s['high_flight_ft']} ft (see faa_ceiling_ft): "
+                         f"{', '.join(approval['geoid'])}. Request LAANC authorization ahead of time "
+                         "(further coordination) before flying them at that height.\n")
+
+    in_no_fly = df[df["share_no_fly"] > 0]
+    if len(in_no_fly):
+        excluded = in_no_fly[in_no_fly["airspace"] == "restricted"]
+        report.write(f"\nNational security areas (never flown, LAANC or not): {len(in_no_fly)} block group(s) are "
+                     f"partly inside one (see share_no_fly); {len(excluded)} of them can't be drawn. Those parts "
+                     "are off-limits and their streets aren't listed.\n")
 
     # What the weights describe, and how far the picks sit from it.
     frame = df if s["weights"] == "legacy" else df[df["airspace"] != "restricted"]
     if s["weights"] == "legacy":
         report.write("\nWeights: legacy - each pick stands for its whole cluster, restricted block groups included.\n")
     else:
-        report.write(f"\nWeights: eligible - estimates describe the {len(frame)} block groups outside restricted "
-                     f"airspace, not the {len(df) - len(frame)} that could not be drawn.\n")
+        report.write(f"\nWeights: eligible - estimates describe the {len(frame)} block groups that could be drawn, "
+                     f"not the {len(df) - len(frame)} mostly under airspace that isn't flown.\n")
     report.write("Picks (weighted) against the block groups they stand for:\n")
     for col in columns:
         weighted = np.average(picked[col], weights=picked["weight"])
@@ -302,11 +343,16 @@ def groups(config, folder, out):
     picked = pd.read_csv(sample_files["Picked block groups (table)"], dtype={"geoid": str}).sort_values("fly_order")
     street_features = json.loads(sample_files["Streets (GeoJSON)"].read_text())["features"]
     boundaries = _read_boundaries(folder)
+    no_fly_file = sample_files.get("National security areas used (GeoJSON)")
+    no_fly_shapes = ([shape(f["geometry"]).buffer(0) for f in json.loads(no_fly_file.read_text())["features"]]
+                     if no_fly_file else [])
+    no_fly = shapely.union_all(no_fly_shapes) if no_fly_shapes else None
 
     rows, features = [], []
     for _, bg in picked.iterrows():
         mine = [f for f in street_features if f["properties"]["geoid"] == bg["geoid"]]
-        for piece in street_groups.group_block_group(mine, boundaries[bg["geoid"]], config["sample"]["buffer_m"], n):
+        for piece in street_groups.group_block_group(mine, boundaries[bg["geoid"]], config["sample"]["buffer_m"], n,
+                                                     no_fly):
             # One name per group number, the same in every block group.
             piece["group_name"] = names.get(str(piece["group"]), "")
             rows.append({"fly_order": int(bg["fly_order"]), "geoid": bg["geoid"], "city": bg["city"],
@@ -344,10 +390,11 @@ def groups(config, folder, out):
     report.write(f"Each picked block group's streets in up to {n} groups of about equal miles, "
                  "cut only at corners (cross streets).\n")
     report.write("Missions are named Street1_Street2: the street flown, then the cross street at its south or "
-                 "west end (END = dead end, EDGE = leaves the block group, AIRSPACE = enters restricted airspace).\n\n")
+                 "west end (END = dead end, EDGE = leaves the block group, AIRSPACE = enters restricted airspace, "
+                 "NOFLY = enters a national security area, never flown).\n\n")
     report.write(summary.to_string(index=False) + "\n")
     if len(restricted):
         report.write(f"\n{len(restricted)} stretches ({restricted['miles'].sum():.2f} mi) are in restricted airspace: "
                      "they are in their groups like the rest, listed with restricted = True and drawn dashed. "
-                     "Get FAA authorization before flying them.\n")
+                     "Fly them only within a LAANC authorization requested ahead of time (further coordination).\n")
     return files, report.getvalue()

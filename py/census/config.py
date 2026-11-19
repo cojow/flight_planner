@@ -4,8 +4,8 @@ The settings for one run, saved as config.json in the run's folder.
 A run is one go through the four steps - areas, choose k, cluster, sample - for
 one set of cities. Every input any step uses lives here, so a run can be
 checked, changed and repeated, and the GUI and the command line read the same
-file. Each step records a fingerprint of the settings it used (see
-`fingerprint`), so a later step can tell when an earlier one is out of date.
+file. Each step records a fingerprint of the settings and the code it used
+(see `fingerprint`), so a later step can tell when an earlier one is out of date.
 """
 import copy
 import hashlib
@@ -15,6 +15,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNS_DIR = REPO_ROOT / "data" / "census" / "runs"
+PACKAGE_DIR = Path(__file__).resolve().parent
+
+# Modules that don't change what any step writes (the command line, reports
+# and checks run after the steps, and saving or publishing finished runs).
+# Every other module's code is part of each step's fingerprint.
+NOT_STEP_CODE = {"__main__.py", "check_draft.py", "compare.py", "export.py", "publish.py"}
 
 # The steps in order, the folder each writes to, and the config sections each
 # one depends on (its own and everything upstream of it).
@@ -58,7 +64,15 @@ DEFAULTS = {
         # in sampling_draft/ - not valid when some block groups can't be drawn.
         "weights": "eligible",
         "high_flight_ft": 200,          # the high (nadir) flight height
-        "restricted_share": 0.25,       # not eligible when this much is under a ceiling below high_flight_ft
+        # Restricted airspace: FAA facility map squares with a ceiling under
+        # high_flight_ft. "no": don't fly it. "laanc": fly it, 0 ft squares
+        # included, with LAANC authorization requested ahead of time (further
+        # coordination). See FLY_RESTRICTED.
+        "fly_restricted": "no",
+        # Not eligible when this much is under airspace that isn't flown: the
+        # squares above when fly_restricted is "no", and national security
+        # areas (14 CFR 99.7) always - those are never flown.
+        "restricted_share": 0.25,
         "buffer_m": 15,                 # streets this close outside a block group's edge count as in it
         "min_segment_m": 10,            # clipped street slivers shorter than this are dropped
         "street_types": ["S1200", "S1400"],   # Census road codes: secondary roads, local streets
@@ -74,6 +88,13 @@ DEFAULTS = {
 
 # The ways a pick's weight can be worked out (sample.weights).
 WEIGHTS = ("eligible", "legacy")
+
+# Whether restricted airspace is flown (sample.fly_restricted) -> what that means.
+FLY_RESTRICTED = {
+    "no": "No: block groups mostly under it can't be drawn, and its streets aren't counted",
+    "laanc": ("With LAANC authorization: every block group can be drawn and every street counts; request "
+              "LAANC authorization ahead of time (further coordination) for its squares, 0 ft ones included"),
+}
 
 
 class ConfigError(ValueError):
@@ -136,6 +157,9 @@ def validate(config):
         raise ConfigError("Pick at least one block group per cluster.")
     if s["weights"] not in WEIGHTS:
         raise ConfigError(f"Unknown weights setting {s['weights']!r}.")
+    if s["fly_restricted"] not in FLY_RESTRICTED:
+        raise ConfigError(f"Unknown fly_restricted setting {s['fly_restricted']!r}; "
+                          f"use one of {', '.join(FLY_RESTRICTED)}.")
     if not 0 < s["restricted_share"] <= 1:
         raise ConfigError("restricted_share must be above 0 and at most 1.")
     if g["per_block_group"] < 1:
@@ -144,7 +168,24 @@ def validate(config):
         raise ConfigError('Group names go by group number, like {"1": "North", "2": "South"}.')
 
 
+def code_version():
+    """
+    A short hash of the package code the steps run (every module but those in
+    NOT_STEP_CODE). Line endings are ignored, so a Windows checkout matches.
+    """
+    h = hashlib.sha256()
+    for path in sorted(PACKAGE_DIR.glob("*.py")):
+        if path.name not in NOT_STEP_CODE:
+            h.update(path.name.encode())
+            h.update(path.read_bytes().replace(b"\r\n", b"\n"))
+    return h.hexdigest()[:16]
+
+
 def fingerprint(config, step):
-    """A short hash of the settings `step` depends on. Equal hashes, equal inputs."""
+    """
+    A short hash of the settings `step` depends on and of the code that runs
+    it. Equal hashes, equal inputs: change either and the step is out of date.
+    """
     used = {section: config[section] for section in STEPS[step]["sections"]}
+    used["code"] = code_version()
     return hashlib.sha256(json.dumps(used, sort_keys=True).encode()).hexdigest()[:16]

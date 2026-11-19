@@ -2,6 +2,7 @@
 Which block groups to fly: the airspace check, the draw from each cluster,
 each pick's weight, and the order to fly them in.
 """
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -12,10 +13,25 @@ import shapely
 from shapely.geometry import shape
 
 from .geo_math import to_metres
-from .sources import CensusError
+from .sources import DATA_DIR, MODE, CensusError, missing_offline, record
+
+FAA_DIR = DATA_DIR / "faa"      # every FAA answer a run used, named by its content's hash
+NO_FLY_DIR = DATA_DIR / "nsufr"     # the same for the national security areas
 
 FAA_URL = ("https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/"
            "FAA_UAS_FacilityMap_Data/FeatureServer/0/query")      # the same map the flight planner uses
+# National Security UAS Flight Restrictions (14 CFR 99.7), on the same FAA
+# server: military bases and the like, where no drone may fly, LAANC or not.
+# Part-time ones are only active when a NOTAM says so, but that can come at
+# short notice, so they are left out too.
+NO_FLY_URLS = {
+    "full time": ("https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/"
+                  "DoD_Mar_13/FeatureServer/0/query"),
+    "part time": ("https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/"
+                  "Part_Time_National_Security_UAS_Flight_Restrictions/FeatureServer/0/query"),
+}
+
+SLIVER = 0.01           # airspace covering less than this share of a block group is ignored
 
 
 # --------------------------------------------------------------------------
@@ -27,62 +43,160 @@ def faa_cells(bounds, save_to=None, tries=4, wait_s=20):
     The FAA UAS Facility Map squares over a bounding box, as [(max LAANC
     altitude in feet, shape)]. A ceiling of 0 means no LAANC approval is given
     there at all. The raw answer is saved to `save_to`, so the run records the
-    airspace it was drawn under.
+    airspace it was drawn under, and to data/census/faa/<hash>.geojson, the
+    snapshot a published run archives.
+
+    The map is live and the FAA updates it, so in offline mode (a
+    reproduction) it is read from the snapshot the original run used instead.
 
     The FAA's server limits how often it can be asked (it answers "too many
     requests"), so a failed ask is retried. If it still fails, or returns only
     part of the squares, this raises CensusError: drawing a sample with unknown
     airspace would make every block group look flyable.
     """
+    if MODE["faa_file"]:
+        data = _read_snapshot(MODE["faa_file"], save_to)
+    elif MODE["offline"]:
+        raise missing_offline("The FAA facility map snapshot")
+    else:
+        data = _ask(FAA_URL, _envelope(bounds, "CEILING"), "the FAA facility map", tries, wait_s)
+        _save_snapshot(data, FAA_DIR, save_to)
+    return [(f["properties"]["CEILING"], shape(f["geometry"]).buffer(0)) for f in data["features"]]
+
+
+def no_fly_zones(bounds, save_to=None, tries=4, wait_s=20):
+    """
+    The National Security UAS Flight Restrictions over a bounding box, full
+    and part time, as one shape (None if there are none). Never flown: the
+    parts of block groups inside them are off-limits whatever
+    sample.fly_restricted says, and their streets aren't listed at all.
+
+    Saved and read back like the facility map (see faa_cells), to `save_to`
+    and to data/census/nsufr/<hash>.geojson.
+    """
+    if MODE["no_fly_file"]:
+        data = _read_snapshot(MODE["no_fly_file"], save_to)
+    elif MODE["offline"]:
+        raise missing_offline("The national security areas snapshot")
+    else:
+        features = []
+        for schedule, url in NO_FLY_URLS.items():
+            answer = _ask(url, _envelope(bounds, "Facility,Base"), "the national security areas", tries, wait_s)
+            for f in answer["features"]:
+                f["properties"]["schedule"] = schedule
+                features.append(f)
+        data = {"type": "FeatureCollection", "features": features}
+        _save_snapshot(data, NO_FLY_DIR, save_to)
+    shapes = [shape(f["geometry"]).buffer(0) for f in data["features"]]
+    return shapely.union_all(shapes) if shapes else None
+
+
+def _envelope(bounds, fields):
     minx, miny, maxx, maxy = bounds
-    params = {"where": "1=1", "geometry": f"{minx},{miny},{maxx},{maxy}",
-              "geometryType": "esriGeometryEnvelope", "inSR": "4326",
-              "spatialRel": "esriSpatialRelIntersects", "outFields": "CEILING",
-              "returnGeometry": "true", "outSR": "4326", "f": "geojson"}
+    return {"where": "1=1", "geometry": f"{minx},{miny},{maxx},{maxy}",
+            "geometryType": "esriGeometryEnvelope", "inSR": "4326",
+            "spatialRel": "esriSpatialRelIntersects", "outFields": fields,
+            "returnGeometry": "true", "outSR": "4326", "f": "geojson"}
+
+
+def _ask(url, params, what, tries, wait_s):
+    """An FAA ArcGIS query's GeoJSON answer, retried; raises CensusError if it can't be had whole."""
     problem = "no answer"
     for attempt in range(tries):
         if attempt:
             time.sleep(wait_s * attempt)
         try:
-            data = requests.get(FAA_URL, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=90).json()
+            data = requests.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=90).json()
         except (requests.RequestException, ValueError) as exc:
             problem = str(exc)
             continue
         if "features" not in data:
-            problem = (data.get("error") or {}).get("message", "an answer without map squares")
+            problem = (data.get("error") or {}).get("message", "an answer without map shapes")
             continue
         if data.get("exceededTransferLimit"):
-            raise CensusError("The FAA map returned only part of its squares for this area, so airspace "
-                              "can't be checked. Sample fewer or smaller cities.")
-        if save_to:
-            Path(save_to).write_text(json.dumps(data))
-        return [(f["properties"]["CEILING"], shape(f["geometry"]).buffer(0)) for f in data["features"]]
-    raise CensusError(f"Could not get the FAA facility map after {tries} tries ({problem}). "
+            raise CensusError(f"{what[0].upper() + what[1:]} returned only part of its shapes for this area, "
+                              "so airspace can't be checked. Sample fewer or smaller cities.")
+        return data
+    raise CensusError(f"Could not get {what} after {tries} tries ({problem}). "
                       "Wait a minute and run the sample step again.")
 
 
-def airspace_status(polygon, cells, high_flight_ft, restricted_share):
+def _read_snapshot(path, save_to):
+    data = json.loads(Path(path).read_text())
+    record(path)
+    if save_to:
+        Path(save_to).write_text(json.dumps(data))
+    return data
+
+
+def _save_snapshot(data, folder, save_to):
+    text = json.dumps(data)
+    snapshot = folder / f"{hashlib.sha256(text.encode()).hexdigest()[:16]}.geojson"
+    folder.mkdir(parents=True, exist_ok=True)
+    snapshot.write_text(text)
+    record(snapshot)
+    if save_to:
+        Path(save_to).write_text(text)
+
+
+def needs_authorization(ceiling, high_flight_ft):
     """
-    (status, lowest ceiling in feet, share of the block group that is restricted):
+    Whether flying the high flight in an FAA square with this ceiling needs
+    authorization beyond LAANC's instant approval: a LAANC further-coordination
+    request made ahead of time (0 ft squares included). Streets in these
+    squares are marked restricted = True.
+    """
+    return ceiling < high_flight_ft
+
+
+def off_limits(ceiling, high_flight_ft, fly_restricted="no"):
+    """
+    Whether an FAA square with this ceiling is left unflown (sample.fly_restricted):
+      "no"     every square that needs authorization (see needs_authorization)
+      "laanc"  none: those squares are flown with LAANC authorization
+    National security areas are always off-limits (see no_fly_zones).
+    """
+    return fly_restricted == "no" and needs_authorization(ceiling, high_flight_ft)
+
+
+def airspace_status(polygon, cells, high_flight_ft, restricted_share, fly_restricted="no", no_fly=None):
+    """
+    (status, lowest ceiling in feet, share of the block group that is
+    off-limits, share inside a national security area):
       clear       not inside any FAA facility map square - no LAANC needed
       laanc       LAANC needed; every ceiling allows the high flight
-      partial     a small part (under restricted_share) has a ceiling below the high
-                  flight: fly the rest, and leave out the streets in the restricted squares
-      restricted  a large part has a ceiling below the high flight (a ceiling of 0 needs
-                  FAA authorization, not LAANC): not eligible to be picked
-    Squares that touch only a sliver (under 1%) of the block group are ignored.
+      approval    some ceilings are under the high flight (0 ft included), and
+                  fly_restricted = "laanc" flies them: request LAANC authorization
+                  ahead of time (further coordination)
+      partial     a small part (under restricted_share) is off-limits: fly the
+                  rest, and leave out the streets there
+      restricted  a large part is off-limits: not eligible to be picked
+    Off-limits is the FAA squares `off_limits` leaves unflown, plus any part in
+    `no_fly` (the national security areas), which is never flown. With
+    fly_restricted="no" (the default) "approval" never comes up; with "laanc"
+    only a national security area makes "partial" or "restricted".
+    Squares and areas covering only a sliver (under 1%) of the block group are
+    ignored.
     """
     touching = [(c, g) for c, g in cells
-                if g.intersects(polygon) and g.intersection(polygon).area > 0.01 * polygon.area]
-    if not touching:
-        return "clear", np.nan, 0.0
-    lowest = min(c for c, _ in touching)
-    low_squares = [g for c, g in touching if c < high_flight_ft]
-    share = (polygon.intersection(shapely.union_all(low_squares)).area / polygon.area
-             if low_squares else 0.0)
+                if g.intersects(polygon) and g.intersection(polygon).area > SLIVER * polygon.area]
+    blocked = [g for c, g in touching if off_limits(c, high_flight_ft, fly_restricted)]
+    no_fly_share = (polygon.intersection(no_fly).area / polygon.area
+                    if no_fly is not None and no_fly.intersects(polygon) else 0.0)
+    if no_fly_share > SLIVER:
+        blocked.append(no_fly)
+    else:
+        no_fly_share = 0.0
+    share = (polygon.intersection(shapely.union_all(blocked)).area / polygon.area
+             if blocked else 0.0)
+    lowest = min(c for c, _ in touching) if touching else np.nan
     if share >= restricted_share:
-        return "restricted", lowest, round(share, 2)
-    return ("partial" if low_squares else "laanc"), lowest, round(share, 2)
+        return "restricted", lowest, round(share, 2), round(no_fly_share, 2)
+    if blocked:
+        return "partial", lowest, round(share, 2), round(no_fly_share, 2)
+    if not touching:
+        return "clear", lowest, 0.0, 0.0
+    return ("approval" if lowest < high_flight_ft else "laanc"), lowest, round(share, 2), 0.0
 
 
 # --------------------------------------------------------------------------

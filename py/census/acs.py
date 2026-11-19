@@ -21,7 +21,7 @@ were built and what kind of building they are in.
 """
 import pandas as pd
 
-from .sources import ACS_URL, api_key, cached_get
+from .sources import ACS_URL, MODE, api_key, cached_get
 
 MEDIANS = {
     "B19013_001": "median_household_income",
@@ -154,7 +154,9 @@ def _clean(raw, year):
 
 def county_block_groups(state, county, year, key=None, refresh=False):
     """One row per block group in a county: geoid, census_name, then the ACS columns."""
-    raw = _fetch("block group:*", f"state:{state} county:{county} tract:*", year, api_key(key), refresh)
+    # Offline, the answers come from the cache, so no key is needed.
+    key = None if MODE["offline"] else api_key(key)
+    raw = _fetch("block group:*", f"state:{state} county:{county} tract:*", year, key, refresh)
     table = _clean(raw, year)
     table.insert(0, "geoid", (raw["state"] + raw["county"] + raw["tract"] + raw["block group"]).values)
     table.insert(1, "census_name", raw["NAME"].values)

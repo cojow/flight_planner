@@ -23,7 +23,7 @@ from . import steps
 SAMPLES_DIR = cfg.REPO_ROOT / "census_samples"
 
 # Columns of the picked block groups table carried into each feature, in order.
-FIELDS = ["geoid", "fly_order", "pick", "city", "cluster", "airspace", "faa_ceiling_ft",
+FIELDS = ["geoid", "fly_order", "pick", "city", "cluster", "airspace", "faa_ceiling_ft", "share_no_fly",
           "street_miles", "streets", "weight", "lat", "lon"]
 
 
