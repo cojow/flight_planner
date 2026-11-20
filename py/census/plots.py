@@ -271,3 +271,40 @@ def street_groups_map(picked, boundaries, group_features, path):
     fig.suptitle("Streets to fly, by group (each group about the same miles; dashed = restricted airspace, "
                  "needs LAANC authorization in advance)", fontsize=13)
     return save(fig, path)
+
+
+def training_map(picked, boundaries, all_features, chosen, path):
+    """One panel per picked block group: every street segment in grey, the drawn ones coloured and numbered."""
+    picked = picked.sort_values("fly_order")
+    cols = min(3, len(picked))
+    nrows = -(-len(picked) // cols)
+    fig, axes = plt.subplots(nrows, cols, figsize=(5 * cols, 5 * nrows), squeeze=False)
+    for ax in axes.flat:
+        ax.axis("off")
+
+    def lines(features):
+        return [np.array(part.coords) for f in features
+                for part in getattr(shape(f["geometry"]), "geoms", [shape(f["geometry"])])]
+
+    for ax, (_, row) in zip(axes.flat, picked.iterrows()):
+        ax.add_collection(LineCollection(rings(boundaries[row["geoid"]]), colors="black", linewidths=1.2))
+        mine = [f for f in all_features if f["properties"]["geoid"] == row["geoid"]]
+        drawn = [f for f in chosen if f["properties"]["geoid"] == row["geoid"]]
+        ax.add_collection(LineCollection(lines(mine), colors="#c8c8c8", linewidths=1.0, label="Not drawn"))
+        if drawn:
+            ax.add_collection(LineCollection(lines(drawn), colors=COLORS[0], linewidths=2.6,
+                                             label=f"Drawn: {len(drawn)} of {len(mine)}"))
+        for f in drawn:
+            middle = shape(f["geometry"]).interpolate(0.5, normalized=True)
+            ax.text(middle.x, middle.y, str(f["properties"]["training_pick"]), fontsize=8, fontweight="bold",
+                    ha="center", va="center", color="white", zorder=6,
+                    bbox=dict(boxstyle="circle,pad=0.2", facecolor=COLORS[0], edgecolor="none"))
+        minx, miny, maxx, maxy = boundaries[row["geoid"]].bounds
+        pad = 0.05 * max(maxx - minx, maxy - miny)
+        ax.set_xlim(minx - pad, maxx + pad)
+        ax.set_ylim(miny - pad, maxy + pad)
+        ax.set_aspect(1 / np.cos(np.radians(LATITUDE)))
+        ax.set_title(f"{int(row['fly_order'])}. {row['geoid']}", fontsize=11)
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=2, fontsize=8, frameon=False)
+    fig.suptitle("Training segments drawn at random from each block group (number = draw order)", fontsize=13)
+    return save(fig, path)

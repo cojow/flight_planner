@@ -28,7 +28,7 @@ from . import config as cfg
 
 ORDER = list(cfg.STEPS)
 UPSTREAM = {"areas": [], "choose_k": ["areas"], "cluster": ["areas"], "sample": ["areas", "cluster"],
-            "groups": ["areas", "cluster", "sample"]}
+            "groups": ["areas", "cluster", "sample"], "training": ["areas", "cluster", "sample", "groups"]}
 
 
 class StepError(RuntimeError):
@@ -211,5 +211,20 @@ def run_groups(folder):
     return _run(folder, "groups", lambda config, out: pipeline.groups(config, folder, out))
 
 
+def run_training(folder):
+    """
+    6. Training segments (optional). A random draw of street segments - step
+    5's corner-to-corner stretches - from each picked block group, e.g. to
+    collect object-detection training data from every block group. Each
+    block group's segments are shuffled once with the seed and the first
+    per_block_group are taken, so a smaller draw is the start of a larger one.
+
+    Files, named with the draw's seed: training_segments (.csv and .geojson),
+    training_segments_map.png.
+    """
+    from . import pipeline
+    return _run(folder, "training", lambda config, out: pipeline.training(config, folder, out))
+
+
 RUNNERS = {"areas": run_areas, "choose_k": run_choose_k, "cluster": run_cluster, "sample": run_sample,
-           "groups": run_groups}
+           "groups": run_groups, "training": run_training}

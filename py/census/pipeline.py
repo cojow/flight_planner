@@ -17,6 +17,7 @@ from shapely.geometry import mapping, shape
 from . import acs, clustering, geography, plots, sampling, streets
 from . import groups as street_groups
 from .config import FLY_RESTRICTED, STEPS
+from .geo_math import METERS_PER_MILE
 from .steps import outputs
 
 
@@ -397,4 +398,78 @@ def groups(config, folder, out):
         report.write(f"\n{len(restricted)} stretches ({restricted['miles'].sum():.2f} mi) are in restricted airspace: "
                      "they are in their groups like the rest, listed with restricted = True and drawn dashed. "
                      "Fly them only within a LAANC authorization requested ahead of time (further coordination).\n")
+    return files, report.getvalue()
+
+
+# --------------------------------------------------------------------------
+# 6. Training segments
+# --------------------------------------------------------------------------
+
+def training(config, folder, out):
+    """
+    A random draw of per_block_group street segments from each picked block
+    group. A segment is one of step 5's corner-to-corner stretches; its number
+    (`segment`) is its place among the block group's stretches in step 5's
+    GeoJSON, so the draw can be traced back to step 5's files.
+
+    Stretches shorter than min_length_m aren't drawn, and those in restricted
+    airspace can be drawn only when that airspace is flown
+    (sample.fly_restricted = "laanc"). Each block group's eligible
+    segments are shuffled once, in fly order, from one seeded generator, and
+    the first per_block_group are taken: the same seed with a larger number
+    keeps every segment the smaller one drew.
+    """
+    n, seed = config["training"]["per_block_group"], config["training"]["seed"]
+    min_miles = config["training"]["min_length_m"] / METERS_PER_MILE
+    fly_restricted = config["sample"]["fly_restricted"] == "laanc"
+    group_files = outputs(folder, "groups")
+    features = json.loads(group_files["Street groups (GeoJSON)"].read_text())["features"]
+    picked = pd.read_csv(outputs(folder, "sample")["Picked block groups (table)"], dtype={"geoid": str})
+    boundaries = _read_boundaries(folder)
+
+    rng = np.random.default_rng(seed)
+    rows, chosen, notes = [], [], []
+    for _, bg in picked.sort_values("fly_order").iterrows():
+        mine = [f for f in features if f["properties"]["geoid"] == bg["geoid"]]
+        eligible = [i for i, f in enumerate(mine) if f["properties"]["miles"] >= min_miles
+                    and (fly_restricted or not f["properties"].get("restricted"))]
+        order = rng.permutation(len(eligible))
+        take = [eligible[j] for j in order[:n]]
+        if len(take) < n:
+            notes.append(f"Block group {bg['geoid']} (fly order {int(bg['fly_order'])}) has only {len(take)} "
+                         f"segment(s) that can be drawn; all are taken.")
+        for rank, i in enumerate(take, start=1):
+            p = mine[i]["properties"]
+            rows.append({"fly_order": int(bg["fly_order"]), "training_pick": rank, "geoid": bg["geoid"],
+                         "city": bg["city"], "segment": i + 1, "segments_in_block_group": len(mine),
+                         "group": p["group"], "group_name": p.get("group_name", ""), "mission": p["mission"],
+                         "street": p["street"], "from": p["from"], "to": p["to"], "miles": p["miles"],
+                         "restricted": bool(p.get("restricted"))})
+            chosen.append({**mine[i], "properties": {**p, "segment": i + 1, "training_pick": rank}})
+    if not rows:
+        raise ValueError("The picked block groups have no street segments that can be drawn.")
+
+    table = pd.DataFrame(rows)
+    files = {
+        "Training segments (table)": out / f"training_segments_seed{seed}.csv",
+        "Training segments (GeoJSON)": out / f"training_segments_seed{seed}.geojson",
+        "Training segment maps": out / f"training_segments_map_seed{seed}.png",
+    }
+    table.to_csv(files["Training segments (table)"], index=False)
+    files["Training segments (GeoJSON)"].write_text(json.dumps({"type": "FeatureCollection", "features": chosen}))
+    plots.training_map(picked, boundaries, features, chosen, files["Training segment maps"])
+
+    summary = (table.groupby(["fly_order", "geoid", "city"], as_index=False)
+               .agg(drawn=("segment", "size"), of=("segments_in_block_group", "first"), miles=("miles", "sum")))
+    summary["miles"] = summary["miles"].round(2)
+    report = io.StringIO()
+    report.write(f"Up to {n} street segments drawn at random from each of the {len(picked)} picked block groups "
+                 f"(seed {seed}): {len(table)} segments, {table['miles'].sum():.2f} miles.\n")
+    report.write(f"Segments shorter than {config['training']['min_length_m']} m aren't drawn. ")
+    report.write("Segments in restricted airspace " + ("can be drawn (it is flown with LAANC authorization; "
+                 "they are listed with restricted = True).\n" if fly_restricted else
+                 "are left out (restricted airspace isn't flown in this run).\n"))
+    for note in notes:
+        report.write(note + "\n")
+    report.write("\n" + summary.to_string(index=False) + "\n")
     return files, report.getvalue()

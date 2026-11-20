@@ -7,7 +7,9 @@ workflow.
     python -m census new provo_orem --cities Provo Orem  # make a run with default settings
     python -m census show provo_orem                     # its settings and step status
     python -m census set provo_orem cluster.k=4 sample.per_cluster=1
-    python -m census run provo_orem                      # every step, in order
+    python -m census run provo_orem                      # every step, in order (6, training segments, is optional)
+    python -m census set provo_orem training.per_block_group=10 training.seed=7
+    python -m census run provo_orem training             # redraw just the training segments
     python -m census run provo_orem cluster sample       # just these steps
     python -m census compare provo_orem                  # optional: the cities vs the rest of the county
     python -m census export provo_orem fall_2026         # save the picks for the flight planner (app.py)

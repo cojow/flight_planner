@@ -30,7 +30,11 @@ STEPS = {
     "cluster":  {"folder": "3_cluster",  "sections": ["areas", "features", "cluster"]},
     "sample":   {"folder": "4_sample",   "sections": ["areas", "features", "cluster", "sample"]},
     "groups":   {"folder": "5_groups",   "sections": ["areas", "features", "cluster", "sample", "groups"]},
+    "training": {"folder": "6_training", "sections": ["areas", "features", "cluster", "sample", "groups", "training"]},
 }
+
+# Steps a run can do without: publishing skips them when they haven't run.
+OPTIONAL_STEPS = {"training"}
 
 DEFAULTS = {
     "areas": {
@@ -82,6 +86,15 @@ DEFAULTS = {
     "groups": {
         "per_block_group": 3,           # street groups in each picked block group, about equal in miles
         "names": {},                    # optional names by group number, the same in every block group: {"1": "North"}
+    },
+    "training": {
+        # Street segments (step 5's corner-to-corner stretches) drawn at random
+        # from each picked block group, e.g. for object-detection training data.
+        "per_block_group": 5,
+        "seed": 2026,                   # the draw; change it for a different set
+        # Shorter segments aren't drawn. Most are stubs where a cross street
+        # just pokes into the buffer around the block group (from/to "Edge").
+        "min_length_m": 30,
     },
 }
 
@@ -142,7 +155,8 @@ def save(folder, config):
 
 def validate(config):
     """Raise ConfigError for the first setting that can't work."""
-    a, f, c, k, s, g = (config[x] for x in ("areas", "features", "cluster", "choose_k", "sample", "groups"))
+    a, f, c, k, s, g, t = (config[x] for x in ("areas", "features", "cluster", "choose_k", "sample", "groups",
+                                                 "training"))
     if not a["places"]:
         raise ConfigError("Pick at least one city.")
     if not 0 < a["min_overlap"] <= 1:
@@ -164,6 +178,12 @@ def validate(config):
         raise ConfigError("restricted_share must be above 0 and at most 1.")
     if g["per_block_group"] < 1:
         raise ConfigError("Make at least one street group per block group.")
+    if t["per_block_group"] < 1:
+        raise ConfigError("Draw at least one training segment per block group.")
+    if not isinstance(t["seed"], int) or t["seed"] < 0:
+        raise ConfigError("The training seed must be a whole number, 0 or more.")
+    if t["min_length_m"] < 0:
+        raise ConfigError("training.min_length_m can't be negative.")
     if not isinstance(g["names"], dict) or not all(str(k).isdigit() for k in g["names"]):
         raise ConfigError('Group names go by group number, like {"1": "North", "2": "South"}.')
 

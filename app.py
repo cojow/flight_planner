@@ -2144,6 +2144,10 @@ def census_sample_controls(prefix):
         st.caption(f"{', '.join(info.get('cities', []))}: {len(census_block_groups(sample))} block groups, "
                    f"k = {info.get('k')}, {info.get('per_cluster')} per cluster, seed {info.get('seed')} "
                    f"(saved {info.get('saved')}).")
+        if info.get("training"):
+            t = info["training"]
+            st.caption(f"Training segments: {t.get('segments')} ({t.get('per_block_group')} per block group, "
+                       f"seed {t.get('seed')}).")
     return name, sample
 
 
@@ -2198,34 +2202,121 @@ STREET_DETAILS = [('mission', 'Mission'), ('street', 'Street'), ('from', 'From')
                   ('geoid', 'Block group'), ('fly_order', 'Fly order')]
 
 
+def census_training_segments(sample):
+    """The sample's streets drawn as training segments in step 6 of the census app (training_pick set)."""
+    return [f for f in census_street_groups(sample) if f["properties"].get("training_pick")]
+
+
 def street_group_controls(prefix, sample):
     """
-    Sidebar controls for a sample's street groups, shown under the sampled
-    block groups when the sample has them. Returns (signature, street features
-    to draw); the signature is None when nothing is drawn.
+    Sidebar controls for a sample's streets, shown under the sampled block
+    groups when the sample has them: Show Street Groups (step 5) and Show
+    Training Segments (step 6). The two are separate plans - the groups share
+    every street out, while one person flies all the training segments - so
+    only one is shown at a time: ticking one unticks the other.
+
+    Returns (signature, layer): layer is ("groups" or "training", street
+    features to draw) for add_street_groups_layer, or [] when nothing is
+    drawn; the signature is None then.
     """
     streets = census_street_groups(sample) if sample else []
     if not streets:
         return None, []
-    show = st.checkbox("Show Street Groups", value=False, key=f"{prefix}_street_groups_toggle",
-                       help=param_help("Show Street Groups"))
-    if not show:
+    training = census_training_segments(sample)
+    groups_key, training_key = f"{prefix}_street_groups_toggle", f"{prefix}_training_toggle"
+
+    def only_one(ticked, other):
+        if st.session_state.get(ticked):
+            st.session_state[other] = False
+
+    show_groups = st.checkbox("Show Street Groups", value=False, key=groups_key,
+                              on_change=only_one, args=(groups_key, training_key),
+                              help=param_help("Show Street Groups"))
+    show_training = False
+    if training:
+        show_training = st.checkbox("Show Training Segments", value=False, key=training_key,
+                                    on_change=only_one, args=(training_key, groups_key),
+                                    help=param_help("Show Training Segments"))
+    if not (show_groups or show_training):
         return None, []
+    kind = "training" if show_training else "groups"
+    shown = training if show_training else streets
+
     picks = {f["properties"]["geoid"]: f["properties"].get("fly_order") for f in census_block_groups(sample)}
     options = ["All"] + sorted(picks, key=lambda g: picks[g] or 0)
-    only = st.selectbox("Street groups for", options, key=f"{prefix}_street_groups_for",
+    only = st.selectbox("Training segments for" if show_training else "Street groups for", options,
+                        key=f"{prefix}_{kind}_for",
                         format_func=lambda g: "All block groups" if g == "All" else f"#{picks[g]}  {g}")
-    chosen = streets if only == "All" else [f for f in streets if f["properties"]["geoid"] == only]
-    n_groups = len({(f["properties"]["geoid"], f["properties"]["group"]) for f in chosen})
+    chosen = shown if only == "All" else [f for f in shown if f["properties"]["geoid"] == only]
     miles = sum(f["properties"].get("miles") or 0 for f in chosen)
     blocked = sum(f["properties"].get("miles") or 0 for f in chosen if f["properties"].get("restricted"))
-    st.caption(f"{n_groups} groups, {len(chosen)} stretches, {miles:.1f} mi."
+    if show_training:
+        info = sample.get("sample", {}).get("training") or {}
+        head = (f"{len(chosen)} segments, {miles:.1f} mi"
+                + (f" ({info.get('per_block_group')} per block group, seed {info.get('seed')})" if info else "") + ".")
+    else:
+        n_groups = len({(f["properties"]["geoid"], f["properties"]["group"]) for f in chosen})
+        head = f"{n_groups} groups, {len(chosen)} stretches, {miles:.1f} mi."
+    st.caption(head
                + (f" Dashed: {blocked:.2f} mi in restricted airspace, needing LAANC authorization requested in advance." if blocked else "")
                + " Click a street for its mission name.")
-    return (sample.get("sample", {}).get("saved"), only), chosen
+    return (sample.get("sample", {}).get("saved"), kind, only), (kind, chosen)
 
 
-def add_street_groups_layer(fmap, streets):
+def add_street_groups_layer(fmap, layer):
+    """Draw what street_group_controls chose: the street groups or the training segments."""
+    kind, streets = layer
+    if kind == "training":
+        _add_training_layer(fmap, streets)
+    else:
+        _add_group_streets(fmap, streets)
+
+
+def _street_popup(p, details):
+    """A street's click-up table: its details, and a note when it is in restricted airspace."""
+    from html import escape
+    rows = "".join(f'<tr><td style="padding-right: 8px;"><b>{label}</b></td><td>{escape(str(p.get(field)))}</td></tr>'
+                   for field, label in details if p.get(field) not in (None, ""))
+    if p.get("restricted"):
+        rows += '<tr><td colspan="2"><b>Restricted airspace:</b> fly only with LAANC authorization requested in advance</td></tr>'
+    return folium.Popup(f'<table style="font-size: 12px;">{rows}</table>', max_width=320)
+
+
+def _line_parts(geometry):
+    """A LineString or MultiLineString as lists of (lat, lon)."""
+    parts = [geometry["coordinates"]] if geometry["type"] == "LineString" else geometry["coordinates"]
+    return [[(lat, lon) for lon, lat in part] for part in parts]
+
+
+TRAINING_COLOR = "#ffd60a"          # one colour: one person flies every training segment
+TRAINING_DETAILS = [('mission', 'Mission'), ('street', 'Street'), ('from', 'From'), ('to', 'To'),
+                    ('training_pick', 'Training pick'), ('miles', 'Miles'),
+                    ('geoid', 'Block group'), ('fly_order', 'Fly order')]
+
+
+def _add_training_layer(fmap, streets):
+    """
+    The training segments drawn in step 6 of the census app, all in one
+    colour, each labelled with its block group's fly order and its place in
+    the draw (e.g. "#3 · T2"). Click a segment for its mission name; dashed =
+    restricted airspace.
+    """
+    for f in sorted(streets, key=lambda f: (f["properties"].get("fly_order") or 0, f["properties"]["training_pick"])):
+        p = f["properties"]
+        points = []
+        for latlons in _line_parts(f["geometry"]):
+            points += latlons
+            folium.PolyLine(latlons, color=TRAINING_COLOR, weight=6, opacity=0.95,
+                            dash_array="8, 8" if p.get("restricted") else None,
+                            popup=_street_popup(p, TRAINING_DETAILS)).add_to(fmap)
+        lat, lon = points[len(points) // 2]
+        label = (f'<div style="font-size: 12px; font-weight: bold; color: {TRAINING_COLOR}; white-space: nowrap; '
+                 f'text-shadow: 0 0 3px black, 0 0 3px black, 0 0 3px black; transform: translate(-50%, -130%);">'
+                 f'#{p.get("fly_order")} &middot; T{p["training_pick"]}</div>')
+        folium.Marker([lat, lon], icon=DivIcon(html=label), interactive=False).add_to(fmap)
+
+
+def _add_group_streets(fmap, streets):
     """
     Streets coloured by group, each group labelled at its middle with the
     block group's fly order, the group number and any name (e.g. "#3 · G2 · North"). Clicking a street shows its mission name, cross streets and
@@ -2244,20 +2335,12 @@ def add_street_groups_layer(fmap, streets):
         points = []
         for f in features:
             p = f["properties"]
-            rows = "".join(f'<tr><td style="padding-right: 8px;"><b>{label}</b></td><td>{escape(str(p.get(field)))}</td></tr>'
-                           for field, label in STREET_DETAILS if p.get(field) not in (None, ""))
-            if p.get("restricted"):
-                rows += '<tr><td colspan="2"><b>Restricted airspace:</b> fly only with LAANC authorization requested in advance</td></tr>'
-            geom = f["geometry"]
-            parts = [geom["coordinates"]] if geom["type"] == "LineString" else geom["coordinates"]
-            for part in parts:
-                latlons = [(lat, lon) for lon, lat in part]
+            for latlons in _line_parts(f["geometry"]):
                 points += latlons
-                # Dashed: in restricted airspace (still flown, with FAA authorization).
+                # Dashed: in restricted airspace (still flown, with LAANC authorization requested in advance).
                 folium.PolyLine(latlons, color=color, weight=5, opacity=0.9,
                                 dash_array="8, 8" if p.get("restricted") else None,
-                                popup=folium.Popup(f'<table style="font-size: 12px;">{rows}</table>',
-                                                   max_width=320)).add_to(fmap)
+                                popup=_street_popup(p, STREET_DETAILS)).add_to(fmap)
         name = next((f["properties"].get("group_name") for f in features if f["properties"].get("group_name")), "")
         name = f" &middot; {escape(name)}" if name else ""
         lat = sum(p[0] for p in points) / len(points)

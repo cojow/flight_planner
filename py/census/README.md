@@ -60,7 +60,7 @@ uv run census reproduce provo_2026
    in the manifest. Those inputs are the Census ACS answers, the TIGER/Line boundary and road files, and the FAA
    airspace map, and they go into `data/census/`. If you were given the zip file directly, run this instead:
    `uv run census fetch-inputs provo_2026 --from path/to/provo_2026_inputs.zip`.
-2. **`reproduce`** runs all five steps **offline** from those files, then compares every result table with the
+2. **`reproduce`** runs every step the run published **offline** from those files, then compares every result table with the
    published one. The output ends with one of these lines:
 
    ```
@@ -123,7 +123,8 @@ Either in the app:
 ```bash
 uv run streamlit run census_app.py
 ```
-Make a run in the sidebar, then work through tabs 1 to 5. Or from the command line:
+Make a run in the sidebar, then work through tabs 1 to 5, and 6 if you want training segments. Or from the command
+line:
 ```bash
 uv run census new provo_2026 --cities Provo Orem
 ```
@@ -140,7 +141,7 @@ uv run census run provo_2026
 | `uv run census new NAME --cities A B` | Make a run with the default settings |
 | `uv run census show NAME` | Print the run's settings and each step's status |
 | `uv run census set NAME section.key=value ...` | Change settings (see `py/census/config.py` for every one) |
-| `uv run census run NAME [step ...]` | Run every step, or just the ones named: `areas choose_k cluster sample groups` |
+| `uv run census run NAME [step ...]` | Run every step, or just the ones named: `areas choose_k cluster sample groups training` |
 | `uv run census compare NAME` | Optional report: the chosen cities against the rest of the county |
 | `uv run census export NAME SAMPLE` | Save the picks as `census_samples/SAMPLE.geojson` for the flight planner |
 
@@ -248,6 +249,37 @@ and the Utah Data Center, where no drone may fly with or without LAANC. They are
 
 So with `laanc`, `partial` and `restricted` mean a national security area. A pick that is `partial` but also has low
 FAA squares is still listed in the report as needing authorization, by its `faa_ceiling_ft`.
+
+## Training segments
+
+Step 6 (*Training segments*, `training` on the command line) draws a number of street segments at random from every
+picked block group, for example to collect object-detection training images from each one. A segment is one of step
+5's corner-to-corner stretches, with its mission name (`Street1_Street2`). The step is optional: nothing else needs
+it, and `publish` leaves it out when it hasn't run.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `training.per_block_group` | 5 | Segments drawn from each block group. A block group with fewer takes all of them, and the report says so |
+| `training.seed` | 2026 | The draw. The app's *New random seed* button picks one at random |
+| `training.min_length_m` | 30 | Shorter segments aren't drawn. About 3 in 10 segments are under 20 m, mostly stubs where a cross street pokes into the buffer around the block group (`Edge`). 0 allows every segment |
+
+```bash
+uv run census set provo_2026 training.per_block_group=10 training.seed=7
+```
+```bash
+uv run census run provo_2026 training
+```
+
+- **The same seed always draws the same segments.** A larger number keeps every segment a smaller one drew, so
+  going from 5 to 10 per block group adds 5 more without changing the first 5.
+- **Restricted airspace follows step 4.** Segments in restricted airspace can be drawn only when
+  `sample.fly_restricted = laanc`; they are listed with `restricted = True`.
+- **Files:** `training_segments_seed<seed>.csv` and `.geojson` in `6_training/`, one row per drawn segment with its
+  `training_pick` (draw order), its `segment` number (its place among the block group's stretches in step 5's
+  GeoJSON), group, mission name, cross streets and miles. There is also a map per block group with the drawn segments
+  numbered.
+- **Saved samples:** when step 6 is current, *Save sample* (in tab 5 or 6) adds `segment` and `training_pick` to
+  every street in `census_samples/<name>.geojson`. `training_pick` is empty for streets that weren't drawn.
 
 ## Where things are
 

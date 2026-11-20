@@ -83,7 +83,9 @@ def publish(name, url=None, overwrite=False):
     """
     folder = cfg.run_dir(name)
     states = steps.status(folder)
-    behind = [f"{step} ({state})" for step, state in states.items() if state != "current"]
+    behind = [f"{step} ({state})" for step, state in states.items()
+              if state != "current" and not (step in cfg.OPTIONAL_STEPS and state == "not run")]
+    ran = [step for step in steps.ORDER if states[step] == "current"]
     if behind:
         raise steps.StepError("Every step must be run with the current settings and code before publishing; "
                               f"not current: {', '.join(behind)}.")
@@ -92,7 +94,7 @@ def publish(name, url=None, overwrite=False):
     if old and not overwrite:
         raise cfg.ConfigError(f"{name!r} is already published; use --overwrite to replace it.")
 
-    records = {step: json.loads((steps.step_dir(folder, step) / "inputs.json").read_text()) for step in steps.ORDER}
+    records = {step: json.loads((steps.step_dir(folder, step) / "inputs.json").read_text()) for step in ran}
     inputs = {}
     for record in records.values():
         if "inputs" not in record:
@@ -112,7 +114,7 @@ def publish(name, url=None, overwrite=False):
         snapshots[folder_name] = found[0]
 
     results = {}
-    for step in steps.ORDER:
+    for step in ran:
         for path in steps.outputs(folder, step).values():
             if path.suffix in RESULT_SUFFIXES:
                 results[f"{path.parent.name}/{path.name}"] = sha256(path)
@@ -138,7 +140,8 @@ def publish(name, url=None, overwrite=False):
         "run": name,
         "published": time.strftime("%Y-%m-%d %H:%M"),
         "code": cfg.code_version(),
-        "versions": records[steps.ORDER[-1]]["versions"],
+        "versions": records[ran[-1]]["versions"],
+        "steps": ran,
         "faa": {"snapshot": snapshots["faa"], "fetched": sample_sources.get("faa", {}).get("fetched")},
         "national_security": {"snapshot": snapshots["nsufr"],
                               "fetched": sample_sources.get("national_security", {}).get("fetched")},
@@ -275,10 +278,18 @@ def reproduce(name, as_name=None):
 
     with sources.offline(faa_file=_input_path(manifest["faa"]["snapshot"]),
                          no_fly_file=_input_path(manifest["national_security"]["snapshot"])):
-        for step in steps.ORDER:
+        for step in published_steps(manifest):
             print(f"Running {step} (offline) ...", flush=True)
             steps.RUNNERS[step](folder)
     return verify(name, target)
+
+
+def published_steps(manifest):
+    """The steps a published run ran (older manifests don't list them: every step their results came from)."""
+    if "steps" in manifest:
+        return manifest["steps"]
+    folders = {rel.split("/")[0] for rel in manifest["results"]}
+    return [step for step in steps.ORDER if cfg.STEPS[step]["folder"] in folders]
 
 
 def verify(name, run=None):
@@ -291,9 +302,10 @@ def verify(name, run=None):
     folder = cfg.run_dir(run or name)
     lines = []
     states = steps.status(folder)
-    if any(state != "current" for state in states.values()):
+    behind = [s for s in published_steps(manifest) if states[s] != "current"]
+    if behind:
         lines.append("Warning: not every step is current here: "
-                     + ", ".join(f"{s} {st}" for s, st in states.items() if st != "current"))
+                     + ", ".join(f"{s} {states[s]}" for s in behind))
     bad = 0
     for rel, digest in manifest["results"].items():
         path = folder / rel

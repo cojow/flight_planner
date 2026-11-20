@@ -203,7 +203,8 @@ If the map says it couldn't load them, check [tfr.faa.gov](https://tfr.faa.gov) 
 * **Show Sampled Block Groups**: Outlines the Census block groups picked for the research sample, saved from the [Census Sampling](#census-sampling) app.
 Each is labelled with its GEOID; click a label for its city, cluster, street miles and airspace.
 * **Jump to Block Group**: Moves the Creator map to one of the sampled block groups, so you can plan its flights.
-* **Show Street Groups**: Draws the sample's streets coloured by group (from step 5 of the Census Sampling app), each group labelled with its block group's fly order, group number and any name you gave it in the census app, e.g. `#3 · G2 · North`. Click a street for its mission name (`Street1_Street2`), cross streets and miles. Dashed streets are in restricted airspace: fly them only with LAANC authorization requested in advance. *Street groups for* shows one block group's groups only.
+* **Show Street Groups**: Draws the sample's streets coloured by group (from step 5 of the Census Sampling app), each group labelled with its block group's fly order, group number and any name you gave it in the census app, e.g. `#3 · G2 · North`. Click a street for its mission name (`Street1_Street2`), cross streets and miles. Dashed streets are in restricted airspace: fly them only with LAANC authorization requested in advance. *Street groups for* shows one block group's groups only. Only one of this and *Show Training Segments* is shown at a time: ticking one unticks the other.
+* **Show Training Segments**: Draws the street segments drawn at random for object-detection training (step 6 of the Census Sampling app), all in one colour since one person flies them all, each labelled with its block group's fly order and its place in the draw, e.g. `#3 · T2`. Click a segment for its mission name (`Street1_Street2`), cross streets and miles; dashed segments are in restricted airspace and need LAANC authorization requested in advance. *Training segments for* shows one block group's segments only. Shown only when the sample was saved after step 6 ran. Only one of this and *Show Street Groups* is shown at a time: ticking one unticks the other.
 * **Show Logged Flights**: Draws every flight in the shared flight-log folder so you can see what has already been flown while planning.
 Click a line for its date, height, pitch, overlap, and photo count. 
 The folder, upload, and flight list are under *Flight log folder, upload and list*; setting the folder here also sets it for the tracker.
@@ -364,7 +365,7 @@ Making a new run needs a free [Census API key](https://api.census.gov/data/key_s
 
 Each **run** has a name and keeps everything in `data/census/runs/<name>/`.
 Every setting is saved in that folder's `config.json`, so a run can be checked, changed and repeated. 
-The app goes through five steps, and each step shows its settings before you run it:
+The app goes through five steps, plus an optional sixth, and each step shows its settings before you run it:
 
 1. **Areas**: the cities, the ACS year, and how much of a block group must be inside a city for it to count (`min_overlap`, default half). 
 After it runs, you can untick block groups to leave them out by hand. 
@@ -379,11 +380,12 @@ Saves each block group's cluster, the cluster averages, a chart and a map.
 By default, block groups mostly under FAA airspace with a ceiling below the 200 ft high flight can't be picked. Setting *Fly restricted airspace?* to *Yes, with LAANC authorization* flies it instead, 0 ft squares included: every block group can be picked, and picks that need it are marked `airspace = approval`. Request LAANC authorization for them ahead of time (see the [census README](py/census/README.md#restricted-airspace)).
 National security areas (military bases and the like, such as Camp Williams) are never flown in either mode: the parts of block groups inside them are off-limits, block groups mostly inside one can't be picked, and their streets aren't listed ([details](py/census/README.md#national-security-areas)).
 Saves the picks in flying order, every street to fly (as a table and GeoJSON for QGIS), and maps.
+6. **Training segments** (optional): draws a number of street segments (step 5's corner-to-corner stretches) at random from every picked block group, for example to collect object-detection training data from each one. Set how many per block group and the seed, or press *New random seed* for a different set. The same seed always gives the same segments, and a larger number keeps the ones a smaller number drew ([details](py/census/README.md#training-segments)).
 
 If you change a setting, or the census code changes, the steps that depend on it are marked out of date and must be run again, so outputs made with different settings never mix.
 
 **Using a sample in the flight planner.** 
-Under step 5, give the sample a name and press *Save sample*. It includes the street groups and their names if step 5 has run. 
+Under step 5 or 6, give the sample a name and press *Save sample*. It includes the street groups and their names if step 5 has run, and marks the drawn training segments (`training_pick`) if step 6 has run. 
 It is saved as `census_samples/<name>.geojson`, and the planner's Creator, Editor and Viewer tabs can then show it with *Show Sampled Block Groups*.
 That folder is tracked by git, so a committed sample reaches everyone planning flights.
 

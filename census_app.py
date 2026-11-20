@@ -13,6 +13,7 @@ results. The same steps can be run without it from the command line.
 Run with:
     streamlit run census_app.py
 """
+import random
 import sys
 from pathlib import Path
 
@@ -25,7 +26,7 @@ from census import acs, config as cfg, export, steps, streets  # noqa: E402
 st.set_page_config(page_title="Census sampling", layout="wide")
 
 TITLES = {"areas": "1 Areas", "choose_k": "2 Choose k", "cluster": "3 Cluster", "sample": "4 Sample",
-          "groups": "5 Street groups"}
+          "groups": "5 Street groups", "training": "6 Training segments"}
 MARKERS = {"not run": "⚪ not run", "current": "🟢 current", "stale": "🟠 stale (settings or code changed since it ran)"}
 
 # The choices the package accepts.
@@ -324,22 +325,64 @@ def tab_groups(folder, config):
 
     save_and_run(folder, "groups", {"groups": dict(g, per_block_group=int(n), names=names)})
     show_outputs(folder, "groups")
-    save_for_planner(folder)
+    save_for_planner(folder, "groups")
 
 
-def save_for_planner(folder):
+def tab_training(folder, config):
+    t = config["training"]
+    key = folder.name
+    st.write("A random draw of street segments (step 5's corner-to-corner stretches) from every picked block "
+             "group, e.g. to collect object-detection training data from each one. Optional: no other step "
+             "needs it. Uses the street groups saved in step 5.")
+    flown = config["sample"]["fly_restricted"] == "laanc"
+    st.caption("Segments in restricted airspace " + ("can be drawn, since this run flies it with LAANC "
+               "authorization." if flown else "are left out, since this run doesn't fly it (step 4)."))
+
+    # The seed box takes its value from session state (no default passed), so
+    # the "New random seed" button can set it.
+    seed_key = f"{key}:training_seed"
+    if seed_key not in st.session_state:
+        st.session_state[seed_key] = int(t["seed"])
+
+    def new_seed():
+        st.session_state[seed_key] = random.randint(0, 999_999)
+
+    c0, c1, c2, c3 = st.columns([2, 2, 2, 1.6])
+    n = c0.number_input("Segments per block group", 1, 500, int(t["per_block_group"]), step=1,
+                        key=f"{key}:training_n")
+    min_m = c1.number_input("Skip segments shorter than, m", 0, 500, int(t["min_length_m"]), step=5,
+                            key=f"{key}:training_min",
+                            help="Most very short segments are stubs where a cross street just pokes into the "
+                                 "buffer around the block group. 0 allows every segment.")
+    seed = c2.number_input("Draw seed", min_value=0, step=1, key=seed_key,
+                           help="The same seed always draws the same segments; a larger number keeps "
+                                "every segment a smaller one drew.")
+    c3.markdown("<div style='height: 1.75rem'></div>", unsafe_allow_html=True)
+    c3.button("New random seed", on_click=new_seed, key=f"{key}:training_reseed",
+              help="Pick a new seed at random, for a different set of segments.")
+
+    save_and_run(folder, "training", {"training": dict(t, per_block_group=int(n), seed=int(seed),
+                                                       min_length_m=int(min_m))})
+    show_outputs(folder, "training")
+    save_for_planner(folder, "training")
+
+
+def save_for_planner(folder, where):
     """Name the sample and save its block groups (and street groups) where the flight planner (app.py) can show them."""
     if steps.status(folder)["sample"] != "current":
         return
     st.divider()
     st.markdown("**Save for the flight planner**")
-    st.caption(f"Saves the picked block groups, and their street groups from this step, as "
+    st.caption(f"Saves the picked block groups, and their street groups from step 5, as "
                "census_samples/<name>.geojson; the suggested name includes the draw's seed so it's clear which "
                "draw it is. In the flight planner, tick *Show Sampled Block Groups* and pick this name to see "
                "them on the map.")
-    if steps.status(folder)["groups"] != "current":
-        st.warning("Run this step first to include the street groups; otherwise only the block groups are saved.")
-    key = folder.name
+    states = steps.status(folder)
+    if states["groups"] != "current":
+        st.warning("Run step 5 first to include the street groups; otherwise only the block groups are saved.")
+    elif states["training"] == "current":
+        st.caption("The street segments drawn in step 6 are included, marked with their training_pick.")
+    key = f"{folder.name}:{where}"
     seed = cfg.load(folder)["sample"]["seed"]
     name = st.text_input("Sample name (letters, digits, - and _)", value=f"{folder.name}_seed{seed}",
                          key=f"{key}:sample_name:{seed}")
@@ -414,7 +457,7 @@ def main():
     st.caption("Cities: " + ", ".join(p["name"] for p in config["areas"]["places"]))
 
     tabs = st.tabs(list(TITLES.values()), key="tab")
-    for tab, show in zip(tabs, (tab_areas, tab_choose_k, tab_cluster, tab_sample, tab_groups)):
+    for tab, show in zip(tabs, (tab_areas, tab_choose_k, tab_cluster, tab_sample, tab_groups, tab_training)):
         with tab:
             show(folder, config)
 

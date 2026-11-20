@@ -5,7 +5,9 @@ A sample is saved under a name as census_samples/<name>.geojson at the top of
 the repository: one feature per picked block group (kind "block_group"), with
 its GEOID, city, cluster, fly order and street miles, and, when step 5 has
 run, one per corner-to-corner stretch of street (kind "street") with its
-group, street, cross streets and mission name. app.py lists that folder and draws the
+group, street, cross streets and mission name. When step 6 has run too, each
+street also has its segment number and training_pick (its place in step 6's
+random draw, or null if it wasn't drawn). app.py lists that folder and draws the
 chosen sample on its maps. The folder is kept in git (unlike data/), so a
 committed sample reaches everyone who plans flights.
 
@@ -66,11 +68,22 @@ def export_sample(folder, name, overwrite=False):
                          "properties": {"kind": "block_group", **props}})
 
     # The street groups from step 5, when they match the current settings.
-    grouped = steps.status(folder)["groups"] == "current"
+    states = steps.status(folder)
+    grouped = states["groups"] == "current"
+    # The training segments from step 6, when current: (geoid, segment) -> its draw order.
+    trained = grouped and states["training"] == "current"
+    drawn = {}
+    if trained:
+        table = pd.read_csv(steps.outputs(folder, "training")["Training segments (table)"], dtype={"geoid": str})
+        drawn = {(g, int(n)): int(r) for g, n, r in zip(table["geoid"], table["segment"], table["training_pick"])}
     if grouped:
         street_file = steps.outputs(folder, "groups")["Street groups (GeoJSON)"]
+        seen = {}
         for f in json.loads(street_file.read_text())["features"]:
-            features.append({**f, "properties": {"kind": "street", **f["properties"]}})
+            geoid = f["properties"]["geoid"]
+            seen[geoid] = seen.get(geoid, 0) + 1          # the segment number, as step 6 counts them
+            extra = {"segment": seen[geoid], "training_pick": drawn.get((geoid, seen[geoid]))} if trained else {}
+            features.append({**f, "properties": {"kind": "street", **f["properties"], **extra}})
 
     s, a = config["sample"], config["areas"]
     collection = {
@@ -87,6 +100,8 @@ def export_sample(folder, name, overwrite=False):
             "seed": s["seed"],
             "weights": s["weights"],
             "street_groups": config["groups"]["per_block_group"] if grouped else None,
+            "training": ({"per_block_group": config["training"]["per_block_group"],
+                          "seed": config["training"]["seed"], "segments": len(drawn)} if trained else None),
         },
         "features": features,
     }
