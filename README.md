@@ -341,10 +341,11 @@ Then press the white paper symbol on the left side of the panel, and your Histor
 #### Thumbnail Refresh and Checklist
 The controller does not automatically update the thumbnails next to the flight missions. 
 Since this is one of the only ways to know which mission is which, short of looking at every mission's parameters, these must be updated. 
-To update them, in the mission history page, click on a mission to have it load, and then go back to the mission history page and press the save button on the right. 
-This will update the thumbnail. 
+DJI Fly keeps its own copy of each thumbnail and never reloads it, not even after a restart, and pressing the plain save button replaces the new thumbnail with DJI Fly's own map screenshot. 
+To update them, in the mission history page, click on a mission to have it load, and then use **Save as** (not save). 
+The copy shows the new thumbnail. Delete the original, which still shows the old one; both hold the same mission. 
 
-It is recommended to save and update the thumbnails immediately after transferring the missions. To help keep this straight, at the bottom of the DJI FLY Transfer tab, a checklist is generated showing the old mission thumbnail and the new mission name (along with the long string name). 
+Do this immediately after transferring the missions, before flying them (flying a mission saves it, which replaces the thumbnail with DJI Fly's screenshot). To help keep this straight, at the bottom of the DJI FLY Transfer tab, a checklist is generated showing the old mission thumbnail and the new mission name (along with the long string name). 
 
 ## Census Sampling
 A separate app picks the Census block groups to fly for the research [methodology](https://cojow.github.io/flight_planner/BYU_research_documentation/methodology.html): choose cities in Utah County, cluster their block groups on Census numbers (median household income and house age by default), and draw a stratified sample of block groups and the streets to fly in them.
