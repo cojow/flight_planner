@@ -8703,9 +8703,10 @@ elif page == 'DJI Fly Transfer':
                 st.subheader("📋 Manual Thumbnail Refresh Checklist")
                 st.info(
                     "DJI Fly caches each mission's thumbnail privately and won't pick up "
-                    "the new one automatically - not even after a full power cycle. Open "
-                    "each mission below in DJI Fly and save it once to force its "
-                    "thumbnail to refresh on the controller. The picture shown is what that "
+                    "the new one automatically - not even after a full power cycle - and a "
+                    "plain Save replaces it with DJI Fly's own map screenshot. Before flying "
+                    "them, open each mission below in DJI Fly and use Save as: the copy shows "
+                    "the new thumbnail, so delete the original. The picture shown is what that "
                     "mission currently still looks like on the controller's screen (the UUID "
                     "itself isn't visible there), so you can spot the right one in DJI Fly's list."
                 )
