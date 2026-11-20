@@ -2621,10 +2621,11 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
     Generates a 16:9 dark-mode thumbnail: mission name and key flight
     parameters (height, angle, overlap) on the left, so the plan is
     identifiable at a glance without needing the encoded filename suffix,
-    and a small true-shape line drawing of the flight path in a thin
-    bordered box on the right, captioned "flight path". The name's color
-    is banded by altitude (see ALTITUDE_COLOR_BANDS) so missions sharing a
-    path but flown at different heights are easy to tell apart.
+    and a true-shape drawing of the flight path over a street map in a
+    bordered square on the right, as tall as the safe area allows. The
+    name's color is banded by altitude (see ALTITUDE_COLOR_BANDS) so
+    missions sharing a path but flown at different heights are easy to
+    tell apart.
     """
     # A Figure of its own rather than pyplot. pyplot keeps one "current
     # figure" for the whole process, and on the hosted site several people's
@@ -2633,51 +2634,79 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
     # A Figure made directly is only ever touched by the code that made it.
     from matplotlib.figure import Figure
     from matplotlib.patches import Rectangle
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
 
     fig_w, fig_h = 8, 4.5
+    save_dpi = 120
     fig = Figure(figsize=(fig_w, fig_h), facecolor='#121212')
     ax = fig.subplots()
     ax.set_facecolor('#121212')
+    renderer = FigureCanvasAgg(fig).get_renderer()
 
     # The controller's own preview display crops roughly the outer 7% off
     # every edge of these thumbnails, so all content is kept within a safe
     # margin well inside that crop zone rather than using the full canvas.
     MARGIN = 0.10
+    safe_left, safe_right = fig_w * MARGIN, fig_w * (1 - MARGIN)
+    safe_bottom, safe_top = fig_h * MARGIN, fig_h * (1 - MARGIN)
+    gap_in = 0.2
 
-    # --- LEFT: name + flight parameters ---
-    # Wrap the name so it doesn't run off the edges. Underscores are treated
-    # as spaces here so textwrap can break at word boundaries instead of
-    # hard-splitting mid-word (e.g. "Fly_Mission_Flight").
-    display_name = mission_name.replace('_', ' ')
-    wrapped_name = "\n".join(textwrap.wrap(display_name, width=11)) or display_name
+    # The flight path is what tells two missions on the same street apart,
+    # so its square takes the full safe height at the right edge; the text
+    # gets whatever width is left.
+    has_path = bool(coords) and len(coords) >= 2
+    box_size_in = safe_top - safe_bottom
+    box_x0_in = safe_right - box_size_in if has_path else safe_right + gap_in
+    text_left, text_right = safe_left, box_x0_in - gap_in
+    text_cx = (text_left + text_right) / 2
 
-    left_x = MARGIN + (1 - 2 * MARGIN) * 0.28
+    def text_size_in(artist):
+        bbox = artist.get_window_extent(renderer)
+        return bbox.width / fig.dpi, bbox.height / fig.dpi
 
-    ax.text(left_x, 1 - MARGIN - (1 - 2 * MARGIN) * 0.20, wrapped_name,
-            color=get_altitude_color(alt_ft),
-            fontsize=38,
-            ha='center',
-            va='center',
-            weight='bold',
-            transform=ax.transAxes)
-
+    # --- LEFT: flight parameters, anchored to the bottom of the safe area ---
     photo_line = f"Photos: {photo_count:.0f}\n" if photo_count is not None else ""
     info_text = f"{photo_line}H: {alt_ft:.0f} ft\nA: {abs(pitch):.0f}°\nOL: {overlap_pct:.0f}%"
-    ax.text(left_x, MARGIN + (1 - 2 * MARGIN) * 0.20, info_text,
-            color='#FFFFFF',
-            fontsize=24,
-            ha='center',
-            va='center',
-            linespacing=1.6,
-            transform=ax.transAxes)
+    info = ax.text(text_cx / fig_w, safe_bottom / fig_h, info_text,
+                   color='#FFFFFF',
+                   fontsize=22,
+                   ha='center',
+                   va='bottom',
+                   linespacing=1.45,
+                   transform=ax.transAxes)
+    info_h_in = text_size_in(info)[1]
+
+    # --- LEFT: name, in the space above the parameters ---
+    # The narrower column can't take a fixed font size and wrap width: a
+    # long name would run past the safe margin and get cropped. So the name
+    # gets the largest size, and at that size the fewest lines, that fit.
+    # Underscores are treated as spaces so textwrap can break at word
+    # boundaries instead of hard-splitting mid-word (e.g. "Fly_Mission_Flight").
+    display_name = mission_name.replace('_', ' ')
+    name_w_in = text_right - text_left
+    name_h_in = (safe_top - safe_bottom) - info_h_in - gap_in
+    name = ax.text(text_cx / fig_w, safe_top / fig_h, display_name,
+                   color=get_altitude_color(alt_ft),
+                   ha='center',
+                   va='top',
+                   weight='bold',
+                   transform=ax.transAxes)
+    for fontsize in range(34, 13, -2):
+        name.set_fontsize(fontsize)
+        for wrap_width in range(max(len(display_name), 1), 3, -1):
+            name.set_text("\n".join(textwrap.wrap(display_name, width=wrap_width)) or display_name)
+            width_in, height_in = text_size_in(name)
+            if width_in <= name_w_in:
+                break
+        if width_in <= name_w_in and height_in <= name_h_in:
+            break
 
     # --- RIGHT: flight path drawing in a thin bordered box ---
-    if coords and len(coords) >= 2:
-        box_size_in = 1.75
-        box_cx_in = fig_w * (MARGIN + (1 - 2 * MARGIN) * 0.74)
-        box_cy_in = fig_h * 0.52
-        box_x0_frac = (box_cx_in - box_size_in / 2) / fig_w
-        box_y0_frac = (box_cy_in - box_size_in / 2) / fig_h
+    if has_path:
+        box_cx_in = box_x0_in + box_size_in / 2
+        box_cy_in = (safe_bottom + safe_top) / 2
+        box_x0_frac = box_x0_in / fig_w
+        box_y0_frac = safe_bottom / fig_h
         box_w_frac = box_size_in / fig_w
         box_h_frac = box_size_in / fig_h
 
@@ -2707,7 +2736,8 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
         box_min_lat = lats[0] + (mid_y - box_extent_m / 2)
         box_max_lat = lats[0] + (mid_y + box_extent_m / 2)
 
-        basemap_img = fetch_basemap_image(box_min_lat, box_min_lon, box_max_lat, box_max_lon)
+        basemap_img = fetch_basemap_image(box_min_lat, box_min_lon, box_max_lat, box_max_lon,
+                                          target_px=int(box_size_in * save_dpi))
         if basemap_img is not None:
             ax.imshow(
                 basemap_img, extent=[box_x0_frac, box_x0_frac + box_w_frac, box_y0_frac, box_y0_frac + box_h_frac],
@@ -2721,16 +2751,9 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
 
         path_color = get_altitude_color(alt_ft)
         ax.plot(
-            xs_frac, ys_frac, color=path_color, linewidth=1.8, transform=ax.transAxes, zorder=3,
-            path_effects=[pe.Stroke(linewidth=3.4, foreground='#000000', alpha=0.55), pe.Normal()],
+            xs_frac, ys_frac, color=path_color, linewidth=2.6, transform=ax.transAxes, zorder=3,
+            path_effects=[pe.Stroke(linewidth=4.6, foreground='#000000', alpha=0.55), pe.Normal()],
         )
-
-        ax.text(box_x0_frac + box_w_frac / 2, box_y0_frac - 0.07, "flight path",
-                color='#AAAAAA',
-                fontsize=13,
-                ha='center',
-                va='center',
-                transform=ax.transAxes)
 
     # Strip away all axes, borders, and margins
     ax.axis('off')
@@ -2739,7 +2762,7 @@ def generate_name_thumbnail(mission_name, alt_ft, pitch, overlap_pct, output_fil
 
     # Save as a standard low-footprint JPG. No close() needed: nothing but
     # this function holds the figure, so it's freed when the function ends.
-    fig.savefig(output_filepath, format='jpg', dpi=120, bbox_inches='tight', pad_inches=0)
+    fig.savefig(output_filepath, format='jpg', dpi=save_dpi, bbox_inches='tight', pad_inches=0)
 
 def _fill_missing_elevations(coords, elevations):
     """
